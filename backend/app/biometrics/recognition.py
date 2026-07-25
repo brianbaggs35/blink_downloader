@@ -21,6 +21,7 @@ layering as app.video.ffmpeg and app.vehicles.geometry.
 # pyright: reportUnknownArgumentType=false
 # pyright: reportUnknownVariableType=false
 
+import io
 import threading
 import uuid
 from collections.abc import Sequence
@@ -31,6 +32,7 @@ import cv2
 import numpy as np
 import onnxruntime
 from insightface.app import FaceAnalysis
+from PIL import Image
 
 from app.biometrics.models import ExecutionProviderPreference, ModelPack
 from app.logs import get_logger
@@ -144,6 +146,27 @@ def detect_faces(
             )
         )
     return faces
+
+
+def crop_face_thumbnail(
+    image_bytes: bytes, bbox: tuple[float, float, float, float], *, padding: float = 0.3
+) -> bytes:
+    """Crop the face at ``bbox`` (normalized x, y, w, h - the convention
+    detect_faces returns) out of ``image_bytes``, padded so the saved
+    sample shows a bit of context around the face rather than a razor-tight
+    oval, and re-encoded as JPEG."""
+    with Image.open(io.BytesIO(image_bytes)) as image:
+        width, height = image.size
+        x, y, w, h = bbox
+        pad_x, pad_y = w * padding, h * padding
+        left = max(0, round((x - pad_x) * width))
+        top = max(0, round((y - pad_y) * height))
+        right = min(width, round((x + w + pad_x) * width))
+        bottom = min(height, round((y + h + pad_y) * height))
+        cropped = image.convert("RGB").crop((left, top, right, bottom))
+        buffer = io.BytesIO()
+        cropped.save(buffer, format="JPEG", quality=90)
+        return buffer.getvalue()
 
 
 def cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:

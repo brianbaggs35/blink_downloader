@@ -25,6 +25,11 @@ REFERENCE_FRAME_MAX_DIMENSION = 1024
 """Higher-res than a library thumbnail: a household member draws a vehicle
 outline over this frame, so it needs to be clear enough to trace by hand."""
 
+BIOMETRICS_FRAME_MAX_DIMENSION = 1024
+"""Same tier as a vehicle reference frame — enrollment/detection benefits
+from more pixels on a face than a token-budgeted VLM keyframe allows, and
+this frame never leaves the local process (see app.biometrics)."""
+
 KEYFRAME_TIMEOUT_SECONDS = 30
 KEYFRAME_MAX_DIMENSION = 768
 """Longest edge in pixels for a keyframe sent to a VLM. Vision token cost
@@ -258,7 +263,19 @@ def _select_timestamps(scene_changes: list[float], duration: float, count: int) 
     return sorted(scene_changes + fillers)
 
 
-async def _extract_frame_at(source: Path, timestamp: float) -> bytes | None:
+async def _extract_frame_to_pipe(
+    source: Path,
+    timestamp: float,
+    *,
+    max_dimension: int,
+    quality: str,
+    timeout_seconds: float,
+    log_event: str,
+) -> bytes | None:
+    """Shared implementation behind :func:`_extract_frame_at` and
+    :func:`extract_biometrics_frame`: grab one frame to stdout, never
+    raising for an unreadable/corrupt source or out-of-range timestamp
+    (returns ``None`` instead)."""
     args = [
         "ffmpeg",
         "-y",
@@ -269,9 +286,9 @@ async def _extract_frame_at(source: Path, timestamp: float) -> bytes | None:
         "-frames:v",
         "1",
         "-vf",
-        f"scale='min({KEYFRAME_MAX_DIMENSION},iw)':-2",
+        f"scale='min({max_dimension},iw)':-2",
         "-q:v",
-        "3",
+        quality,
         "-f",
         "image2pipe",
         "-vcodec",
@@ -282,18 +299,41 @@ async def _extract_frame_at(source: Path, timestamp: float) -> bytes | None:
         proc = await asyncio.create_subprocess_exec(
             *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(), timeout=KEYFRAME_TIMEOUT_SECONDS
-        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
     except (TimeoutError, OSError) as exc:
-        logger.warning("ffmpeg.keyframe_extract_failed", file=source.name, error=str(exc))
+        logger.warning(log_event, file=source.name, error=str(exc))
         return None
 
     if proc.returncode != 0 or not stdout:
-        logger.warning(
-            "ffmpeg.keyframe_extract_failed",
-            file=source.name,
-            stderr=stderr.decode(errors="replace"),
-        )
+        logger.warning(log_event, file=source.name, stderr=stderr.decode(errors="replace"))
         return None
     return stdout
+
+
+async def _extract_frame_at(source: Path, timestamp: float) -> bytes | None:
+    return await _extract_frame_to_pipe(
+        source,
+        timestamp,
+        max_dimension=KEYFRAME_MAX_DIMENSION,
+        quality="3",
+        timeout_seconds=KEYFRAME_TIMEOUT_SECONDS,
+        log_event="ffmpeg.keyframe_extract_failed",
+    )
+
+
+async def extract_biometrics_frame(source: Path, timestamp: float) -> bytes | None:
+    """Grab one frame from ``source`` at ``timestamp`` seconds, at a
+    resolution tier suited to face detection/enrollment rather than VLM
+    token budgets (this frame is only ever processed locally — see
+    app.biometrics — never sent to a VLM, so KEYFRAME_MAX_DIMENSION's
+    token-cost tradeoff doesn't apply). Same never-raises contract as
+    :func:`extract_keyframes`.
+    """
+    return await _extract_frame_to_pipe(
+        source,
+        timestamp,
+        max_dimension=BIOMETRICS_FRAME_MAX_DIMENSION,
+        quality="2",
+        timeout_seconds=KEYFRAME_TIMEOUT_SECONDS,
+        log_event="ffmpeg.biometrics_frame_extract_failed",
+    )
