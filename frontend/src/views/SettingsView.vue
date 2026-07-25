@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import Button from "primevue/button";
 import InputText from "primevue/inputtext";
+import Message from "primevue/message";
 import Password from "primevue/password";
 import Select from "primevue/select";
 import SelectButton from "primevue/selectbutton";
 import { useToast } from "primevue/usetoast";
 import { onMounted, ref } from "vue";
 
-import { ApiError, updateMe } from "@/api";
+import { ApiError, getStorageSettings, updateMe, updateStorageSettings } from "@/api";
+import BlinkAccountPanel from "@/components/BlinkAccountPanel.vue";
 import PageHeader from "@/components/PageHeader.vue";
 import { useTheme } from "@/composables/useTheme";
 import { useAuthStore } from "@/stores/auth";
@@ -78,6 +80,38 @@ async function savePassword(): Promise<void> {
     passwordError.value = caught instanceof ApiError ? caught.message : "Unexpected error.";
   } finally {
     savingPassword.value = false;
+  }
+}
+
+const storageDir = ref("");
+const storageIsDefault = ref(true);
+const savingStorage = ref(false);
+const storageError = ref("");
+
+onMounted(async () => {
+  if (auth.user?.is_superuser) {
+    try {
+      const settings = await getStorageSettings();
+      storageDir.value = settings.storage_dir;
+      storageIsDefault.value = settings.is_default;
+    } catch {
+      // Non-fatal — the field just starts blank; saving will surface errors.
+    }
+  }
+});
+
+async function saveStorageDir(): Promise<void> {
+  storageError.value = "";
+  savingStorage.value = true;
+  try {
+    const settings = await updateStorageSettings({ storage_dir: storageDir.value || null });
+    storageDir.value = settings.storage_dir;
+    storageIsDefault.value = settings.is_default;
+    toast.add({ severity: "success", summary: "Storage location saved", life: 2500 });
+  } catch (caught) {
+    storageError.value = caught instanceof ApiError ? caught.message : "Unexpected error.";
+  } finally {
+    savingStorage.value = false;
   }
 }
 </script>
@@ -193,16 +227,88 @@ async function savePassword(): Promise<void> {
         </div>
       </article>
 
+      <BlinkAccountPanel />
+
+      <article
+        v-if="auth.user?.is_superuser"
+        class="panel"
+      >
+        <h3 class="panel-title">
+          Storage
+        </h3>
+        <p class="panel-hint">
+          Where downloaded clips are saved on this server.
+        </p>
+        <div class="panel-body">
+          <label class="field">
+            <span class="field-label">Clip storage directory</span>
+            <InputText
+              v-model="storageDir"
+              placeholder="/data/clips"
+              fluid
+              data-testid="storage-dir"
+            />
+          </label>
+          <p class="muted">
+            {{ storageIsDefault ? "Using the default from server configuration." : "Custom location." }}
+            Changing this does not move already-downloaded clips.
+          </p>
+          <Message
+            v-if="storageError"
+            severity="error"
+            :closable="false"
+            data-testid="storage-error"
+          >
+            {{ storageError }}
+          </Message>
+          <div class="panel-actions">
+            <Button
+              label="Save"
+              :loading="savingStorage"
+              data-testid="save-storage"
+              @click="saveStorageDir"
+            />
+          </div>
+        </div>
+      </article>
+
       <article class="panel panel-upcoming">
         <h3 class="panel-title">
           Coming soon
         </h3>
         <ul class="upcoming-list">
-          <li><i class="pi pi-link" /> Blink account linking &amp; camera discovery</li>
           <li><i class="pi pi-sparkles" /> AI provider keys and analysis preferences</li>
           <li><i class="pi pi-bell" /> Alerting: Discord &amp; Slack webhooks, SMTP email</li>
           <li><i class="pi pi-users" /> Household member invitations</li>
+          <li><i class="pi pi-cloud" /> S3, Google Drive &amp; OneDrive archive storage</li>
         </ul>
+      </article>
+
+      <article class="panel">
+        <h3 class="panel-title">
+          About
+        </h3>
+        <p class="panel-hint">
+          Blink AI Security is built on
+          <a
+            href="https://github.com/fronzbot/blinkpy"
+            target="_blank"
+            rel="noopener noreferrer"
+          >blinkpy</a>, the unofficial Blink API client this project relies on for all Blink
+          communication.
+        </p>
+        <a
+          class="about-link"
+          href="https://github.com/brianbaggs35/blink_downloader"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <i
+            class="pi pi-github"
+            aria-hidden="true"
+          />
+          View source on GitHub
+        </a>
       </article>
     </div>
   </section>
@@ -287,5 +393,30 @@ async function savePassword(): Promise<void> {
 .upcoming-list i {
   margin-right: 8px;
   color: var(--p-primary-500);
+}
+
+.muted {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--p-surface-500);
+}
+
+.about-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--p-primary-600);
+  text-decoration: none;
+}
+
+.blink-dark .about-link {
+  color: var(--p-primary-300);
+}
+
+.about-link:hover {
+  text-decoration: underline;
 }
 </style>
