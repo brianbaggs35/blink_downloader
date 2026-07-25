@@ -35,6 +35,7 @@ async def update_camera(
     if camera is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Camera not found.")
     camera.enabled = payload.enabled
+    camera.security_context = payload.security_context
     await session.commit()
     await session.refresh(camera)
     return camera

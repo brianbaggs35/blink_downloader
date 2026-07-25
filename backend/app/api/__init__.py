@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter
 
+from app.api.ai_stats import router as ai_stats_router
 from app.api.alerts import router as alerts_router
 from app.api.blink import router as blink_router
 from app.api.cameras import router as cameras_router
@@ -30,3 +31,4 @@ api_router.include_router(clips_router)
 api_router.include_router(settings_router)
 api_router.include_router(vehicles_router)
 api_router.include_router(alerts_router)
+api_router.include_router(ai_stats_router)
