@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.ai import models as ai_models  # noqa: F401  — register tables on Base.metadata
 from app.alerts import models as alert_models  # noqa: F401
+from app.biometrics import models as biometrics_models  # noqa: F401
 from app.blink import models as blink_models  # noqa: F401  — register tables on Base.metadata
 from app.config import get_settings
 from app.db import Base

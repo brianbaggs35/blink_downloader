@@ -28,7 +28,14 @@ dependencies = [
     "pillow>=12.3.0",
     "numpy>=2.5.1",
     "onnxruntime>=1.28.0",
-    "huggingface-hub>=1.24.0",
+    # Pulls in full opencv-python (not -headless): its declared dependency,
+    # and uv/pip have no package-substitution mechanism to swap it for the
+    # smaller headless build without installing both side by side into the
+    # same cv2/ namespace, which is worse. The extra ~100MB is unused Qt/X11
+    # GUI plugins the wheel bundles for portability — not a runtime risk,
+    # just image size. Revisit if that ever matters more than it does today.
+    "insightface>=1.0.1",
+    "pgvector>=0.5.0",
 ]
 
 [dependency-groups]
