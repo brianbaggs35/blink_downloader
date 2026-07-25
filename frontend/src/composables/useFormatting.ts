@@ -59,6 +59,8 @@ export function useFormatting() {
       value /= 1024;
       unitIndex += 1;
     }
+    // unitIndex is a locally-bounded loop counter, not external input.
+    // eslint-disable-next-line security/detect-object-injection
     return `${value.toFixed(1)} ${units[unitIndex]}`;
   }
 
