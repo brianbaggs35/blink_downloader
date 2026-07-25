@@ -55,7 +55,9 @@ select = [
 known-third-party = ["alembic"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "S105", "S106", "ARG001", "ARG002"]
+# ASYNC240: blocking a test's own event loop briefly for a filesystem
+# assertion is fine — it's not production code serving concurrent requests.
+"tests/**" = ["S101", "S105", "S106", "ARG001", "ARG002", "ASYNC240"]
 # Protocol implementations and framework hooks keep their signatures even
 # when an implementation ignores an argument.
 "app/blink/service.py" = ["ARG002"]

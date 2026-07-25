@@ -1,0 +1,296 @@
+"""sync_blink_account: camera/clip upserts, download fan-out, error handling.
+
+BlinkPyService is faked (patched at the name imported into
+app.worker.tasks.blink_sync) — this tests our sync orchestration against a
+real database, not blinkpy itself. Each test configures FakeBlinkService's
+class-level "next instance" fields *before* calling the task, since the task
+constructs its own instance internally.
+"""
+
+# pytest calls autouse fixtures implicitly; pyright can't see that usage.
+# pyright: reportUnusedFunction=false
+
+import json
+from datetime import UTC, datetime, timedelta
+from typing import Any, ClassVar
+
+import pytest
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.blink.models import BlinkAccount, BlinkAccountStatus, Camera, Clip
+from app.blink.service import BlinkAuthError, BlinkCameraInfo, BlinkError, BlinkMediaItem
+from app.config import get_settings
+from app.security.crypto import SecretBox
+from app.worker.tasks.blink_sync import SYNC_JOB_NAME, sync_blink_account
+from app.worker.tasks.download import DOWNLOAD_JOB_NAME
+
+
+class FakeBlinkService:
+    next_cameras: ClassVar[list[BlinkCameraInfo]] = []
+    next_media: ClassVar[list[BlinkMediaItem]] = []
+    next_get_cameras_error: ClassVar[Exception | None] = None
+    next_list_media_error: ClassVar[Exception | None] = None
+    instances: ClassVar[list[FakeBlinkService]] = []
+
+    def __init__(self, token_data: dict[str, Any]) -> None:
+        self.token_data_in = dict(token_data)
+        self.cameras_result = FakeBlinkService.next_cameras
+        self.media_result = FakeBlinkService.next_media
+        self.get_cameras_error = FakeBlinkService.next_get_cameras_error
+        self.list_media_error = FakeBlinkService.next_list_media_error
+        self.since_received: datetime | None = None
+        self.closed = False
+        FakeBlinkService.instances.append(self)
+
+    async def get_cameras(self) -> list[BlinkCameraInfo]:
+        if self.get_cameras_error:
+            raise self.get_cameras_error
+        return self.cameras_result
+
+    async def list_media(self, since: datetime | None = None) -> list[BlinkMediaItem]:
+        self.since_received = since
+        if self.list_media_error:
+            raise self.list_media_error
+        return self.media_result
+
+    @property
+    def token_data(self) -> dict[str, Any]:
+        return {**self.token_data_in, "token": "rotated-token"}
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+@pytest.fixture(autouse=True)
+def _reset_fake_service(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakeBlinkService.instances = []
+    FakeBlinkService.next_cameras = []
+    FakeBlinkService.next_media = []
+    FakeBlinkService.next_get_cameras_error = None
+    FakeBlinkService.next_list_media_error = None
+    monkeypatch.setattr("app.worker.tasks.blink_sync.BlinkPyService", FakeBlinkService)
+
+
+async def _make_account(session: AsyncSession) -> BlinkAccount:
+    box = SecretBox(get_settings().encryption_key)
+    account = BlinkAccount(
+        encrypted_username=box.encrypt("brian@example.com"),
+        encrypted_password=box.encrypt("hunter2"),
+        encrypted_token_data=box.encrypt(json.dumps({"refresh_token": "r"})),
+    )
+    session.add(account)
+    await session.commit()
+    await session.refresh(account)
+    return account
+
+
+def _camera_info(name: str = "Front Door", **overrides: Any) -> BlinkCameraInfo:
+    defaults: dict[str, Any] = {
+        "camera_id": "cam-1",
+        "network_id": "net-1",
+        "name": name,
+        "camera_type": "catalina",
+        "battery": "ok",
+        "thumbnail_path": "/media/thumb.jpg",
+        "motion_enabled": True,
+    }
+    return BlinkCameraInfo(**{**defaults, **overrides})
+
+
+def _media_item(camera_name: str = "Front Door", **overrides: Any) -> BlinkMediaItem:
+    defaults: dict[str, Any] = {
+        "media_id": "/media/clip1.mp4",
+        "camera_name": camera_name,
+        "created_at": datetime(2026, 7, 20, tzinfo=UTC),
+        "deleted": False,
+        "raw": {"some": "metadata"},
+    }
+    return BlinkMediaItem(**{**defaults, **overrides})
+
+
+async def test_no_account_linked_is_a_clean_noop(worker_ctx: dict[str, Any]) -> None:
+    result = await sync_blink_account(worker_ctx)
+    assert result == "no_account_linked"
+    worker_ctx["redis"].enqueue_job.assert_awaited_once_with(
+        SYNC_JOB_NAME, _defer_by=get_settings().blink_sync_interval_seconds
+    )
+
+
+async def test_full_sync_upserts_camera_and_new_clip(worker_ctx: dict[str, Any]) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        account = await _make_account(session)
+        account_id = account.id
+
+    FakeBlinkService.next_cameras = [_camera_info()]
+    FakeBlinkService.next_media = [_media_item()]
+
+    result = await sync_blink_account(worker_ctx)
+    assert result == "ok"
+
+    async with worker_ctx["sessionmaker"]() as session:
+        account = await session.get(BlinkAccount, account_id)
+        assert account is not None
+        assert account.status == BlinkAccountStatus.ACTIVE
+        assert account.last_error is None
+        assert account.last_sync is not None
+
+        camera = (await session.execute(select(Camera))).scalar_one()
+        assert camera.name == "Front Door"
+        assert camera.blink_camera_id == "cam-1"
+
+        clip = (await session.execute(select(Clip))).scalar_one()
+        assert clip.blink_clip_id == "/media/clip1.mp4"
+        assert clip.camera_id == camera.id
+
+    worker_ctx["redis"].enqueue_job.assert_any_call(DOWNLOAD_JOB_NAME, clip_id=str(clip.id))
+
+
+async def test_token_data_is_rotated_and_reencrypted(worker_ctx: dict[str, Any]) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        account = await _make_account(session)
+        account_id = account.id
+
+    await sync_blink_account(worker_ctx)
+
+    box = SecretBox(get_settings().encryption_key)
+    async with worker_ctx["sessionmaker"]() as session:
+        account = await session.get(BlinkAccount, account_id)
+        assert account is not None
+        stored = json.loads(box.decrypt(account.encrypted_token_data))
+        assert stored["token"] == "rotated-token"
+
+
+async def test_second_sync_updates_existing_camera_and_skips_duplicate_clip(
+    worker_ctx: dict[str, Any],
+) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        await _make_account(session)
+
+    FakeBlinkService.next_cameras = [_camera_info(battery="ok")]
+    FakeBlinkService.next_media = [_media_item()]
+    await sync_blink_account(worker_ctx)
+
+    FakeBlinkService.next_cameras = [_camera_info(battery="low")]
+    FakeBlinkService.next_media = [_media_item()]  # same clip again
+    await sync_blink_account(worker_ctx)
+
+    async with worker_ctx["sessionmaker"]() as session:
+        cameras = (await session.execute(select(Camera))).scalars().all()
+        assert len(cameras) == 1
+        assert cameras[0].battery == "low"  # updated, not duplicated
+
+        clips = (await session.execute(select(Clip))).scalars().all()
+        assert len(clips) == 1  # not duplicated
+
+
+async def test_skips_media_for_unrecognized_camera(worker_ctx: dict[str, Any]) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        await _make_account(session)
+
+    FakeBlinkService.next_cameras = [_camera_info(name="Front Door")]
+    FakeBlinkService.next_media = [_media_item(camera_name="Some Other Camera")]
+    result = await sync_blink_account(worker_ctx)
+    assert result == "ok"
+
+    async with worker_ctx["sessionmaker"]() as session:
+        clips = (await session.execute(select(Clip))).scalars().all()
+        assert clips == []
+
+
+async def test_skips_deleted_media_items(worker_ctx: dict[str, Any]) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        await _make_account(session)
+
+    FakeBlinkService.next_cameras = [_camera_info()]
+    FakeBlinkService.next_media = [_media_item(deleted=True)]
+    await sync_blink_account(worker_ctx)
+
+    async with worker_ctx["sessionmaker"]() as session:
+        clips = (await session.execute(select(Clip))).scalars().all()
+        assert clips == []
+
+
+async def test_first_sync_uses_initial_sync_window(worker_ctx: dict[str, Any]) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        await _make_account(session)
+
+    await sync_blink_account(worker_ctx)
+    svc = FakeBlinkService.instances[-1]
+    expected_floor = datetime.now(UTC) - timedelta(
+        days=get_settings().blink_initial_sync_days, minutes=1
+    )
+    assert svc.since_received is not None
+    assert svc.since_received > expected_floor
+
+
+async def test_later_sync_uses_last_sync_as_since(worker_ctx: dict[str, Any]) -> None:
+    fixed_last_sync = datetime(2026, 1, 1, tzinfo=UTC)
+    async with worker_ctx["sessionmaker"]() as session:
+        account = await _make_account(session)
+        account.last_sync = fixed_last_sync
+        await session.commit()
+
+    await sync_blink_account(worker_ctx)
+    assert FakeBlinkService.instances[-1].since_received == fixed_last_sync
+
+
+async def test_auth_error_marks_account_errored_and_still_reschedules(
+    worker_ctx: dict[str, Any],
+) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        account = await _make_account(session)
+        account_id = account.id
+
+    FakeBlinkService.next_get_cameras_error = BlinkAuthError("token expired")
+    result = await sync_blink_account(worker_ctx)
+    assert result == "auth_error"
+
+    async with worker_ctx["sessionmaker"]() as session:
+        account = await session.get(BlinkAccount, account_id)
+        assert account is not None
+        assert account.status == BlinkAccountStatus.ERROR
+        assert account.last_error == "token expired"
+    assert FakeBlinkService.instances[-1].closed is True
+    worker_ctx["redis"].enqueue_job.assert_awaited_once()
+
+
+async def test_generic_blink_error_marks_account_errored(worker_ctx: dict[str, Any]) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        account = await _make_account(session)
+        account_id = account.id
+
+    FakeBlinkService.next_list_media_error = BlinkError("temporary blip")
+    result = await sync_blink_account(worker_ctx)
+    assert result == "error"
+
+    async with worker_ctx["sessionmaker"]() as session:
+        account = await session.get(BlinkAccount, account_id)
+        assert account is not None
+        assert account.status == BlinkAccountStatus.ERROR
+
+
+async def test_service_is_closed_on_success_too(worker_ctx: dict[str, Any]) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        await _make_account(session)
+
+    await sync_blink_account(worker_ctx)
+    assert FakeBlinkService.instances[-1].closed is True
+
+
+async def test_unexpected_exception_still_reschedules(
+    worker_ctx: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        await _make_account(session)
+
+    def boom(_token_data: dict[str, Any]) -> FakeBlinkService:
+        msg = "unexpected programming error"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr("app.worker.tasks.blink_sync.BlinkPyService", boom)
+    with pytest.raises(RuntimeError):
+        await sync_blink_account(worker_ctx)
+    worker_ctx["redis"].enqueue_job.assert_awaited_once_with(
+        SYNC_JOB_NAME, _defer_by=get_settings().blink_sync_interval_seconds
+    )

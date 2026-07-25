@@ -7,6 +7,7 @@ import os
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 
 os.environ["BLINK_ENVIRONMENT"] = "test"
 os.environ.setdefault(
@@ -93,6 +94,17 @@ async def app_session(app: FastAPI) -> AsyncIterator[AsyncSession]:
             await session.commit()
         async with app.state.sessionmaker() as session:
             yield session
+
+
+@pytest.fixture
+async def worker_ctx(app: FastAPI) -> AsyncIterator[dict[str, Any]]:
+    """An arq-shaped ctx (real sessionmaker, fake job-enqueueing redis) for
+    testing worker task functions directly, without running an arq worker."""
+    async with LifespanManager(app):
+        async with app.state.sessionmaker() as session:
+            await session.execute(text(f"TRUNCATE TABLE {TEST_TABLES} CASCADE"))
+            await session.commit()
+        yield {"sessionmaker": app.state.sessionmaker, "redis": AsyncMock()}
 
 
 @pytest.fixture
