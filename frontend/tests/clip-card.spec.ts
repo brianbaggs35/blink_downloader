@@ -17,9 +17,9 @@ const baseClip: ClipRead = {
   thumbnail_generated: true,
 };
 
-function mountCard(overrides: Partial<ClipRead> = {}, selected = false) {
+function mountCard(overrides: Partial<ClipRead> = {}, selected = false, selectable = true) {
   return mount(ClipCard, {
-    props: { clip: { ...baseClip, ...overrides }, cameraName: "Front Door", selected },
+    props: { clip: { ...baseClip, ...overrides }, cameraName: "Front Door", selected, selectable },
     global: mountGlobal(makePinia()),
   });
 }
@@ -82,5 +82,11 @@ describe("ClipCard", () => {
     const wrapper = mountCard();
     await wrapper.findComponent({ name: "Checkbox" }).vm.$emit("update:modelValue", true);
     expect(wrapper.emitted("update:selected")?.[0]).toEqual([true]);
+  });
+
+  it("hides the selection checkbox when not selectable (viewer accounts)", () => {
+    const wrapper = mountCard({}, false, false);
+    expect(wrapper.find(".checkbox-overlay").exists()).toBe(false);
+    expect(wrapper.findComponent({ name: "Checkbox" }).exists()).toBe(false);
   });
 });

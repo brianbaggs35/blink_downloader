@@ -30,9 +30,9 @@ const clip: ClipRead = {
 // placeholder with no content at all). Hard-reset the body between tests
 // since the exit transition (stubbed by VTU, but still async) doesn't
 // guarantee synchronous DOM removal on unmount.
-async function mountModal(clipProp: ClipRead | null) {
+async function mountModal(clipProp: ClipRead | null, canManage = true) {
   const wrapper = mount(ClipDetailModal, {
-    props: { clip: clipProp, cameraName: "Front Door" },
+    props: { clip: clipProp, cameraName: "Front Door", canManage },
     global: mountGlobal(makePinia()),
     attachTo: document.body,
   });
@@ -92,6 +92,12 @@ describe("ClipDetailModal", () => {
     button?.click();
     await nextTick();
     expect(wrapper.emitted("delete")).toHaveLength(1);
+  });
+
+  it("hides download and delete for a viewer account (canManage false)", async () => {
+    await mountModal(clip, false);
+    expect(document.body.querySelector('[data-testid="modal-download"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="modal-delete"]')).toBeNull();
   });
 
   it("emits close when the dialog's visible model turns false", async () => {

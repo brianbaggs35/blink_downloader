@@ -22,6 +22,7 @@ import ClipCard from "@/components/ClipCard.vue";
 import ClipDetailModal from "@/components/ClipDetailModal.vue";
 import EmptyState from "@/components/EmptyState.vue";
 import PageHeader from "@/components/PageHeader.vue";
+import { useAuthStore } from "@/stores/auth";
 import { useBlinkStore } from "@/stores/blink";
 
 import type { CameraRead, ClipRead } from "@/api";
@@ -29,6 +30,7 @@ import type { CameraRead, ClipRead } from "@/api";
 const PAGE_SIZE = 24;
 
 const router = useRouter();
+const auth = useAuthStore();
 const blink = useBlinkStore();
 const toast = useToast();
 const confirm = useConfirm();
@@ -378,7 +380,10 @@ async function performSingleDelete(clip: ClipRead): Promise<void> {
       </EmptyState>
 
       <template v-else>
-        <div class="select-all-row">
+        <div
+          v-if="auth.isAdmin"
+          class="select-all-row"
+        >
           <Checkbox
             :model-value="selectedCount === clips.length"
             binary
@@ -398,6 +403,7 @@ async function performSingleDelete(clip: ClipRead): Promise<void> {
             :clip="clip"
             :camera-name="cameraNameById.get(clip.camera_id) ?? 'Unknown camera'"
             :selected="selected.has(clip.id)"
+            :selectable="auth.isAdmin"
             @open="openClip = clip"
             @update:selected="(v: boolean) => toggleSelected(clip.id, v)"
           />
@@ -416,6 +422,7 @@ async function performSingleDelete(clip: ClipRead): Promise<void> {
     <ClipDetailModal
       :clip="openClip"
       :camera-name="openClip ? (cameraNameById.get(openClip.camera_id) ?? 'Unknown camera') : ''"
+      :can-manage="auth.isAdmin"
       @close="openClip = null"
       @delete="openClip && confirmSingleDelete(openClip)"
     />

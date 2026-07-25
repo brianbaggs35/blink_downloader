@@ -119,4 +119,13 @@ describe("auth store actions", () => {
     store.user = fakeUser;
     expect(store.displayName).toBe("Brian Baggs");
   });
+
+  it("isAdmin reflects the signed-in user's is_superuser flag", () => {
+    const store = useAuthStore();
+    expect(store.isAdmin).toBe(false);
+    store.user = { ...fakeUser, is_superuser: false };
+    expect(store.isAdmin).toBe(false);
+    store.user = { ...fakeUser, is_superuser: true };
+    expect(store.isAdmin).toBe(true);
+  });
 });

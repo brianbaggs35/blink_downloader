@@ -7,11 +7,15 @@ import { useFormatting } from "@/composables/useFormatting";
 
 import type { ClipRead } from "@/api";
 
-const props = defineProps<{
-  clip: ClipRead;
-  cameraName: string;
-  selected: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    clip: ClipRead;
+    cameraName: string;
+    selected: boolean;
+    selectable?: boolean;
+  }>(),
+  { selectable: true },
+);
 
 const emit = defineEmits<{
   open: [];
@@ -35,6 +39,7 @@ function onCheckboxClick(event: Event): void {
     @click="emit('open')"
   >
     <div
+      v-if="selectable"
       class="checkbox-overlay"
       @click="onCheckboxClick"
     >
