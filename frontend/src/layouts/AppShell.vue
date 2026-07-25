@@ -35,4 +35,10 @@ import TopBar from "@/components/TopBar.vue";
   width: 100%;
   margin: 0 auto;
 }
+
+@media (max-width: 768px) {
+  .app-content {
+    padding: 16px;
+  }
+}
 </style>

@@ -96,7 +96,8 @@ function onCheckboxClick(event: Event): void {
   cursor: pointer;
   transition:
     border-color 0.15s ease,
-    transform 0.1s ease;
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
 }
 
 .blink-dark .card {
@@ -106,6 +107,12 @@ function onCheckboxClick(event: Event): void {
 
 .card:hover {
   border-color: var(--p-primary-400);
+  transform: translateY(-3px);
+  box-shadow: 0 10px 24px -12px color-mix(in srgb, var(--p-surface-950) 60%, transparent);
+}
+
+.card:hover .checkbox-overlay {
+  opacity: 1;
 }
 
 .card.selected {
@@ -121,6 +128,13 @@ function onCheckboxClick(event: Event): void {
   padding: 4px;
   border-radius: 6px;
   background: color-mix(in srgb, var(--p-surface-950) 55%, transparent);
+  backdrop-filter: blur(4px);
+  opacity: 0.75;
+  transition: opacity 0.15s ease;
+}
+
+.card.selected .checkbox-overlay {
+  opacity: 1;
 }
 
 .thumb {
@@ -163,12 +177,24 @@ function onCheckboxClick(event: Event): void {
   font-weight: 600;
   color: white;
   background: color-mix(in srgb, var(--p-surface-950) 65%, transparent);
+  backdrop-filter: blur(4px);
 }
 
 .pending-badge {
   left: 8px;
   right: auto;
   background: color-mix(in srgb, var(--p-primary-600) 75%, transparent);
+  animation: pending-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes pending-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
 }
 
 .meta {

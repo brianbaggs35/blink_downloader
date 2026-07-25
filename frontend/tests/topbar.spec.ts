@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createMemoryHistory, createRouter } from "vue-router";
 
 import TopBar from "@/components/TopBar.vue";
+import { useMobileNav } from "@/composables/useMobileNav";
 import { useAuthStore } from "@/stores/auth";
 import { fakeUser, makePinia, makeRouter, mountGlobal } from "./helpers";
 
@@ -70,5 +71,13 @@ describe("TopBar", () => {
     await flushPromises();
     expect(store.user).toBeNull();
     expect(router.currentRoute.value.name).toBe("login");
+  });
+
+  it("opens the mobile nav drawer from the menu toggle", async () => {
+    useMobileNav().close();
+    const { wrapper } = await mountBar();
+    await wrapper.find('[data-testid="mobile-nav-toggle"]').trigger("click");
+    expect(useMobileNav().isOpen.value).toBe(true);
+    useMobileNav().close();
   });
 });

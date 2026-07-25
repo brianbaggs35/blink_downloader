@@ -1,51 +1,11 @@
 <script setup lang="ts">
+import Drawer from "primevue/drawer";
+
+import { useMobileNav } from "@/composables/useMobileNav";
 import AppLogo from "./AppLogo.vue";
+import NavLinks from "./NavLinks.vue";
 
-interface NavItem {
-  label: string;
-  icon: string;
-  to: { name: string };
-}
-
-interface NavGroup {
-  label: string;
-  items: NavItem[];
-}
-
-// Order is part of the product spec: Library, Status, Live View, Storage,
-// AI, AI Usage, Vehicles, Biometrics, Settings.
-const groups: NavGroup[] = [
-  {
-    label: "Monitor",
-    items: [
-      { label: "Library", icon: "pi pi-images", to: { name: "library" } },
-      { label: "Status", icon: "pi pi-wave-pulse", to: { name: "status" } },
-      { label: "Live View", icon: "pi pi-video", to: { name: "live-view" } },
-    ],
-  },
-  {
-    label: "Archive",
-    items: [{ label: "Storage", icon: "pi pi-database", to: { name: "storage" } }],
-  },
-  {
-    label: "Intelligence",
-    items: [
-      { label: "AI", icon: "pi pi-sparkles", to: { name: "ai" } },
-      { label: "AI Usage", icon: "pi pi-chart-bar", to: { name: "ai-usage" } },
-    ],
-  },
-  {
-    label: "Protection",
-    items: [
-      { label: "Vehicles", icon: "pi pi-car", to: { name: "vehicles" } },
-      { label: "Biometrics", icon: "pi pi-id-card", to: { name: "biometrics" } },
-    ],
-  },
-  {
-    label: "System",
-    items: [{ label: "Settings", icon: "pi pi-cog", to: { name: "settings" } }],
-  },
-];
+const mobileNav = useMobileNav();
 
 const version = __APP_VERSION__;
 </script>
@@ -63,38 +23,39 @@ const version = __APP_VERSION__;
       </span>
     </RouterLink>
 
-    <nav
-      class="nav"
-      aria-label="Primary"
-    >
-      <div
-        v-for="group in groups"
-        :key="group.label"
-        class="nav-group"
-      >
-        <p class="nav-group-label">
-          {{ group.label }}
-        </p>
-        <RouterLink
-          v-for="item in group.items"
-          :key="item.label"
-          :to="item.to"
-          class="nav-item"
-        >
-          <i
-            :class="item.icon"
-            aria-hidden="true"
-          />
-          <span>{{ item.label }}</span>
-        </RouterLink>
-      </div>
-    </nav>
+    <NavLinks />
 
     <footer class="sidebar-footer">
       <span>Blink AI Security</span>
       <span class="version">v{{ version }}</span>
     </footer>
   </aside>
+
+  <Drawer
+    v-model:visible="mobileNav.isOpen.value"
+    position="left"
+    class="mobile-drawer"
+    data-testid="mobile-nav-drawer"
+  >
+    <template #header>
+      <RouterLink
+        :to="{ name: 'library' }"
+        class="brand"
+        @click="mobileNav.close()"
+      >
+        <AppLogo :size="30" />
+        <span class="brand-text">
+          <span class="brand-name">Blink</span>
+          <span class="brand-sub">AI Security</span>
+        </span>
+      </RouterLink>
+    </template>
+    <NavLinks @navigate="mobileNav.close()" />
+    <footer class="sidebar-footer">
+      <span>Blink AI Security</span>
+      <span class="version">v{{ version }}</span>
+    </footer>
+  </Drawer>
 </template>
 
 <style scoped>
@@ -148,67 +109,6 @@ const version = __APP_VERSION__;
   color: var(--p-primary-500);
 }
 
-.nav {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px 12px 16px;
-}
-
-.nav-group-label {
-  margin: 18px 10px 6px;
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--p-surface-500);
-}
-
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 9px 12px;
-  margin: 2px 0;
-  border-radius: 10px;
-  font-size: 0.9rem;
-  font-weight: 500;
-  text-decoration: none;
-  color: var(--p-surface-600);
-  transition:
-    background 0.15s ease,
-    color 0.15s ease;
-}
-
-.blink-dark .nav-item {
-  color: var(--p-surface-400);
-}
-
-.nav-item i {
-  font-size: 1rem;
-  width: 1.25rem;
-  text-align: center;
-}
-
-.nav-item:hover {
-  background: var(--p-surface-100);
-  color: var(--p-surface-900);
-}
-
-.blink-dark .nav-item:hover {
-  background: color-mix(in srgb, var(--p-surface-800) 70%, transparent);
-  color: var(--p-surface-100);
-}
-
-.nav-item.router-link-active {
-  background: color-mix(in srgb, var(--p-primary-500) 12%, transparent);
-  color: var(--p-primary-600);
-  box-shadow: inset 2px 0 0 var(--p-primary-500);
-}
-
-.blink-dark .nav-item.router-link-active {
-  color: var(--p-primary-300);
-}
-
 .sidebar-footer {
   display: flex;
   justify-content: space-between;
@@ -225,5 +125,45 @@ const version = __APP_VERSION__;
 
 .version {
   font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    display: none;
+  }
+}
+</style>
+
+<style>
+/* Drawer teleports to document.body, so this can't be `scoped` — it only
+ * ever renders below the 768px breakpoint where the static .sidebar is
+ * already display:none, so there's no overlap with the desktop styles. */
+.mobile-drawer .p-drawer-header {
+  padding: 6px 12px;
+}
+
+.mobile-drawer .p-drawer-content {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mobile-drawer .nav {
+  padding: 8px 12px 16px;
+}
+
+.mobile-drawer .sidebar-footer {
+  padding: 14px 20px;
+  border-top: 1px solid var(--p-surface-200);
+}
+
+.blink-dark .mobile-drawer .sidebar-footer {
+  border-top-color: var(--p-surface-800);
+}
+
+@media (min-width: 769px) {
+  .mobile-drawer {
+    display: none;
+  }
 }
 </style>
