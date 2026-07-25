@@ -117,8 +117,11 @@ jobs:
       - run: npm run test
 
   docker-build:
-    name: Docker · prod images build
+    name: Docker · prod images build + Trivy scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
@@ -129,6 +132,8 @@ jobs:
           file: docker/backend.Dockerfile
           target: prod
           push: false
+          load: true
+          tags: blink-backend:ci
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
       - name: Build frontend image
@@ -138,8 +143,32 @@ jobs:
           file: docker/frontend.Dockerfile
           target: prod
           push: false
+          load: true
+          tags: blink-frontend:ci
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
+      - name: Scan backend image (Trivy)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: blink-backend:ci
+          format: sarif
+          output: trivy-backend.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+      - name: Scan frontend image (Trivy)
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: blink-frontend:ci
+          format: sarif
+          output: trivy-frontend.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+      - name: Upload Trivy results to the Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: .
 
   e2e:
     name: E2E · Playwright against seeded stack
