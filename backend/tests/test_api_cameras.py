@@ -75,3 +75,25 @@ async def test_update_requires_superuser(client: AsyncClient, app: FastAPI) -> N
     camera = await _make_camera(app)
     response = await client.patch(f"/api/cameras/{camera.id}", json={"enabled": False})
     assert response.status_code == 401
+
+
+async def test_update_sets_security_context(admin_client: AsyncClient, app: FastAPI) -> None:
+    camera = await _make_camera(app)
+    response = await admin_client.patch(
+        f"/api/cameras/{camera.id}",
+        json={"enabled": True, "security_context": "Watches the driveway and front walkway."},
+    )
+    assert response.status_code == 200
+    assert response.json()["security_context"] == "Watches the driveway and front walkway."
+
+
+async def test_update_without_security_context_clears_it(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    camera = await _make_camera(app)
+    await admin_client.patch(
+        f"/api/cameras/{camera.id}", json={"enabled": True, "security_context": "Front door"}
+    )
+    response = await admin_client.patch(f"/api/cameras/{camera.id}", json={"enabled": True})
+    assert response.status_code == 200
+    assert response.json()["security_context"] is None

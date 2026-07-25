@@ -39,12 +39,14 @@ class CameraRead(BaseModel):
     enabled: bool
     battery: str | None
     last_synced_at: datetime | None
+    security_context: str | None
 
     model_config = {"from_attributes": True}
 
 
 class CameraUpdate(BaseModel):
     enabled: bool
+    security_context: str | None = Field(default=None, max_length=2000)
 
 
 class ClipRead(BaseModel):

@@ -126,6 +126,24 @@ export interface paths {
         patch: operations["users_patch_user_api_users__id__patch"];
         trace?: never;
     };
+    "/api/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Users */
+        get: operations["list_users_api_users_get"];
+        put?: never;
+        /** Create User */
+        post: operations["create_user_api_users_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/blink/link": {
         parameters: {
             query?: never;
@@ -280,6 +298,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/clips/{clip_id}/analysis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Clip Analysis */
+        get: operations["get_clip_analysis_api_clips__clip_id__analysis_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/clips/{clip_id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Feedback */
+        get: operations["list_feedback_api_clips__clip_id__feedback_get"];
+        put?: never;
+        /** Submit Feedback */
+        post: operations["submit_feedback_api_clips__clip_id__feedback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/clips/{clip_id}/stream": {
         parameters: {
             query?: never;
@@ -325,6 +378,40 @@ export interface paths {
         get: operations["download_clip_file_api_clips__clip_id__download_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/clips/{clip_id}/reanalyze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reanalyze Clip */
+        post: operations["reanalyze_clip_api_clips__clip_id__reanalyze_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/clips/bulk-analyze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bulk Analyze Clips */
+        post: operations["bulk_analyze_clips_api_clips_bulk_analyze_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -383,10 +470,503 @@ export interface paths {
         patch: operations["update_storage_settings_api_settings_storage_patch"];
         trace?: never;
     };
+    "/api/settings/ai": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Ai Provider Settings */
+        get: operations["get_ai_provider_settings_api_settings_ai_get"];
+        /** Update Ai Provider Settings */
+        put: operations["update_ai_provider_settings_api_settings_ai_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/ai/test-connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Ai Connection */
+        post: operations["test_ai_connection_api_settings_ai_test_connection_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/vehicles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Vehicles */
+        get: operations["list_vehicles_api_vehicles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/vehicles/{camera_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Vehicle For Camera */
+        get: operations["get_vehicle_for_camera_api_vehicles__camera_id__get"];
+        /** Put Vehicle */
+        put: operations["put_vehicle_api_vehicles__camera_id__put"];
+        post?: never;
+        /** Remove Vehicle */
+        delete: operations["remove_vehicle_api_vehicles__camera_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/vehicles/{camera_id}/reference-frame": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Reference Frame */
+        get: operations["get_reference_frame_api_vehicles__camera_id__reference_frame_get"];
+        put?: never;
+        /** Capture Reference */
+        post: operations["capture_reference_api_vehicles__camera_id__reference_frame_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/vehicles/{camera_id}/proximity-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Proximity Events */
+        get: operations["list_proximity_events_api_vehicles__camera_id__proximity_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/alerts/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Settings Endpoint */
+        get: operations["get_settings_endpoint_api_alerts_settings_get"];
+        /** Put Settings */
+        put: operations["put_settings_api_alerts_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/alerts/settings/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Channels */
+        post: operations["test_channels_api_alerts_settings_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Ai Stats */
+        get: operations["get_ai_stats_api_ai_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Ai Usage */
+        get: operations["get_ai_usage_api_ai_usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AIConnectionTestRequest */
+        AIConnectionTestRequest: {
+            /**
+             * Tier
+             * @enum {string}
+             */
+            tier: "tier1" | "tier2";
+            provider: components["schemas"]["AIProviderKind"];
+            /** Model */
+            model: string;
+            /** Api Key */
+            api_key?: string | null;
+            /** Base Url */
+            base_url?: string | null;
+        };
+        /** AIConnectionTestResponse */
+        AIConnectionTestResponse: {
+            /** Ok */
+            ok: boolean;
+            /** Detail */
+            detail?: string | null;
+        };
+        /**
+         * AIProviderKind
+         * @enum {string}
+         */
+        AIProviderKind: "openai" | "anthropic" | "ollama" | "ollama_cloud" | "moondream" | "moondream_cloud";
+        /** AISettingsRead */
+        AISettingsRead: {
+            /** Enabled */
+            enabled: boolean;
+            tier1_provider: components["schemas"]["AIProviderKind"] | null;
+            /** Tier1 Model */
+            tier1_model: string | null;
+            /** Tier1 Api Key Set */
+            tier1_api_key_set: boolean;
+            /** Tier1 Base Url */
+            tier1_base_url: string | null;
+            /** Tier2 Enabled */
+            tier2_enabled: boolean;
+            tier2_provider: components["schemas"]["AIProviderKind"] | null;
+            /** Tier2 Model */
+            tier2_model: string | null;
+            /** Tier2 Api Key Set */
+            tier2_api_key_set: boolean;
+            /** Tier2 Base Url */
+            tier2_base_url: string | null;
+            /** Keyframes Per Clip */
+            keyframes_per_clip: number;
+            /** Tier2 Suspicion Threshold */
+            tier2_suspicion_threshold: number;
+            /** Feedback Context Count */
+            feedback_context_count: number;
+        };
+        /** AISettingsUpdate */
+        AISettingsUpdate: {
+            /** Enabled */
+            enabled: boolean;
+            tier1_provider?: components["schemas"]["AIProviderKind"] | null;
+            /** Tier1 Model */
+            tier1_model?: string | null;
+            /** Tier1 Api Key */
+            tier1_api_key?: string | null;
+            /** Tier1 Base Url */
+            tier1_base_url?: string | null;
+            /**
+             * Tier2 Enabled
+             * @default true
+             */
+            tier2_enabled: boolean;
+            tier2_provider?: components["schemas"]["AIProviderKind"] | null;
+            /** Tier2 Model */
+            tier2_model?: string | null;
+            /** Tier2 Api Key */
+            tier2_api_key?: string | null;
+            /** Tier2 Base Url */
+            tier2_base_url?: string | null;
+            /**
+             * Keyframes Per Clip
+             * @default 4
+             */
+            keyframes_per_clip: number;
+            /**
+             * Tier2 Suspicion Threshold
+             * @default 0.5
+             */
+            tier2_suspicion_threshold: number;
+            /**
+             * Feedback Context Count
+             * @default 5
+             */
+            feedback_context_count: number;
+        };
+        /** AiStatsResponse */
+        AiStatsResponse: {
+            /** Total Analyzed */
+            total_analyzed: number;
+            /** Suspicious Count */
+            suspicious_count: number;
+            /** Uncertain Count */
+            uncertain_count: number;
+            /** Routine Count */
+            routine_count: number;
+            /** Escalated Count */
+            escalated_count: number;
+            /** Analyzed Last 7 Days */
+            analyzed_last_7_days: number;
+            /** Vehicle Proximity Breaches */
+            vehicle_proximity_breaches: number;
+            /** Total Feedback */
+            total_feedback: number;
+            /** Correct Feedback */
+            correct_feedback: number;
+            /** False Positive Feedback */
+            false_positive_feedback: number;
+            /** False Negative Feedback */
+            false_negative_feedback: number;
+        };
+        /** AiUsageDailyPoint */
+        AiUsageDailyPoint: {
+            /** Date */
+            date: string;
+            /** Tokens */
+            tokens: number;
+            /** Cost Usd */
+            cost_usd: number;
+            /** Calls */
+            calls: number;
+        };
+        /** AiUsageProviderBreakdown */
+        AiUsageProviderBreakdown: {
+            /** Provider */
+            provider: string;
+            /** Model */
+            model: string;
+            /** Tokens */
+            tokens: number;
+            /** Cost Usd */
+            cost_usd: number;
+            /** Calls */
+            calls: number;
+        };
+        /** AiUsageResponse */
+        AiUsageResponse: {
+            /** Total Tokens */
+            total_tokens: number;
+            /** Total Cost Usd */
+            total_cost_usd: number;
+            /** Total Calls */
+            total_calls: number;
+            /** Failed Calls */
+            failed_calls: number;
+            /** Daily */
+            daily: components["schemas"]["AiUsageDailyPoint"][];
+            /** By Provider */
+            by_provider: components["schemas"]["AiUsageProviderBreakdown"][];
+        };
+        /** AlertSettingsRead */
+        AlertSettingsRead: {
+            /** Discord Enabled */
+            discord_enabled: boolean;
+            /** Discord Webhook Set */
+            discord_webhook_set: boolean;
+            /** Slack Enabled */
+            slack_enabled: boolean;
+            /** Slack Webhook Set */
+            slack_webhook_set: boolean;
+            /** Smtp Enabled */
+            smtp_enabled: boolean;
+            /** Smtp Host */
+            smtp_host: string | null;
+            /** Smtp Port */
+            smtp_port: number;
+            /** Smtp Username */
+            smtp_username: string | null;
+            /** Smtp Password Set */
+            smtp_password_set: boolean;
+            /** Smtp Use Tls */
+            smtp_use_tls: boolean;
+            /** Smtp From Address */
+            smtp_from_address: string | null;
+            /** Smtp To Addresses */
+            smtp_to_addresses: string[];
+            /** Alert On Suspicious Clip */
+            alert_on_suspicious_clip: boolean;
+            /** Suspicion Alert Threshold */
+            suspicion_alert_threshold: number;
+            /** Alert On Vehicle Proximity */
+            alert_on_vehicle_proximity: boolean;
+            /** Quiet Hours Start */
+            quiet_hours_start: string | null;
+            /** Quiet Hours End */
+            quiet_hours_end: string | null;
+            /** Dedup Window Minutes */
+            dedup_window_minutes: number;
+        };
+        /** AlertSettingsUpdate */
+        AlertSettingsUpdate: {
+            /**
+             * Discord Enabled
+             * @default false
+             */
+            discord_enabled: boolean;
+            /** Discord Webhook Url */
+            discord_webhook_url?: string | null;
+            /**
+             * Slack Enabled
+             * @default false
+             */
+            slack_enabled: boolean;
+            /** Slack Webhook Url */
+            slack_webhook_url?: string | null;
+            /**
+             * Smtp Enabled
+             * @default false
+             */
+            smtp_enabled: boolean;
+            /** Smtp Host */
+            smtp_host?: string | null;
+            /**
+             * Smtp Port
+             * @default 587
+             */
+            smtp_port: number;
+            /** Smtp Username */
+            smtp_username?: string | null;
+            /** Smtp Password */
+            smtp_password?: string | null;
+            /**
+             * Smtp Use Tls
+             * @default true
+             */
+            smtp_use_tls: boolean;
+            /** Smtp From Address */
+            smtp_from_address?: string | null;
+            /** Smtp To Addresses */
+            smtp_to_addresses?: string[];
+            /**
+             * Alert On Suspicious Clip
+             * @default true
+             */
+            alert_on_suspicious_clip: boolean;
+            /**
+             * Suspicion Alert Threshold
+             * @default 0.5
+             */
+            suspicion_alert_threshold: number;
+            /**
+             * Alert On Vehicle Proximity
+             * @default true
+             */
+            alert_on_vehicle_proximity: boolean;
+            /** Quiet Hours Start */
+            quiet_hours_start?: string | null;
+            /** Quiet Hours End */
+            quiet_hours_end?: string | null;
+            /**
+             * Dedup Window Minutes
+             * @default 15
+             */
+            dedup_window_minutes: number;
+        };
+        /** AlertTestResponse */
+        AlertTestResponse: {
+            discord?: components["schemas"]["AlertTestResult"] | null;
+            slack?: components["schemas"]["AlertTestResult"] | null;
+            smtp?: components["schemas"]["AlertTestResult"] | null;
+        };
+        /** AlertTestResult */
+        AlertTestResult: {
+            /** Ok */
+            ok: boolean;
+            /** Detail */
+            detail: string;
+        };
+        /** AnalysisRead */
+        AnalysisRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Clip Id
+             * Format: uuid
+             */
+            clip_id: string;
+            /** Summary */
+            summary: string;
+            /** Suspicion Score */
+            suspicion_score: number;
+            suspicion_label: components["schemas"]["SuspicionLabel"];
+            tier: components["schemas"]["AnalysisTier"];
+            /** Escalated */
+            escalated: boolean;
+            tier1_provider: components["schemas"]["AIProviderKind"] | null;
+            /** Tier1 Model */
+            tier1_model: string | null;
+            tier2_provider: components["schemas"]["AIProviderKind"] | null;
+            /** Tier2 Model */
+            tier2_model: string | null;
+            /** Detected Entities */
+            detected_entities: components["schemas"]["DetectedEntityRead"][];
+            /** Vehicle Proximity */
+            vehicle_proximity: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * AnalysisTier
+         * @enum {string}
+         */
+        AnalysisTier: "tier1" | "tier2";
         /**
          * BlinkAccountStatus
          * @enum {string}
@@ -487,11 +1067,15 @@ export interface components {
             battery: string | null;
             /** Last Synced At */
             last_synced_at: string | null;
+            /** Security Context */
+            security_context: string | null;
         };
         /** CameraUpdate */
         CameraUpdate: {
             /** Enabled */
             enabled: boolean;
+            /** Security Context */
+            security_context?: string | null;
         };
         /** ClipListResponse */
         ClipListResponse: {
@@ -532,6 +1116,17 @@ export interface components {
             /** Thumbnail Generated */
             thumbnail_generated: boolean;
         };
+        /** DetectedEntityRead */
+        DetectedEntityRead: {
+            /** Type */
+            type: string;
+            /** Label */
+            label: string;
+            /** Confidence */
+            confidence: number;
+            /** Bbox */
+            bbox: number[] | null;
+        };
         /** ErrorModel */
         ErrorModel: {
             /** Detail */
@@ -539,6 +1134,45 @@ export interface components {
                 [key: string]: string;
             };
         };
+        /** FeedbackCreate */
+        FeedbackCreate: {
+            verdict: components["schemas"]["FeedbackVerdict"];
+            /** Note */
+            note?: string | null;
+        };
+        /** FeedbackRead */
+        FeedbackRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Analysis Id
+             * Format: uuid
+             */
+            analysis_id: string;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            verdict: components["schemas"]["FeedbackVerdict"];
+            /** Note */
+            note: string | null;
+            /** Applied */
+            applied: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * FeedbackVerdict
+         * @enum {string}
+         */
+        FeedbackVerdict: "correct" | "false_positive" | "false_negative";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -568,6 +1202,28 @@ export interface components {
              * @enum {string}
              */
             worker: "ok" | "error" | "unknown";
+        };
+        /** ProximityEventRead */
+        ProximityEventRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Clip Id
+             * Format: uuid
+             */
+            clip_id: string;
+            /** Distance Feet */
+            distance_feet: number;
+            /** Error Margin Feet */
+            error_margin_feet: number;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
         };
         /**
          * SetupRequest
@@ -603,6 +1259,46 @@ export interface components {
         StorageSettingsUpdate: {
             /** Storage Dir */
             storage_dir?: string | null;
+        };
+        /**
+         * SuspicionLabel
+         * @enum {string}
+         */
+        SuspicionLabel: "routine" | "uncertain" | "suspicious";
+        /** UserCreate */
+        UserCreate: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /** Password */
+            password: string;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean | null;
+            /**
+             * Is Superuser
+             * @default false
+             */
+            is_superuser: boolean | null;
+            /**
+             * Is Verified
+             * @default false
+             */
+            is_verified: boolean | null;
+            /**
+             * Display Name
+             * @default
+             */
+            display_name: string;
+            /**
+             * Timezone
+             * @default UTC
+             */
+            timezone: string;
         };
         /** UserRead */
         UserRead: {
@@ -665,6 +1361,63 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** VehicleRead */
+        VehicleRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Camera Id
+             * Format: uuid
+             */
+            camera_id: string;
+            /** Camera Name */
+            camera_name: string;
+            /** Description */
+            description: string;
+            /** Outline Points */
+            outline_points: number[][];
+            /** Has Reference Frame */
+            has_reference_frame: boolean;
+            /** Estimated Length Feet */
+            estimated_length_feet: number;
+            /** Distance Threshold Feet */
+            distance_threshold_feet: number;
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** VehicleUpdate */
+        VehicleUpdate: {
+            /** Description */
+            description: string;
+            /** Outline Points */
+            outline_points: [
+                number,
+                number
+            ][];
+            /**
+             * Estimated Length Feet
+             * @default 15
+             */
+            estimated_length_feet: number;
+            /**
+             * Distance Threshold Feet
+             * @default 6
+             */
+            distance_threshold_feet: number;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
         };
     };
     responses: never;
@@ -1074,6 +1827,59 @@ export interface operations {
             };
         };
     };
+    list_users_api_users_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserRead"][];
+                };
+            };
+        };
+    };
+    create_user_api_users_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     link_account_api_blink_link_post: {
         parameters: {
             query?: never;
@@ -1351,6 +2157,103 @@ export interface operations {
             };
         };
     };
+    get_clip_analysis_api_clips__clip_id__analysis_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                clip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalysisRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_feedback_api_clips__clip_id__feedback_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                clip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_feedback_api_clips__clip_id__feedback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                clip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedbackCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     stream_clip_api_clips__clip_id__stream_get: {
         parameters: {
             query?: never;
@@ -1431,6 +2334,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reanalyze_clip_api_clips__clip_id__reanalyze_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                clip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bulk_analyze_clips_api_clips_bulk_analyze_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkClipIds"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkActionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -1559,6 +2528,411 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_ai_provider_settings_api_settings_ai_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AISettingsRead"];
+                };
+            };
+        };
+    };
+    update_ai_provider_settings_api_settings_ai_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AISettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AISettingsRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_ai_connection_api_settings_ai_test_connection_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AIConnectionTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIConnectionTestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_vehicles_api_vehicles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VehicleRead"][];
+                };
+            };
+        };
+    };
+    get_vehicle_for_camera_api_vehicles__camera_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                camera_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VehicleRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_vehicle_api_vehicles__camera_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                camera_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VehicleUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VehicleRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_vehicle_api_vehicles__camera_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                camera_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_reference_frame_api_vehicles__camera_id__reference_frame_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                camera_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    capture_reference_api_vehicles__camera_id__reference_frame_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                camera_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_proximity_events_api_vehicles__camera_id__proximity_events_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                camera_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProximityEventRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_settings_endpoint_api_alerts_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertSettingsRead"];
+                };
+            };
+        };
+    };
+    put_settings_api_alerts_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AlertSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertSettingsRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_channels_api_alerts_settings_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertTestResponse"];
+                };
+            };
+        };
+    };
+    get_ai_stats_api_ai_stats_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiStatsResponse"];
+                };
+            };
+        };
+    };
+    get_ai_usage_api_ai_usage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiUsageResponse"];
                 };
             };
         };
