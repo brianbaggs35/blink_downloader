@@ -1,7 +1,6 @@
 import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 
-import AiUsageView from "@/views/AiUsageView.vue";
 import BiometricsView from "@/views/BiometricsView.vue";
 import LiveView from "@/views/LiveView.vue";
 import StorageView from "@/views/StorageView.vue";
@@ -11,7 +10,6 @@ import { makePinia, mountGlobal } from "./helpers";
 const cases = [
   { component: LiveView, title: "Live View", icon: "pi-video" },
   { component: StorageView, title: "Storage", icon: "pi-database" },
-  { component: AiUsageView, title: "AI Usage", icon: "pi-chart-bar" },
   { component: VehiclesView, title: "Vehicles", icon: "pi-car" },
   { component: BiometricsView, title: "Biometrics", icon: "pi-id-card" },
 ] as const;
