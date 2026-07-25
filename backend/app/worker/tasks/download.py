@@ -19,6 +19,7 @@ from app.security.crypto import SecretBox
 from app.settings.service import resolve_storage_dir
 from app.storage.service import StorageError, get_clip_storage
 from app.video.ffmpeg import FfmpegError, generate_thumbnail, probe_duration_seconds
+from app.worker.tasks.analyze import ANALYZE_JOB_NAME
 
 logger = get_logger(__name__)
 
@@ -96,5 +97,6 @@ async def download_clip(ctx: dict[Any, Any], clip_id: str) -> str:
             logger.error("blink.metadata_probe_failed", clip_id=clip_id, error=str(exc))
         await session.commit()
 
+        await ctx["redis"].enqueue_job(ANALYZE_JOB_NAME, clip_id=clip_id)
         logger.info("blink.download_completed", clip_id=clip_id, bytes=size)
         return "ok"

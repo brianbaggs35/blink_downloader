@@ -61,12 +61,14 @@ def test_build_prompt_includes_only_whats_provided() -> None:
             baseline_context="usually sees a mail carrier around 2pm",
             feedback_examples=["a parked car at night was marked not suspicious"],
             detect_people_for_proximity=True,
+            prior_tier_summary="a person lingered near the door (preliminary suspicion: 0.70)",
         )
     )
     assert "watches the driveway" in full
     assert "usually sees a mail carrier" in full
     assert "parked car at night" in full
     assert "tight bounding box" in full
+    assert "a person lingered near the door" in full
 
 
 # ------------------------------------------------------------- _parse_entities

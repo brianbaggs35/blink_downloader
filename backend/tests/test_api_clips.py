@@ -1,4 +1,8 @@
-"""/api/clips/*: listing+filters, streaming (incl. Range), download, bulk actions."""
+"""/api/clips/*: listing+filters, streaming (incl. Range), download, bulk
+actions, and analysis (read/reanalyze/bulk-analyze). Reanalyze/bulk-analyze
+enqueue against the real test Redis — harmless, nothing consumes the queue
+in these tests (same pattern as test_api_blink.py's /blink/sync tests).
+"""
 
 import uuid
 import zipfile
@@ -10,6 +14,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
 
+from app.ai.models import AIProviderKind, Analysis, AnalysisTier, SuspicionLabel
 from app.blink.models import BlinkAccount, Camera, Clip
 from app.config import get_settings
 from app.security.crypto import SecretBox
@@ -169,6 +174,50 @@ async def test_get_returns_clip_metadata(admin_client: AsyncClient, app: FastAPI
     response = await admin_client.get(f"/api/clips/{clip.id}")
     assert response.status_code == 200
     assert response.json()["id"] == str(clip.id)
+
+
+# --------------------------------------------------------------- analysis
+
+
+async def test_get_analysis_404_for_unknown_clip(admin_client: AsyncClient) -> None:
+    response = await admin_client.get(f"/api/clips/{uuid.uuid4()}/analysis")
+    assert response.status_code == 404
+
+
+async def test_get_analysis_404_when_not_yet_analyzed(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    camera = await _make_camera(app)
+    clip = await _make_clip(app, camera)
+    response = await admin_client.get(f"/api/clips/{clip.id}/analysis")
+    assert response.status_code == 404
+    assert "has not been analyzed" in response.json()["detail"]
+
+
+async def test_get_analysis_returns_the_current_analysis(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    camera = await _make_camera(app)
+    clip = await _make_clip(app, camera)
+    async with app.state.sessionmaker() as session:
+        analysis = Analysis(
+            clip_id=clip.id,
+            summary="A person walks up and leaves a package.",
+            suspicion_score=0.2,
+            suspicion_label=SuspicionLabel.ROUTINE,
+            tier=AnalysisTier.TIER1,
+            tier1_provider=AIProviderKind.OPENAI,
+            tier1_model="gpt-5-nano",
+        )
+        session.add(analysis)
+        await session.commit()
+
+    response = await admin_client.get(f"/api/clips/{clip.id}/analysis")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["summary"] == "A person walks up and leaves a package."
+    assert body["suspicion_label"] == "routine"
+    assert body["tier1_model"] == "gpt-5-nano"
 
 
 # ------------------------------------------------------------------- stream
@@ -429,6 +478,62 @@ async def test_bulk_download_404_when_none_downloaded(
     assert response.status_code == 404
 
 
+# -------------------------------------------------------------- reanalyze
+
+
+async def test_reanalyze_requires_downloaded_clip(admin_client: AsyncClient, app: FastAPI) -> None:
+    camera = await _make_camera(app)
+    clip = await _make_clip(app, camera)  # not downloaded
+    response = await admin_client.post(f"/api/clips/{clip.id}/reanalyze")
+    assert response.status_code == 400
+
+
+async def test_reanalyze_unknown_clip_is_404(admin_client: AsyncClient) -> None:
+    response = await admin_client.post(f"/api/clips/{uuid.uuid4()}/reanalyze")
+    assert response.status_code == 404
+
+
+async def test_reanalyze_enqueues_a_job(
+    admin_client: AsyncClient, app: FastAPI, tmp_path: Path
+) -> None:
+    await _use_storage(app, tmp_path)
+    camera = await _make_camera(app)
+    clip = await _make_clip(app, camera, downloaded=True, storage_dir=tmp_path)
+    response = await admin_client.post(f"/api/clips/{clip.id}/reanalyze")
+    assert response.status_code == 202
+    assert response.json() == {"status": "queued"}
+
+
+async def test_reanalyze_requires_authentication(client: AsyncClient) -> None:
+    response = await client.post(f"/api/clips/{uuid.uuid4()}/reanalyze")
+    assert response.status_code == 401
+
+
+# ------------------------------------------------------------ bulk-analyze
+
+
+async def test_bulk_analyze_queues_downloaded_and_reports_the_rest(
+    admin_client: AsyncClient, app: FastAPI, tmp_path: Path
+) -> None:
+    await _use_storage(app, tmp_path)
+    camera = await _make_camera(app)
+    downloaded = await _make_clip(app, camera, downloaded=True, storage_dir=tmp_path)
+    not_downloaded = await _make_clip(app, camera)
+    missing_id = uuid.uuid4()
+
+    response = await admin_client.post(
+        "/api/clips/bulk-analyze",
+        json={"clip_ids": [str(downloaded.id), str(not_downloaded.id), str(missing_id)]},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"succeeded": 1, "failed": 2}
+
+
+async def test_bulk_analyze_empty_list_rejected(admin_client: AsyncClient) -> None:
+    response = await admin_client.post("/api/clips/bulk-analyze", json={"clip_ids": []})
+    assert response.status_code == 422
+
+
 # ------------------------------------------------------- viewer is read-only
 
 
@@ -455,6 +560,10 @@ async def test_viewer_cannot_download_delete_or_bulk_act(
     assert (await viewer_client.delete(f"/api/clips/{clip.id}")).status_code == 403
     assert (
         await viewer_client.post("/api/clips/bulk-delete", json={"clip_ids": [str(clip.id)]})
+    ).status_code == 403
+    assert (await viewer_client.post(f"/api/clips/{clip.id}/reanalyze")).status_code == 403
+    assert (
+        await viewer_client.post("/api/clips/bulk-analyze", json={"clip_ids": [str(clip.id)]})
     ).status_code == 403
     assert (
         await viewer_client.post("/api/clips/bulk-download", json={"clip_ids": [str(clip.id)]})

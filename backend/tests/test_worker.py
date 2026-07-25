@@ -23,6 +23,7 @@ from app.worker.main import (
     shutdown,
     startup,
 )
+from app.worker.tasks.analyze import ANALYZE_JOB_NAME
 from app.worker.tasks.blink_sync import SYNC_JOB_NAME
 from app.worker.tasks.download import DOWNLOAD_JOB_NAME
 
@@ -57,14 +58,14 @@ async def test_shutdown_disposes_the_engine() -> None:
 
 def test_worker_settings_wired() -> None:
     names = {fn.name for fn in WorkerSettings.functions}
-    assert names == {SYNC_JOB_NAME, DOWNLOAD_JOB_NAME}
+    assert names == {SYNC_JOB_NAME, DOWNLOAD_JOB_NAME, ANALYZE_JOB_NAME}
     assert len(WorkerSettings.cron_jobs) == 1
     expected = RedisSettings.from_dsn(os.environ["BLINK_REDIS_URL"])
     assert WorkerSettings.redis_settings.host == expected.host
     assert WorkerSettings.redis_settings.port == expected.port
 
 
-@pytest.mark.parametrize("job_name", [SYNC_JOB_NAME, DOWNLOAD_JOB_NAME])
+@pytest.mark.parametrize("job_name", [SYNC_JOB_NAME, DOWNLOAD_JOB_NAME, ANALYZE_JOB_NAME])
 def test_worker_functions_have_retry_limits(job_name: str) -> None:
     fn = next(f for f in WorkerSettings.functions if f.name == job_name)
     assert fn.max_tries is not None
