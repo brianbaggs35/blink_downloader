@@ -12,6 +12,7 @@ import TabPanels from "primevue/tabpanels";
 import Tabs from "primevue/tabs";
 import { useToast } from "primevue/usetoast";
 import { onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
 
 import { ApiError, getStorageSettings, updateMe, updateStorageSettings } from "@/api";
 import BlinkAccountPanel from "@/components/BlinkAccountPanel.vue";
@@ -28,7 +29,14 @@ const MIN_PASSWORD_LENGTH = 12;
 
 const auth = useAuthStore();
 const toast = useToast();
+const route = useRoute();
 const { isDark, setDark } = useTheme();
+
+const ADMIN_TABS = ["users", "ai", "cameras", "vehicles", "alerts"];
+const requestedTab = typeof route.query.tab === "string" ? route.query.tab : "general";
+const activeTab = ref(
+  auth.isAdmin && ADMIN_TABS.includes(requestedTab) ? requestedTab : "general",
+);
 
 const displayName = ref("");
 const timezone = ref("UTC");
@@ -137,7 +145,7 @@ async function saveStorageDir(): Promise<void> {
     />
 
     <Tabs
-      value="general"
+      v-model:value="activeTab"
       lazy
     >
       <TabList>
