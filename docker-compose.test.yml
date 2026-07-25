@@ -1,0 +1,31 @@
+# Test environment: throwaway Postgres/Redis for pytest, plus (with --profile
+# e2e) a production-like stack seeded with fixtures for Playwright.
+# Entry points: `make test-backend`, `make e2e` — see Makefile.
+name: blink-test
+
+services:
+  postgres-test:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: blink
+      POSTGRES_PASSWORD: blink
+      POSTGRES_DB: blink_test
+    ports:
+      - "127.0.0.1:55432:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U blink -d blink_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  redis-test:
+    image: redis:8-alpine
+    ports:
+      - "127.0.0.1:63790:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 15

@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Environment & secrets — .env.example is the committed template
+.env
+.env.*
+!.env.example
+docker/certs/
+
+# Generated artifacts
+backend/openapi.json
+
+# e2e output
+e2e/test-results/
+e2e/playwright-report/
+
+# OS / editor
+.DS_Store
+Thumbs.db
