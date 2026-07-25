@@ -116,6 +116,20 @@ jobs:
       - run: npm run typecheck
       - run: npm run test
 
+  docker-lint:
+    name: Docker · hadolint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hadolint/hadolint-action@v3.3.0
+        with:
+          dockerfile: docker/backend.Dockerfile
+          config: .hadolint.yaml
+      - uses: hadolint/hadolint-action@v3.3.0
+        with:
+          dockerfile: docker/frontend.Dockerfile
+          config: .hadolint.yaml
+
   docker-build:
     name: Docker · prod images build + Trivy scan
     runs-on: ubuntu-latest

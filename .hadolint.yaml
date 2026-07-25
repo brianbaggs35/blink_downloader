@@ -1,0 +1,17 @@
+# Dockerfile lint config (see .github/workflows/ci.yml's docker-build job).
+#
+# Ignored rules, deliberately:
+#   DL3007 - "pin FROM to a release tag, not :latest". Chainguard rebuilds
+#     :latest daily with patches and doesn't publish traditional semver tags
+#     for every image (confirmed by hand: their postgres image has no pinned
+#     :17 tag at all, only a rolling latest). Trivy (same CI job) scans the
+#     actual built image for real CVEs on every run, which is the guarantee
+#     that matters — pinning here would just mean manually bumping a digest
+#     to get the "latest" we already deliberately want everywhere else.
+#   DL3008 / DL3018 - "pin apt/apk package versions". Same reasoning for the
+#     one apt/apk package we install (ffmpeg): we want whatever's current in
+#     Wolfi/Debian's repos, not a version we'd have to remember to bump.
+ignored:
+  - DL3007
+  - DL3008
+  - DL3018
