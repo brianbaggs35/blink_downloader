@@ -126,3 +126,27 @@ async def login(client: AsyncClient, email: str, password: str) -> None:
 async def admin_client(client: AsyncClient, admin: dict[str, str]) -> AsyncClient:
     await login(client, admin["email"], admin["password"])
     return client
+
+
+VIEWER_EMAIL = "viewer@example.com"
+VIEWER_PASSWORD = "another-correct-horse-battery"
+
+
+@pytest.fixture
+async def viewer_client(admin_client: AsyncClient) -> AsyncClient:
+    """A second, non-admin account, logged in on the same client (the admin
+    session is replaced by the viewer's — tests needing both should use
+    separate httpx clients instead)."""
+    response = await admin_client.post(
+        "/api/users",
+        json={
+            "email": VIEWER_EMAIL,
+            "password": VIEWER_PASSWORD,
+            "display_name": "Viewer",
+            "is_superuser": False,
+        },
+    )
+    assert response.status_code == 201, response.text
+    await admin_client.post("/api/auth/logout")
+    await login(admin_client, VIEWER_EMAIL, VIEWER_PASSWORD)
+    return admin_client

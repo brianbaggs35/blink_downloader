@@ -427,3 +427,35 @@ async def test_bulk_download_404_when_none_downloaded(
         "/api/clips/bulk-download", json={"clip_ids": [str(clip.id)]}
     )
     assert response.status_code == 404
+
+
+# ------------------------------------------------------- viewer is read-only
+
+
+async def test_viewer_can_list_get_and_stream(
+    viewer_client: AsyncClient, app: FastAPI, tmp_path: Path
+) -> None:
+    await _use_storage(app, tmp_path)
+    camera = await _make_camera(app)
+    clip = await _make_clip(app, camera, downloaded=True, storage_dir=tmp_path)
+
+    assert (await viewer_client.get("/api/clips")).status_code == 200
+    assert (await viewer_client.get(f"/api/clips/{clip.id}")).status_code == 200
+    assert (await viewer_client.get(f"/api/clips/{clip.id}/stream")).status_code == 200
+
+
+async def test_viewer_cannot_download_delete_or_bulk_act(
+    viewer_client: AsyncClient, app: FastAPI, tmp_path: Path
+) -> None:
+    await _use_storage(app, tmp_path)
+    camera = await _make_camera(app)
+    clip = await _make_clip(app, camera, downloaded=True, storage_dir=tmp_path)
+
+    assert (await viewer_client.get(f"/api/clips/{clip.id}/download")).status_code == 403
+    assert (await viewer_client.delete(f"/api/clips/{clip.id}")).status_code == 403
+    assert (
+        await viewer_client.post("/api/clips/bulk-delete", json={"clip_ids": [str(clip.id)]})
+    ).status_code == 403
+    assert (
+        await viewer_client.post("/api/clips/bulk-download", json={"clip_ids": [str(clip.id)]})
+    ).status_code == 403

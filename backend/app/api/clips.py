@@ -1,7 +1,7 @@
 """Clip listing, playback/download, and bulk actions.
 
-Deletes and downloads are available to any signed-in household member — the
-Library is shared household state, not an admin-only surface.
+Viewer accounts may browse, open, and play clips (and their AI analysis) but
+nothing that exports, deletes, or costs money — those stay admin-only.
 """
 
 import asyncio
@@ -25,7 +25,7 @@ from app.db import get_session
 from app.logs import get_logger
 from app.settings.service import resolve_storage_dir
 from app.storage.service import ClipStorage, StorageError, get_clip_storage
-from app.users.auth import current_active_user
+from app.users.auth import current_active_user, current_superuser
 
 logger = get_logger(__name__)
 
@@ -135,7 +135,7 @@ async def clip_thumbnail(
 async def download_clip_file(
     clip_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
-    _user: Annotated[object, Depends(current_active_user)],
+    _user: Annotated[object, Depends(current_superuser)],
 ) -> FileResponse:
     clip = await _get_clip_or_404(session, clip_id)
     path = _clip_file_or_404(clip.storage_path, "video")
@@ -152,7 +152,7 @@ async def _delete_one(session: AsyncSession, storage: ClipStorage, clip: Clip) -
 async def delete_clip(
     clip_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
-    _user: Annotated[object, Depends(current_active_user)],
+    _user: Annotated[object, Depends(current_superuser)],
 ) -> None:
     clip = await _get_clip_or_404(session, clip_id)
     storage_root = await resolve_storage_dir(session, get_settings())
@@ -171,7 +171,7 @@ async def delete_clip(
 async def bulk_delete_clips(
     payload: BulkClipIds,
     session: Annotated[AsyncSession, Depends(get_session)],
-    _user: Annotated[object, Depends(current_active_user)],
+    _user: Annotated[object, Depends(current_superuser)],
 ) -> BulkActionResponse:
     storage_root = await resolve_storage_dir(session, get_settings())
     storage = get_clip_storage(storage_root)
@@ -207,7 +207,7 @@ def _build_zip(clip_paths: list[tuple[Path, str]]) -> Path:
 async def bulk_download_clips(
     payload: BulkClipIds,
     session: Annotated[AsyncSession, Depends(get_session)],
-    _user: Annotated[object, Depends(current_active_user)],
+    _user: Annotated[object, Depends(current_superuser)],
 ) -> FileResponse:
     clips = (
         (await session.execute(select(Clip).where(Clip.id.in_(payload.clip_ids)))).scalars().all()
