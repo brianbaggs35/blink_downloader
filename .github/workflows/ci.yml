@@ -169,6 +169,7 @@ jobs:
           output: trivy-backend.sarif
           severity: CRITICAL,HIGH
           exit-code: "1"
+          version: v0.72.0
       - name: Scan frontend image (Trivy)
         if: always()
         uses: aquasecurity/trivy-action@v0.36.0
@@ -178,11 +179,19 @@ jobs:
           output: trivy-frontend.sarif
           severity: CRITICAL,HIGH
           exit-code: "1"
-      - name: Upload Trivy results to the Security tab
+          version: v0.72.0
+      - name: Upload backend Trivy results to the Security tab
         if: always()
         uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif_file: .
+          sarif_file: trivy-backend.sarif
+          category: trivy-backend
+      - name: Upload frontend Trivy results to the Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-frontend.sarif
+          category: trivy-frontend
 
   e2e:
     name: E2E · Playwright against seeded stack
