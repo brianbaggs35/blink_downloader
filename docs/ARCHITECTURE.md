@@ -63,59 +63,113 @@ own:
 
 ## Data model
 
-Live today: `users`, `access_tokens`.
-
-Planned (added migration-per-feature; names locked so PRs stay consistent):
+Live today:
 
 | Table | Purpose |
 |---|---|
-| `blink_accounts` | encrypted Blink credentials + token blob, last sync |
-| `cameras` | Blink camera identity, name, enabled, per-camera settings JSONB |
-| `clips` | media identity, storage path/backend, timestamps, status |
-| `analyses` | AI summary text, suspicion score, provider/model, `is_current` (re-analysis keeps history; re-run only on explicit request) |
-| `events` | typed detections (`PERSON_DETECTED`, `KNOWN_VEHICLE`, …) with confidence + metadata JSONB |
-| `people` / `face_embeddings` | person registry; pgvector embeddings incl. negative examples, per-person threshold |
-| `vehicles` / `vehicle_embeddings` | vehicle registry, per-camera outline polygons + allowed zones |
-| `camera_baselines` | rolling per-camera activity statistics (hour-of-day object histograms, motion regions) |
-| `feedback` | every correction: subject type/id, verdict, note, `applied` |
-| `ai_usage` | per-call provider, model, tokens, cost, latency |
-| `alert_channels` | discord/slack webhook + SMTP configs (secrets encrypted) |
-| `rules` | rule engine conditions/actions JSONB, priority, enabled |
+| `users` / `access_tokens` | household accounts (admin/viewer), revocable sessions |
+| `blink_accounts` | encrypted Blink credentials + token blob, last sync, status |
+| `cameras` | Blink camera identity, name, enabled, free-text `security_context` fed into every analysis prompt for that camera |
+| `clips` | media identity, storage path/backend, timestamps, download status |
+| `ai_settings` | singleton row: tier1/tier2 provider+model+encrypted key+base URL, keyframe count, escalation threshold, feedback-context count |
+| `analyses` | per-clip result: summary, suspicion score/label, tier used, `escalated`, detected entities (JSONB), vehicle-proximity result (JSONB), `is_current` (re-analysis supersedes rather than overwrites, so accuracy history survives) |
+| `events` | typed occurrences derived from an analysis (`person_detected`, `vehicle_proximity_breach`, …), one row per `(clip, event_type)` |
+| `camera_baselines` | rolling per-camera hour-of-day × entity-type histogram — "what does this camera normally see right now" |
+| `feedback` | every correction on an analysis: verdict (correct / false positive / false negative), optional note |
+| `ai_usage` | per-call provider, model, tier, prompt/completion/total tokens, estimated cost, latency, success — the AI Usage tab reads this directly |
+| `vehicles` | one protected vehicle per camera: outline polygon (normalized 0–1 points) over a captured reference frame, real-world length, alert distance, enabled |
+| `proximity_events` | one row per proximity breach: distance + error margin, so the Vehicles tab and alerts don't re-derive history from `analyses` |
+| `alert_settings` | singleton row: Discord/Slack webhook (encrypted) + SMTP (encrypted password) config, trigger toggles/thresholds, quiet hours, dedup window |
 
-pgvector ships in the Postgres image from day one so embedding search needs no
-image migration later.
+Planned (facial recognition — not yet built; see [docs/ROADMAP.md](ROADMAP.md)):
+
+| Table | Purpose |
+|---|---|
+| `people` / `face_embeddings` | person registry; pgvector embeddings incl. negative examples, per-person threshold |
+
+pgvector ships in the Postgres image from day one so that migration needs no
+image change later.
 
 ## AI analysis pipeline
 
-Two stages, cheap-first:
+Two *tiers* of the same kind of model (a vision-language model), cheap-first —
+not a local object detector feeding a VLM. A dedicated local CV stage (YOLO,
+track association) was considered and deliberately dropped: it's another
+model to bundle, version, and keep accurate, for a household-scale workload
+where a capable VLM already returns typed detections directly.
 
 ```
 clip.mp4
-  │  ffmpeg: keyframe extraction (scene-change + uniform sampling)
+  │  ffmpeg: keyframe extraction (N evenly-spaced frames, default 4)
   ▼
-Stage 1 — local perception (free, always on)
-  │  YOLO object detection (ONNX Runtime — no torch in prod images)
-  │  ByteTrack track association · zone tests · baseline deviation
-  ▼  emits events + structured context
-Stage 2 — VLM narration (token-metered, provider-abstracted)
-  │  selected keyframes + stage-1 context → 1–2 sentence summary
-  │  + structured suspicion assessment
+Tier 1 — first pass (every downloaded clip that's queued for analysis)
+  │  keyframes + camera's security_context + baseline digest
+  │  + recent household corrections for this camera (few-shot)
+  │  → summary, suspicion score/label, typed entities (structured output)
   ▼
-analyses row (cached forever; re-analyzed only via the button)
+score ≥ tier2_suspicion_threshold (default 0.5)?
+  │                                   │
+  no → done                          yes → Tier 2 — escalation
+                                            │  same keyframes + tier-1's own
+                                            │  summary/score, to a stronger
+                                            │  model — refines rather than
+                                            │  starts blind
+                                            ▼
+                                      analyses row (escalated=true)
 ```
 
-- **Stage 1** runs on every clip and produces `events` and detection context.
-  ONNX Runtime keeps prod images torch-free and Python-3.14-friendly.
-- **Stage 2** sends *keyframes + a text digest of stage-1 findings* to the
-  configured provider. Two-tier escalation (cheap model first, stronger model
-  when the cheap one flags uncertainty or suspicion) carries over from the
-  Home Assistant version.
 - **Providers**: OpenAI, Anthropic, Ollama (local), Ollama Cloud, Moondream
-  (local), Moondream Cloud behind one `AIProvider` interface. Every call logs
-  tokens/cost/latency to `ai_usage` (the AI Usage tab reads this).
-- **Caching**: a clip's current analysis is immutable once stored. The
-  re-analyze button supersedes (`is_current`) rather than overwrites, so
-  accuracy history survives.
+  (local), Moondream Cloud — one `AIProvider` interface, tier 1 and tier 2
+  configured independently (e.g. Moondream local for tier 1, Anthropic for
+  tier 2). OpenAI/Anthropic/Ollama use native structured output; Moondream's
+  API has no such mode, so its provider prompts for parseable JSON text and
+  degrades honestly (routine, zero entities, a summary noting the parse
+  failure) rather than pretending feature parity it doesn't have. "Local" and
+  "cloud" variants of Ollama/Moondream are the same wire protocol at a
+  different base URL, never a different code path.
+- **Context, not just pixels**: every prompt includes the camera's
+  admin-set `security_context` ("watches the driveway; a silver sedan is
+  normally parked here overnight"), a digest of what that camera normally
+  sees at this hour (see baselines, below), and the household's own recent
+  corrections for that camera — a general-purpose VLM narrows to *this*
+  household's definition of normal without any fine-tuning.
+- **Every call is metered**: provider, model, tier, prompt/completion/total
+  tokens, estimated cost, latency, and success are logged to `ai_usage`
+  regardless of outcome — the AI Usage tab reads this directly, and a failed
+  call (bad key, timeout, malformed response) is visible there rather than
+  silently disappearing.
+- **Caching**: a clip's current analysis is immutable once stored. Analyze
+  again (Analyze now / Re-analyze / bulk-analyze) supersedes it (`is_current`
+  flips) rather than overwriting, so accuracy history survives.
+- **Vehicle proximity rides the same pass**: when a camera has an enabled
+  vehicle outline, tier 1 and tier 2 both additionally ask for person
+  bounding boxes, and the pipeline runs the geometry below against the first
+  keyframe — no separate analysis pass, no separate API call.
+
+### Keeping a fresh connection from flooding the queue
+
+A first-time Blink link, or a reconnect after the household's network was
+down for a while, can turn up dozens of clips in one sync — backfilling and
+auto-analyzing all of them would burn through AI budget and rate limits on a
+backlog nobody asked to see analyzed the moment they reconnected:
+
+- **The initial backfill window is capped at 24 hours** (`BLINK_INITIAL_SYNC_DAYS`,
+  default `1`) — a sync with no prior `last_sync` (first link, or first sync
+  after being disconnected long enough that `last_sync` predates this) only
+  looks back one day, not further into Blink's history.
+- **Auto-analysis is capped per sync, not per clip**: if one sync run
+  discovers more than `BLINK_AUTO_ANALYZE_LIMIT` (default `5`) new clips,
+  only the most recent N (by recording time) are auto-queued for analysis.
+  The rest still download normally — they're in the Library, playable,
+  downloadable — they just aren't auto-analyzed. A routine sync (the normal
+  steady state, a handful of clips at most) is never affected by this cap
+  since it's already under the limit; every new clip going forward keeps
+  getting analyzed automatically as before.
+- **Nothing is left behind**: older clips in an oversized batch are one click
+  away via "Analyze now" / "Re-analyze" in the clip modal, or select-many +
+  Analyze in the Library's bulk actions — both bypass the cap entirely by
+  design, since they're an explicit, deliberate request for that specific
+  clip (or clips), not an automatic bulk trigger.
 
 ## Learning from feedback (not for show)
 
@@ -131,35 +185,75 @@ through one of these mechanisms:
   positive/negative sets (maximize separation), so every correction tightens
   that person's decision boundary. This is measurable, real improvement.
 
-**Suspicion assessment** — three reinforcing loops:
-1. **Per-camera baseline**: stationary cameras accumulate rolling statistics
-   (what objects appear, when, where). Deviation from baseline feeds the
-   suspicion score; "should not have been suspicious" feedback on routine
-   activity accelerates baseline acceptance of that pattern.
-2. **Exemplar retrieval**: clips get an embedding; corrected clips become
-   labeled exemplars in pgvector. A new clip near "not suspicious" exemplars
-   is damped, near "should have been flagged" exemplars is boosted (k-NN over
-   the household's own history).
-3. **Prompt conditioning**: the VLM prompt includes a compact digest of
-   relevant past corrections ("the household marked deliveries like this
-   non-suspicious"), retrieved via the same exemplar index.
+**Suspicion assessment** — two reinforcing loops, live today:
+1. **Per-camera baseline**: every analysis (suspicious or not) bumps an
+   hour-of-day × entity-type histogram for that camera — a rolling, passive
+   "what does this camera normally see right now." A **false-positive**
+   correction ("this routine thing was wrongly flagged suspicious") bumps the
+   same histogram at 3× the weight of a passive observation, so the
+   household's correction visibly moves the baseline rather than waiting to
+   be outweighed by future recurrences. The current hour's top entities are
+   summarized into a one-line digest and included in every prompt for that
+   camera.
+2. **Few-shot prompt conditioning**: a camera's most recent corrections
+   (false positives and false negatives, not confirmed-correct calls — those
+   have nothing new to teach) are pulled in as short text examples in the
+   prompt: *"Flagged suspicious, but was actually routine: …"* /
+   *"Not flagged, but should have been considered suspicious: …"* The count
+   is configurable (`feedback_context_count`, default 5, 0 disables it).
 
-The AI tab surfaces accuracy-over-time so the effect of feedback is visible.
+A third loop — pgvector k-NN exemplar retrieval over embedded clips — is
+deliberately not built: at one household's realistic feedback volume (dozens
+to low hundreds of corrections, not millions), an embedding index is real
+infrastructure to bundle and maintain for marginal benefit over "the
+household's own recent corrections for this camera," which the loop above
+already gives the model. Revisit if usage patterns show it's worth it.
+
+The AI tab surfaces suspicion breakdown and feedback accuracy so the effect
+of correcting the system is visible, not just asserted.
 
 ## Vehicle protection & proximity
 
-- The user draws a freeform outline around each vehicle per camera (canvas
-  over a reference frame). Outlines define the protected region and anchor
-  ground-plane calibration.
-- **Distance estimation** on a single stationary camera: monocular depth
-  (Depth Anything V2, ONNX) + a per-camera ground-plane calibration derived
-  from the vehicle outline and person-height priors. A person's foot point
-  projects to an estimated real-world distance from the vehicle.
-- **Overlap vs. proximity**: depth ordering at the person/vehicle pixels
-  distinguishes "walking behind the car in frame" from "standing at the car".
-- Alert rule: "if anyone comes within X feet of <vehicle> [between HH:MM]".
-  Estimates carry honest error bars (±, shown in the UI); calibration improves
-  with a one-time guided step per camera.
+Pure geometry, no ML model — deliberately, not as a stopgap. A monocular
+depth model (Depth Anything V2 or similar) was the obvious alternative and
+was rejected: it's a heavy dependency to bundle and run on every analyzed
+frame (unfriendly to a Raspberry Pi-class host), it's one more thing to keep
+accurate across ONNX runtime/opset changes, and for a *stationary* camera —
+already an assumption this whole feature leans on — comparable-triangles
+reasoning gets the same practical answer from math alone, fully unit-testable
+with hand-computed pixel coordinates instead of golden-image regression tests.
+
+- **Setup**: capture a reference frame from the camera's most recent
+  downloaded clip, then draw a polygon outline around the vehicle in it
+  (click to add a point, click a point to remove) and enter its real-world
+  length. This is the one manual step per camera; everything after is
+  automatic.
+- **The core idea**: a pinhole camera projects an object of real height `H`
+  at distance `Z` to pixel height `h = f·H/Z` for some fixed, unknown focal
+  length `f`. The vehicle's own outline plus its real-world length gives a
+  local pixels-per-foot scale *at the vehicle's distance* — no camera
+  calibration, no focal length lookup, no depth sensor.
+- **Depth plausibility filter**: before asking "how many feet away,
+  laterally," a detected person's apparent bounding-box height is compared
+  against what an average adult (5.6 ft) would measure at the vehicle's
+  depth, within a tolerance. This is what separates "standing at the car"
+  from "walking on the sidewalk far behind it in the same part of the
+  frame" — the classic monocular ambiguity — without needing true depth.
+  A person who fails the plausibility check contributes no proximity
+  estimate at all, rather than a wrong one.
+- **Distance**: for a person who passes the filter, the shortest distance
+  from their estimated foot point to the vehicle's outline polygon, in the
+  local pixels-per-foot scale, is the estimate. Closest person wins when
+  several are detected. Estimates carry an honest ± error margin (shown in
+  the UI, not hidden), rather than a false-precision single number.
+- **Alerting**: "someone came within `distance_threshold_feet` of the
+  vehicle" is one of two alert triggers (alongside "clip scored suspicious"),
+  with its own toggle, quiet hours, and dedup window — see Alerting, below.
+
+This only makes sense for a camera that doesn't move (a mounted driveway/
+porch camera, not a battery unit someone carries around) — the reference
+frame and its calibration are only valid for the position they were captured
+at.
 
 ## Biometrics enrollment from real frames
 
@@ -175,19 +269,32 @@ labels whole clusters at once. Feedback keeps refining galleries afterwards.
 - The suspicious-flag bypass for recognized people is all-or-nothing: it takes
   one approved face AND zero unrecognized faces anywhere in the clip.
 
-## Rules & alerting
+## Alerting
 
-A rule engine separates detection from decisions:
+One household-wide config today (`alert_settings`), not yet a general rule
+engine ("if unknown vehicle AND time between…" conditions are a natural next
+step once facial/vehicle recognition gives more to key rules on):
 
-```
-IF   unknown_vehicle AND time BETWEEN 23:00 AND 06:00
-THEN alert(discord, sms-style summary)
-```
-
-Channels: Discord webhook, Slack webhook, SMTP email — configs stored
-encrypted; delivery via worker tasks with retry; quiet hours and dedup windows
-built in. Later rules can reference recognition results ("ignore if vehicle is
-registered").
+- **Channels**: Discord webhook, Slack webhook, SMTP email — each
+  independently enabled, webhook URLs and the SMTP password encrypted at
+  rest. Delivery is a dedicated worker job, decoupled from analysis: a slow
+  or misconfigured alert channel never blocks or delays the analysis that
+  triggered it. Each configured channel is tried independently per alert, so
+  one channel failing doesn't suppress the others.
+- **Triggers**: a clip scored suspicious (own threshold, independent of the
+  tier-2 escalation threshold) and/or someone breaching a protected vehicle's
+  distance — each with its own on/off toggle.
+- **Quiet hours**: a start/end time (wraps midnight correctly, e.g.
+  22:00–06:00) during which alerts are silently skipped, not queued for
+  later delivery.
+- **Dedup**: a Redis `SET NX` with a TTL of `dedup_window_minutes` keyed on
+  camera + reason suppresses repeat alerts for the same situation within the
+  window, rather than a database table — it's ephemeral state by nature, and
+  the worker heartbeat already uses Redis the same way.
+- **Settings > Alerts** includes a "send test alert" that exercises every
+  configured, enabled channel against the currently *saved* settings and
+  reports per-channel success/failure, so a webhook typo surfaces before
+  it's relied on at 2am.
 
 ## Storage
 

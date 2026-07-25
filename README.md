@@ -1,11 +1,15 @@
 # Blink AI Security
 
 A self-hosted AI security platform for Blink cameras. Clips sync automatically
-and flow through a two-stage AI pipeline — local computer vision plus your
-choice of vision model (OpenAI, Anthropic, Ollama, Moondream — local or cloud)
-— producing summaries, suspicion assessments, facial recognition, and vehicle
-protection with proximity alerts. Your feedback actively retrains the system's
-thresholds. Face data never leaves your machine.
+and flow through a two-tier vision-model pipeline — a cheap pass on every
+clip, escalating to a stronger model only when something looks off — using
+your choice of provider (OpenAI, Anthropic, Ollama, Moondream — local or
+cloud). It produces plain-English summaries, suspicion scores, vehicle
+proximity alerts (no depth sensor — geometry from the vehicle's own outline),
+and — coming next — facial recognition. Every correction you give it feeds
+back into per-camera baselines and future prompts, so it gets better at
+*your* cameras specifically. Face data, when that lands, will never leave
+your machine.
 
 Built on [blinkpy](https://github.com/fronzbot/blinkpy) for Blink API access;
 everything else — accounts, storage, AI, events, alerts, dashboards — is this
