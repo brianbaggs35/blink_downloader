@@ -24,6 +24,7 @@ from app.ai.providers import AIProviderError, AnalysisRequest, AnalysisResult, D
 from app.blink.models import BlinkAccount, Camera, Clip
 from app.config import get_settings
 from app.security.crypto import SecretBox
+from app.vehicles.models import ProximityEvent, Vehicle
 
 
 class ScriptedProvider:
@@ -125,6 +126,26 @@ async def _make_camera_and_clip(
     await session.refresh(camera)
     await session.refresh(clip)
     return camera, clip
+
+
+VEHICLE_OUTLINE = [[0.3, 0.4], [0.7, 0.4], [0.7, 0.7], [0.3, 0.7]]
+# 64x64 keyframes (testsrc never upscales): outline max span 25.6px, 15ft
+# length -> ~1.707 px/ft; an average adult (5.6ft) measures ~0.149 normalized.
+PERSON_HEIGHT = 0.14934
+
+
+async def _make_vehicle(session: AsyncSession, camera: Camera, **overrides: object) -> Vehicle:
+    defaults: dict[str, object] = {
+        "camera_id": camera.id,
+        "description": "The blue sedan",
+        "outline_points": VEHICLE_OUTLINE,
+    }
+    defaults.update(overrides)
+    vehicle = Vehicle(**defaults)  # type: ignore[arg-type]
+    session.add(vehicle)
+    await session.commit()
+    await session.refresh(vehicle)
+    return vehicle
 
 
 def make_result(
@@ -493,3 +514,184 @@ async def test_no_keyframes_extracted_raises_analysis_skipped(
     monkeypatch.setattr("app.ai.pipeline.extract_keyframes", fake_extract)
     with pytest.raises(AnalysisSkippedError, match="Could not extract any keyframes"):
         await run_analysis(app_session, clip, camera, settings, get_settings().encryption_key)
+
+
+# ------------------------------------------------------------ vehicle proximity
+
+
+async def test_no_vehicle_proximity_field_when_no_vehicle_registered(
+    app_session: AsyncSession, sample_clip_path: Path
+) -> None:
+    camera, clip = await _make_camera_and_clip(app_session, sample_clip_path)
+    ScriptedProvider.queued = [
+        make_result(
+            entities=[
+                DetectedEntityResult(
+                    type="person", confidence=0.9, label="someone", bbox=(0.5, 0.5, 0.1, 0.1)
+                )
+            ]
+        )
+    ]
+    analysis = await run_analysis(
+        app_session, clip, camera, make_settings(tier2_enabled=False), get_settings().encryption_key
+    )
+    assert analysis.vehicle_proximity is None
+    assert ScriptedProvider.calls[0].detect_people_for_proximity is False
+
+
+async def test_vehicle_registered_requests_proximity_bboxes(
+    app_session: AsyncSession, sample_clip_path: Path
+) -> None:
+    camera, clip = await _make_camera_and_clip(app_session, sample_clip_path)
+    await _make_vehicle(app_session, camera)
+    ScriptedProvider.queued = [make_result()]
+    await run_analysis(
+        app_session, clip, camera, make_settings(tier2_enabled=False), get_settings().encryption_key
+    )
+    assert ScriptedProvider.calls[0].detect_people_for_proximity is True
+
+
+async def test_close_person_breaches_the_threshold(
+    app_session: AsyncSession, sample_clip_path: Path
+) -> None:
+    camera, clip = await _make_camera_and_clip(app_session, sample_clip_path)
+    await _make_vehicle(app_session, camera)
+    close_bbox = (0.71, 0.55 - PERSON_HEIGHT, 0.02, PERSON_HEIGHT)
+    ScriptedProvider.queued = [
+        make_result(
+            entities=[
+                DetectedEntityResult(
+                    type="person", confidence=0.9, label="someone", bbox=close_bbox
+                )
+            ]
+        )
+    ]
+    analysis = await run_analysis(
+        app_session, clip, camera, make_settings(tier2_enabled=False), get_settings().encryption_key
+    )
+
+    assert analysis.vehicle_proximity is not None
+    assert analysis.vehicle_proximity["breached_threshold"] is True
+    assert analysis.vehicle_proximity["distance_feet"] < 2.0
+
+    proximity_events = (await app_session.execute(select(ProximityEvent))).scalars().all()
+    assert len(proximity_events) == 1
+    assert proximity_events[0].clip_id == clip.id
+
+    breach_event = (
+        await app_session.execute(
+            select(Event).where(
+                Event.clip_id == clip.id, Event.event_type == "vehicle_proximity_breach"
+            )
+        )
+    ).scalar_one()
+    assert breach_event.analysis_id == analysis.id
+
+
+async def test_far_person_at_the_same_depth_does_not_breach(
+    app_session: AsyncSession, sample_clip_path: Path
+) -> None:
+    camera, clip = await _make_camera_and_clip(app_session, sample_clip_path)
+    await _make_vehicle(app_session, camera)
+    far_bbox = (0.04, 0.55 - PERSON_HEIGHT, 0.02, PERSON_HEIGHT)
+    ScriptedProvider.queued = [
+        make_result(
+            entities=[
+                DetectedEntityResult(type="person", confidence=0.9, label="someone", bbox=far_bbox)
+            ]
+        )
+    ]
+    analysis = await run_analysis(
+        app_session, clip, camera, make_settings(tier2_enabled=False), get_settings().encryption_key
+    )
+
+    assert analysis.vehicle_proximity is not None
+    assert analysis.vehicle_proximity["breached_threshold"] is False
+
+    proximity_events = (await app_session.execute(select(ProximityEvent))).scalars().all()
+    assert proximity_events == []
+
+
+async def test_person_at_a_different_depth_yields_no_proximity_estimate(
+    app_session: AsyncSession, sample_clip_path: Path
+) -> None:
+    camera, clip = await _make_camera_and_clip(app_session, sample_clip_path)
+    await _make_vehicle(app_session, camera)
+    # Much shorter than an average adult would measure at the vehicle's
+    # depth -> plausibly far behind it, not physically nearby.
+    distant_bbox = (0.49, 0.47, 0.02, 0.03)
+    ScriptedProvider.queued = [
+        make_result(
+            entities=[
+                DetectedEntityResult(
+                    type="person", confidence=0.9, label="someone", bbox=distant_bbox
+                )
+            ]
+        )
+    ]
+    analysis = await run_analysis(
+        app_session, clip, camera, make_settings(tier2_enabled=False), get_settings().encryption_key
+    )
+    assert analysis.vehicle_proximity is None
+
+
+async def test_picks_the_closest_of_multiple_people(
+    app_session: AsyncSession, sample_clip_path: Path
+) -> None:
+    camera, clip = await _make_camera_and_clip(app_session, sample_clip_path)
+    await _make_vehicle(app_session, camera)
+    close_bbox = (0.71, 0.55 - PERSON_HEIGHT, 0.02, PERSON_HEIGHT)
+    far_bbox = (0.04, 0.55 - PERSON_HEIGHT, 0.02, PERSON_HEIGHT)
+    ScriptedProvider.queued = [
+        make_result(
+            entities=[
+                DetectedEntityResult(type="person", confidence=0.9, label="far one", bbox=far_bbox),
+                DetectedEntityResult(
+                    type="person", confidence=0.9, label="close one", bbox=close_bbox
+                ),
+            ]
+        )
+    ]
+    analysis = await run_analysis(
+        app_session, clip, camera, make_settings(tier2_enabled=False), get_settings().encryption_key
+    )
+    assert analysis.vehicle_proximity is not None
+    assert analysis.vehicle_proximity["breached_threshold"] is True
+
+
+async def test_disabled_vehicle_is_treated_as_unregistered(
+    app_session: AsyncSession, sample_clip_path: Path
+) -> None:
+    camera, clip = await _make_camera_and_clip(app_session, sample_clip_path)
+    await _make_vehicle(app_session, camera, enabled=False)
+    ScriptedProvider.queued = [make_result()]
+    analysis = await run_analysis(
+        app_session, clip, camera, make_settings(tier2_enabled=False), get_settings().encryption_key
+    )
+    assert analysis.vehicle_proximity is None
+    assert ScriptedProvider.calls[0].detect_people_for_proximity is False
+
+
+async def test_vehicle_with_incomplete_outline_is_treated_as_unregistered(
+    app_session: AsyncSession, sample_clip_path: Path
+) -> None:
+    camera, clip = await _make_camera_and_clip(app_session, sample_clip_path)
+    await _make_vehicle(app_session, camera, outline_points=[[0.3, 0.4], [0.7, 0.4]])
+    ScriptedProvider.queued = [make_result()]
+    analysis = await run_analysis(
+        app_session, clip, camera, make_settings(tier2_enabled=False), get_settings().encryption_key
+    )
+    assert analysis.vehicle_proximity is None
+    assert ScriptedProvider.calls[0].detect_people_for_proximity is False
+
+
+async def test_no_people_detected_leaves_proximity_null(
+    app_session: AsyncSession, sample_clip_path: Path
+) -> None:
+    camera, clip = await _make_camera_and_clip(app_session, sample_clip_path)
+    await _make_vehicle(app_session, camera)
+    ScriptedProvider.queued = [make_result(entities=[])]
+    analysis = await run_analysis(
+        app_session, clip, camera, make_settings(tier2_enabled=False), get_settings().encryption_key
+    )
+    assert analysis.vehicle_proximity is None

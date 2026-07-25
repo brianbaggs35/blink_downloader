@@ -17,6 +17,13 @@ logger = get_logger(__name__)
 PROBE_TIMEOUT_SECONDS = 20
 THUMBNAIL_TIMEOUT_SECONDS = 20
 THUMBNAIL_OFFSET_SECONDS = "00:00:01"
+THUMBNAIL_MAX_WIDTH = 320
+
+REFERENCE_FRAME_TIMEOUT_SECONDS = 20
+REFERENCE_FRAME_OFFSET_SECONDS = "00:00:01"
+REFERENCE_FRAME_MAX_DIMENSION = 1024
+"""Higher-res than a library thumbnail: a household member draws a vehicle
+outline over this frame, so it needs to be clear enough to trace by hand."""
 
 KEYFRAME_TIMEOUT_SECONDS = 30
 KEYFRAME_MAX_DIMENSION = 768
@@ -76,13 +83,19 @@ async def probe_duration_seconds(path: Path) -> float | None:
         return None
 
 
-async def generate_thumbnail(source: Path, destination: Path) -> bool:
-    """Write a JPEG thumbnail from ``source`` to ``destination``.
-
-    Returns ``False`` (rather than raising) for an unreadable/corrupt source
-    clip, matching :func:`probe_duration_seconds`'s policy — a bad thumbnail
-    should never block a clip from being downloadable.
-    """
+async def _capture_frame_to_file(
+    source: Path,
+    destination: Path,
+    *,
+    offset_seconds: str,
+    scale_filter: str,
+    quality: str,
+    timeout_seconds: float,
+    log_event: str,
+) -> bool:
+    """Shared implementation behind :func:`generate_thumbnail` and
+    :func:`capture_reference_frame`: grab one frame to a file, never
+    raising for an unreadable/corrupt source (returns ``False`` instead)."""
     # Must still end in .jpg: ffmpeg's muxer is picked from the output
     # filename's extension, and a bare ".tmp" suffix defeats that.
     tmp_destination = destination.with_name(f"{destination.stem}.tmp{destination.suffix}")
@@ -90,15 +103,15 @@ async def generate_thumbnail(source: Path, destination: Path) -> bool:
         "ffmpeg",
         "-y",
         "-ss",
-        THUMBNAIL_OFFSET_SECONDS,
+        offset_seconds,
         "-i",
         str(source),
         "-frames:v",
         "1",
         "-vf",
-        "scale=320:-1",
+        scale_filter,
         "-q:v",
-        "4",
+        quality,
         "-f",
         "image2",
         str(tmp_destination),
@@ -107,23 +120,52 @@ async def generate_thumbnail(source: Path, destination: Path) -> bool:
         proc = await asyncio.create_subprocess_exec(
             *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
-        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=THUMBNAIL_TIMEOUT_SECONDS)
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
     except (TimeoutError, OSError) as exc:
-        logger.warning("ffmpeg.thumbnail_failed", file=source.name, error=str(exc))
+        logger.warning(log_event, file=source.name, error=str(exc))
         tmp_destination.unlink(missing_ok=True)
         return False
 
     if proc.returncode != 0 or not tmp_destination.exists():
-        logger.warning(
-            "ffmpeg.thumbnail_failed",
-            file=source.name,
-            stderr=stderr.decode(errors="replace"),
-        )
+        logger.warning(log_event, file=source.name, stderr=stderr.decode(errors="replace"))
         tmp_destination.unlink(missing_ok=True)
         return False
 
     tmp_destination.replace(destination)
     return True
+
+
+async def generate_thumbnail(source: Path, destination: Path) -> bool:
+    """Write a JPEG thumbnail from ``source`` to ``destination``.
+
+    Returns ``False`` (rather than raising) for an unreadable/corrupt source
+    clip, matching :func:`probe_duration_seconds`'s policy — a bad thumbnail
+    should never block a clip from being downloadable.
+    """
+    return await _capture_frame_to_file(
+        source,
+        destination,
+        offset_seconds=THUMBNAIL_OFFSET_SECONDS,
+        scale_filter=f"scale={THUMBNAIL_MAX_WIDTH}:-1",
+        quality="4",
+        timeout_seconds=THUMBNAIL_TIMEOUT_SECONDS,
+        log_event="ffmpeg.thumbnail_failed",
+    )
+
+
+async def capture_reference_frame(source: Path, destination: Path) -> bool:
+    """Write a higher-resolution JPEG frame from ``source`` for a household
+    member to draw a vehicle outline over. Same never-raises contract as
+    :func:`generate_thumbnail`."""
+    return await _capture_frame_to_file(
+        source,
+        destination,
+        offset_seconds=REFERENCE_FRAME_OFFSET_SECONDS,
+        scale_filter=f"scale='min({REFERENCE_FRAME_MAX_DIMENSION},iw)':-2",
+        quality="3",
+        timeout_seconds=REFERENCE_FRAME_TIMEOUT_SECONDS,
+        log_event="ffmpeg.reference_frame_failed",
+    )
 
 
 async def extract_keyframes(source: Path, count: int) -> list[bytes]:
