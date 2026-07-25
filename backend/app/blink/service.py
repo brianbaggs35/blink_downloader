@@ -9,6 +9,7 @@ handled by :mod:`app.blink.linker`.
 
 # blinkpy ships no type stubs (no py.typed marker); every value that
 # round-trips through it comes back Unknown to the type checker.
+# pyright: reportMissingTypeStubs=false
 # pyright: reportUnknownMemberType=false
 # pyright: reportUnknownArgumentType=false
 # pyright: reportUnknownVariableType=false

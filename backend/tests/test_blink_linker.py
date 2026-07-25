@@ -4,6 +4,15 @@ Fakes stand in for blinkpy's ``Auth`` (patched at the name imported into
 ``app.blink.linker``) — no real network involved.
 """
 
+# White-box: reaches into BlinkLinker's private pending-session dict, and
+# FakeAuth structurally (not nominally) stands in for blinkpy's untyped Auth.
+# pytest calls autouse fixtures implicitly; pyright can't see that usage.
+# blinkpy ships no type stubs (no py.typed marker).
+# pyright: reportPrivateUsage=false
+# pyright: reportArgumentType=false
+# pyright: reportUnusedFunction=false
+# pyright: reportMissingTypeStubs=false
+
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any, ClassVar
