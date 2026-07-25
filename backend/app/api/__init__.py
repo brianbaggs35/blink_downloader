@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app.api.ai_stats import router as ai_stats_router
 from app.api.alerts import router as alerts_router
+from app.api.biometrics import router as biometrics_router
 from app.api.blink import router as blink_router
 from app.api.cameras import router as cameras_router
 from app.api.clips import router as clips_router
@@ -25,6 +26,7 @@ api_router.include_router(
     fastapi_users.get_users_router(UserRead, UserUpdate), prefix="/users", tags=["users"]
 )
 api_router.include_router(users_admin_router)
+api_router.include_router(biometrics_router)
 api_router.include_router(blink_router)
 api_router.include_router(cameras_router)
 api_router.include_router(clips_router)

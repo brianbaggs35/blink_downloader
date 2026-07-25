@@ -55,6 +55,11 @@ class DetectedEntityResult:
     confidence: float
     label: str
     bbox: tuple[float, float, float, float] | None = None  # normalized x, y, w, h
+    recognized_person_id: str | None = None
+    """Set locally, after the VLM call, when this entity's label was
+    upgraded from generic to an enrolled person's name (see
+    app.ai.pipeline._upgrade_person_labels). The VLM itself never sets or
+    sees this - it has no concept of enrolled people."""
 
 
 @dataclass

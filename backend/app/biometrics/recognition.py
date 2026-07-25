@@ -70,6 +70,13 @@ _engines: dict[tuple[ModelPack, tuple[str, ...]], FaceAnalysis] = {}
 _engines_lock = threading.Lock()
 
 
+def available_providers() -> list[str]:
+    """What onnxruntime actually reports as usable in this process - shown
+    in Settings so an admin can tell whether "auto" would pick CUDA before
+    they choose it."""
+    return list(onnxruntime.get_available_providers())
+
+
 def resolve_providers(preference: ExecutionProviderPreference) -> list[str]:
     """"auto" uses CUDA when onnxruntime reports it available in this
     process, else falls back to CPU. GPU is never assumed - onnxruntime-gpu
