@@ -31,6 +31,9 @@ class Settings(BaseSettings):
 
     storage_dir: Path = Path("/data/clips")
 
+    blink_sync_interval_seconds: int = 30
+    blink_initial_sync_days: int = 3
+
     log_level: str = "INFO"
     log_json: bool | None = None
 

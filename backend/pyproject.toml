@@ -20,6 +20,7 @@ dependencies = [
     "redis>=5.2,<6",
     "cryptography>=49.0.0",
     "structlog>=26.1.0",
+    "blinkpy>=0.25.9",
 ]
 
 [dependency-groups]
