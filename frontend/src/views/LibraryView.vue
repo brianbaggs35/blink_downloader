@@ -8,7 +8,7 @@ import Skeleton from "primevue/skeleton";
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
 import { computed, onMounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 
 import {
   ApiError,
@@ -29,6 +29,7 @@ import type { CameraRead, ClipRead } from "@/api";
 
 const PAGE_SIZE = 24;
 
+const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 const blink = useBlinkStore();
@@ -49,7 +50,11 @@ const total = ref(0);
 const page = ref(1);
 const loading = ref(true);
 
-const cameraFilter = ref<string | null>(null);
+// Lets links from elsewhere (e.g. the Vehicles overview's "View clips from
+// this camera") land here pre-filtered, instead of always opening blank.
+const cameraFilter = ref<string | null>(
+  typeof route.query.camera_id === "string" ? route.query.camera_id : null,
+);
 const sinceFilter = ref<Date | null>(null);
 const untilFilter = ref<Date | null>(null);
 const filtersActive = computed(

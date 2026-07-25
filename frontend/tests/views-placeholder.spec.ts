@@ -4,13 +4,11 @@ import { describe, expect, it } from "vitest";
 import BiometricsView from "@/views/BiometricsView.vue";
 import LiveView from "@/views/LiveView.vue";
 import StorageView from "@/views/StorageView.vue";
-import VehiclesView from "@/views/VehiclesView.vue";
 import { makePinia, mountGlobal } from "./helpers";
 
 const cases = [
   { component: LiveView, title: "Live View", icon: "pi-video" },
   { component: StorageView, title: "Storage", icon: "pi-database" },
-  { component: VehiclesView, title: "Vehicles", icon: "pi-car" },
   { component: BiometricsView, title: "Biometrics", icon: "pi-id-card" },
 ] as const;
 
