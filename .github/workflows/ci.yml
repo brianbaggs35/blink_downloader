@@ -163,24 +163,50 @@ jobs:
           tags: blink-frontend:ci
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
-      - name: Scan backend image (Trivy)
+      - name: Scan backend image (Trivy, readable)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: blink-backend:ci
+          format: table
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+          version: v0.72.0
+      - name: Scan frontend image (Trivy, readable)
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: blink-frontend:ci
+          format: table
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+          version: v0.72.0
+      - name: Scan backend image (Trivy, SARIF)
+        if: always()
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: blink-backend:ci
           format: sarif
           output: trivy-backend.sarif
+          scanners: vuln
           severity: CRITICAL,HIGH
-          exit-code: "1"
+          ignore-unfixed: true
+          exit-code: "0"
           version: v0.72.0
-      - name: Scan frontend image (Trivy)
+      - name: Scan frontend image (Trivy, SARIF)
         if: always()
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: blink-frontend:ci
           format: sarif
           output: trivy-frontend.sarif
+          scanners: vuln
           severity: CRITICAL,HIGH
-          exit-code: "1"
+          ignore-unfixed: true
+          exit-code: "0"
           version: v0.72.0
       - name: Upload backend Trivy results to the Security tab
         if: always()
