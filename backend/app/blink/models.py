@@ -37,7 +37,7 @@ class BlinkAccount(Base):
     status: Mapped[BlinkAccountStatus] = mapped_column(
         _str_enum(BlinkAccountStatus, "blink_account_status", length=20),
         default=BlinkAccountStatus.ACTIVE,
-        server_default=BlinkAccountStatus.ACTIVE.value,
+        server_default=BlinkAccountStatus.ACTIVE.name,
     )
     last_sync: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(Text)
@@ -101,7 +101,7 @@ class Clip(Base):
     storage_backend: Mapped[StorageBackend] = mapped_column(
         _str_enum(StorageBackend, "clip_storage_backend", length=20),
         default=StorageBackend.LOCAL,
-        server_default=StorageBackend.LOCAL.value,
+        server_default=StorageBackend.LOCAL.name,
     )
     storage_path: Mapped[str | None] = mapped_column(Text)
     filename: Mapped[str | None] = mapped_column(Text)
