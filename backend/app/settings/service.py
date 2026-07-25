@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
@@ -19,15 +18,11 @@ async def get_app_settings(session: AsyncSession) -> AppSettings:
 
 
 async def set_storage_dir(session: AsyncSession, storage_dir: str | None) -> AppSettings:
-    stmt = (
-        insert(AppSettings)
-        .values(id=SINGLETON_ID, storage_dir=storage_dir)
-        .on_conflict_do_update(index_elements=[AppSettings.id], set_={"storage_dir": storage_dir})
-        .returning(AppSettings)
-    )
-    result = await session.execute(stmt)
+    row = await get_app_settings(session)
+    row.storage_dir = storage_dir
     await session.commit()
-    return result.scalar_one()
+    await session.refresh(row)
+    return row
 
 
 async def resolve_storage_dir(session: AsyncSession, settings: Settings) -> Path:

@@ -25,6 +25,7 @@ from httpx import ASGITransport, AsyncClient
 from pydantic_settings import SettingsConfigDict
 from redis.asyncio import Redis
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.main import create_app
@@ -60,11 +61,14 @@ def app() -> FastAPI:
     return create_app()
 
 
+TEST_TABLES = "access_tokens, users, blink_accounts, app_settings"
+
+
 @pytest.fixture
 async def client(app: FastAPI) -> AsyncIterator[AsyncClient]:
     async with LifespanManager(app):
         async with app.state.sessionmaker() as session:
-            await session.execute(text("TRUNCATE TABLE access_tokens, users CASCADE"))
+            await session.execute(text(f"TRUNCATE TABLE {TEST_TABLES} CASCADE"))
             await session.commit()
         await app.state.redis.flushdb()
         transport = ASGITransport(app=app)
@@ -78,6 +82,17 @@ async def redis() -> AsyncIterator[Redis]:
     await r.flushdb()
     yield r
     await r.aclose()
+
+
+@pytest.fixture
+async def app_session(app: FastAPI) -> AsyncIterator[AsyncSession]:
+    """A bare DB session for service-layer tests that don't need the HTTP app."""
+    async with LifespanManager(app):
+        async with app.state.sessionmaker() as session:
+            await session.execute(text(f"TRUNCATE TABLE {TEST_TABLES} CASCADE"))
+            await session.commit()
+        async with app.state.sessionmaker() as session:
+            yield session
 
 
 @pytest.fixture

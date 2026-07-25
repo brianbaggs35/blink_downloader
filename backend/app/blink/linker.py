@@ -8,6 +8,13 @@ keyed by a short-lived session id, until the code arrives or the window
 expires.
 """
 
+# blinkpy ships no type stubs (no py.typed marker); every value that
+# round-trips through it comes back Unknown to the type checker.
+# pyright: reportMissingTypeStubs=false
+# pyright: reportUnknownMemberType=false
+# pyright: reportUnknownArgumentType=false
+# pyright: reportUnknownVariableType=false
+
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta

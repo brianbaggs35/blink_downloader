@@ -6,8 +6,11 @@ and error-mapping logic without depending on blinkpy's internals or any real
 network call.
 """
 
+# pytest calls autouse fixtures implicitly; pyright can't see that usage.
+# pyright: reportUnusedFunction=false
+
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, ClassVar
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -46,7 +49,7 @@ class FakeCamera:
 
 
 class FakeAuth:
-    instances: list["FakeAuth"] = []
+    instances: ClassVar[list[FakeAuth]] = []
 
     def __init__(self, login_data: dict[str, Any] | None = None, **_kwargs: Any) -> None:
         self.login_data = login_data or {}
@@ -64,7 +67,7 @@ class FakeAuth:
 
 
 class FakeBlink:
-    instances: list["FakeBlink"] = []
+    instances: ClassVar[list[FakeBlink]] = []
 
     def __init__(self, session: Any = None) -> None:
         self.session = session
