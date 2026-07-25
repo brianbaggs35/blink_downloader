@@ -9,12 +9,14 @@ by the feedback/baseline-learning task — the seam is here, the data source
 isn't yet.
 """
 
+import io
 import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import update
+from PIL import Image
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,6 +40,8 @@ from app.ai.providers import (
 from app.blink.models import Camera, Clip
 from app.logs import get_logger
 from app.security.crypto import SecretBox
+from app.vehicles.geometry import ProximityEstimate, estimate_proximity
+from app.vehicles.models import ProximityEvent, Vehicle
 from app.video.ffmpeg import extract_keyframes
 
 logger = get_logger(__name__)
@@ -84,11 +88,13 @@ async def run_analysis(
     if not keyframes:
         raise AnalysisSkippedError("Could not extract any keyframes from this clip.")
 
+    vehicle = await _get_enabled_vehicle(session, camera.id)
     base_request = AnalysisRequest(
         images=keyframes,
         camera_context=camera.security_context,
         baseline_context=baseline_context,
         feedback_examples=list(feedback_examples or []),
+        detect_people_for_proximity=vehicle is not None,
     )
 
     usage_rows: list[AIUsage] = []
@@ -113,6 +119,7 @@ async def run_analysis(
                 camera_context=camera.security_context,
                 baseline_context=baseline_context,
                 feedback_examples=list(feedback_examples or []),
+                detect_people_for_proximity=vehicle is not None,
                 prior_tier_summary=(
                     f"{tier1_result.summary} "
                     f"(preliminary suspicion: {tier1_result.suspicion_score:.2f})"
@@ -128,6 +135,10 @@ async def run_analysis(
     label = suspicion_label_for(final_result.suspicion_score)
     await _supersede_current_analysis(session, clip.id)
 
+    proximity = None
+    if vehicle is not None:
+        proximity = _closest_proximity(vehicle, final_result.entities, keyframes[0])
+
     analysis = Analysis(
         clip_id=clip.id,
         summary=final_result.summary,
@@ -140,9 +151,22 @@ async def run_analysis(
         tier2_provider=settings.tier2_provider if escalated else None,
         tier2_model=settings.tier2_model if escalated else None,
         detected_entities=[_entity_to_dict(e) for e in final_result.entities],
+        vehicle_proximity=(
+            {
+                "vehicle_id": str(vehicle.id),
+                "distance_feet": proximity.distance_feet,
+                "error_margin_feet": proximity.error_margin_feet,
+                "breached_threshold": proximity.breached,
+            }
+            if vehicle is not None and proximity is not None
+            else None
+        ),
     )
     session.add(analysis)
     await session.flush()
+
+    if vehicle is not None and proximity is not None and proximity.breached:
+        await _record_proximity_breach(session, vehicle, clip, analysis.id, proximity)
 
     # Every ai_usage row for this run (success or failure) is created with
     # analysis_id=None — the Analysis row didn't exist yet, and setting a
@@ -284,3 +308,81 @@ async def _write_events(
             )
         )
         await session.execute(stmt)
+
+
+async def _get_enabled_vehicle(session: AsyncSession, camera_id: uuid.UUID) -> Vehicle | None:
+    stmt = select(Vehicle).where(Vehicle.camera_id == camera_id, Vehicle.enabled.is_(True))
+    vehicle = (await session.execute(stmt)).scalar_one_or_none()
+    if vehicle is not None and len(vehicle.outline_points) < 3:
+        return None  # registered but not yet drawn — nothing to measure against
+    return vehicle
+
+
+def _closest_proximity(
+    vehicle: Vehicle, entities: list[DetectedEntityResult], reference_keyframe: bytes
+) -> ProximityEstimate | None:
+    people = [e for e in entities if e.type == "person" and e.bbox is not None]
+    if not people:
+        return None
+    with Image.open(io.BytesIO(reference_keyframe)) as image:
+        frame_width, frame_height = image.size
+
+    estimates = (
+        estimate_proximity(
+            vehicle_outline=[(x, y) for x, y in vehicle.outline_points],
+            vehicle_length_feet=vehicle.estimated_length_feet,
+            distance_threshold_feet=vehicle.distance_threshold_feet,
+            person_bbox=person.bbox,  # type: ignore[arg-type]
+            frame_width=frame_width,
+            frame_height=frame_height,
+        )
+        for person in people
+    )
+    valid = [e for e in estimates if e is not None]
+    if not valid:
+        return None
+    return min(valid, key=lambda e: e.distance_feet)
+
+
+async def _record_proximity_breach(
+    session: AsyncSession,
+    vehicle: Vehicle,
+    clip: Clip,
+    analysis_id: uuid.UUID,
+    proximity: ProximityEstimate,
+) -> None:
+    session.add(
+        ProximityEvent(
+            vehicle_id=vehicle.id,
+            clip_id=clip.id,
+            distance_feet=proximity.distance_feet,
+            error_margin_feet=proximity.error_margin_feet,
+            occurred_at=clip.recorded_at,
+        )
+    )
+    metadata = {
+        "distance_feet": proximity.distance_feet,
+        "error_margin_feet": proximity.error_margin_feet,
+        "vehicle_id": str(vehicle.id),
+    }
+    stmt = (
+        insert(Event)
+        .values(
+            clip_id=clip.id,
+            analysis_id=analysis_id,
+            camera_id=vehicle.camera_id,
+            event_type=EventType.VEHICLE_PROXIMITY_BREACH,
+            confidence=1.0,
+            event_metadata=metadata,
+            occurred_at=clip.recorded_at,
+        )
+        .on_conflict_do_update(
+            index_elements=[Event.clip_id, Event.event_type],
+            set_={
+                "analysis_id": analysis_id,
+                "event_metadata": metadata,
+                "occurred_at": clip.recorded_at,
+            },
+        )
+    )
+    await session.execute(stmt)

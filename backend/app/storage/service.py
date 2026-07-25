@@ -20,6 +20,8 @@ class ClipStorage(Protocol):
 
     def thumbnail_path(self, camera_id: uuid.UUID, clip_id: uuid.UUID) -> Path: ...
 
+    def vehicle_reference_path(self, camera_id: uuid.UUID) -> Path: ...
+
     async def write(self, path: Path, data: bytes) -> int:
         """Write ``data`` to ``path`` atomically. Returns the byte count."""
         ...
@@ -40,6 +42,9 @@ class LocalClipStorage:
 
     def thumbnail_path(self, camera_id: uuid.UUID, clip_id: uuid.UUID) -> Path:
         return self.root / str(camera_id) / f"{clip_id}.jpg"
+
+    def vehicle_reference_path(self, camera_id: uuid.UUID) -> Path:
+        return self.root / str(camera_id) / "vehicle-reference.jpg"
 
     async def write(self, path: Path, data: bytes) -> int:
         return await asyncio.to_thread(self._write_sync, path, data)
