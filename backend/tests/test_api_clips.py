@@ -220,6 +220,94 @@ async def test_get_analysis_returns_the_current_analysis(
     assert body["tier1_model"] == "gpt-5-nano"
 
 
+# --------------------------------------------------------------- feedback
+
+
+async def _analyzed_clip(app: FastAPI, camera: Camera, *, suspicion_score: float = 0.8) -> Clip:
+    clip = await _make_clip(app, camera)
+    async with app.state.sessionmaker() as session:
+        analysis = Analysis(
+            clip_id=clip.id,
+            summary="Someone lingers by the door.",
+            suspicion_score=suspicion_score,
+            suspicion_label=SuspicionLabel.SUSPICIOUS,
+            tier=AnalysisTier.TIER1,
+            detected_entities=[
+                {"type": "person", "label": "someone", "confidence": 0.9, "bbox": None}
+            ],
+        )
+        session.add(analysis)
+        await session.commit()
+    return clip
+
+
+async def test_feedback_requires_authentication(client: AsyncClient) -> None:
+    response = await client.post(f"/api/clips/{uuid.uuid4()}/feedback", json={"verdict": "correct"})
+    assert response.status_code == 401
+
+
+async def test_feedback_404_when_not_yet_analyzed(admin_client: AsyncClient, app: FastAPI) -> None:
+    camera = await _make_camera(app)
+    clip = await _make_clip(app, camera)
+    response = await admin_client.post(
+        f"/api/clips/{clip.id}/feedback", json={"verdict": "correct"}
+    )
+    assert response.status_code == 404
+
+
+async def test_feedback_submission_succeeds(
+    admin_client: AsyncClient, admin: dict[str, str], app: FastAPI
+) -> None:
+    camera = await _make_camera(app)
+    clip = await _analyzed_clip(app, camera)
+    response = await admin_client.post(
+        f"/api/clips/{clip.id}/feedback",
+        json={"verdict": "false_positive", "note": "just a delivery"},
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["verdict"] == "false_positive"
+    assert body["note"] == "just a delivery"
+    assert body["applied"] is True
+    assert body["user_id"] == admin["id"]
+
+
+async def test_feedback_rejects_invalid_verdict(admin_client: AsyncClient, app: FastAPI) -> None:
+    camera = await _make_camera(app)
+    clip = await _analyzed_clip(app, camera)
+    response = await admin_client.post(
+        f"/api/clips/{clip.id}/feedback", json={"verdict": "not-a-real-verdict"}
+    )
+    assert response.status_code == 422
+
+
+async def test_list_feedback_returns_all_submissions_newest_first(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    camera = await _make_camera(app)
+    clip = await _analyzed_clip(app, camera)
+    await admin_client.post(f"/api/clips/{clip.id}/feedback", json={"verdict": "correct"})
+    await admin_client.post(f"/api/clips/{clip.id}/feedback", json={"verdict": "false_positive"})
+
+    response = await admin_client.get(f"/api/clips/{clip.id}/feedback")
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 2
+    assert body[0]["verdict"] == "false_positive"  # most recent first
+
+
+async def test_viewer_can_submit_and_list_feedback(
+    viewer_client: AsyncClient, app: FastAPI
+) -> None:
+    camera = await _make_camera(app)
+    clip = await _analyzed_clip(app, camera)
+    response = await viewer_client.post(
+        f"/api/clips/{clip.id}/feedback", json={"verdict": "correct"}
+    )
+    assert response.status_code == 201
+    assert (await viewer_client.get(f"/api/clips/{clip.id}/feedback")).status_code == 200
+
+
 # ------------------------------------------------------------------- stream
 
 

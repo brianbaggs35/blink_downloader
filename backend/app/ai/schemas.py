@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from app.ai.models import AIProviderKind, AnalysisTier, SuspicionLabel
+from app.ai.models import AIProviderKind, AnalysisTier, FeedbackVerdict, SuspicionLabel
 
 
 class AISettingsRead(BaseModel):
@@ -81,6 +81,23 @@ class AnalysisRead(BaseModel):
     tier2_model: str | None
     detected_entities: list[DetectedEntityRead]
     vehicle_proximity: dict[str, Any] | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class FeedbackCreate(BaseModel):
+    verdict: FeedbackVerdict
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class FeedbackRead(BaseModel):
+    id: uuid.UUID
+    analysis_id: uuid.UUID
+    user_id: uuid.UUID
+    verdict: FeedbackVerdict
+    note: str | None
+    applied: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -14,10 +14,12 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.models import AIProviderKind
-from app.ai.providers import AnalysisRequest, AnalysisResult
+from app.ai.learning import update_baseline
+from app.ai.models import AIProviderKind, CameraBaseline
+from app.ai.providers import AnalysisRequest, AnalysisResult, DetectedEntityResult
 from app.ai.schemas import AISettingsUpdate
 from app.ai.service import get_ai_settings, update_ai_settings
 from app.blink.models import BlinkAccount, Camera, Clip
@@ -28,12 +30,13 @@ from app.worker.tasks.analyze import analyze_clip
 
 class ScriptedProvider:
     queued: ClassVar[list[AnalysisResult]] = []
+    calls: ClassVar[list[AnalysisRequest]] = []
 
     def __init__(self, model: str, api_key: str | None, base_url: str | None) -> None:
         del model, api_key, base_url
 
     async def analyze(self, request: AnalysisRequest) -> AnalysisResult:
-        del request
+        ScriptedProvider.calls.append(request)
         return ScriptedProvider.queued.pop(0)
 
     async def test_connection(self) -> None:  # pragma: no cover — unused here
@@ -49,6 +52,7 @@ def _fake_build_provider(
 @pytest.fixture(autouse=True)
 def _reset_scripted_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     ScriptedProvider.queued = []
+    ScriptedProvider.calls = []
     monkeypatch.setattr("app.ai.pipeline.build_provider", _fake_build_provider)
 
 
@@ -180,3 +184,78 @@ async def test_successful_analysis_returns_ok(
     async with worker_ctx["sessionmaker"]() as session:
         settings = await get_ai_settings(session)
         assert settings.enabled is True  # sanity: settings persisted across sessions
+
+
+async def test_successful_analysis_updates_the_camera_baseline(
+    worker_ctx: dict[str, Any], sample_clip_path: Path
+) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        camera, clip = await _make_camera_and_clip(session, sample_clip_path)
+        camera_id, clip_id, recorded_hour = camera.id, clip.id, clip.recorded_at.hour
+        await update_ai_settings(
+            session,
+            AISettingsUpdate(
+                enabled=True,
+                tier1_provider=AIProviderKind.OPENAI,
+                tier1_model="gpt-5-nano",
+                tier2_enabled=False,
+            ),
+            get_settings().encryption_key,
+        )
+
+    ScriptedProvider.queued = [
+        AnalysisResult(
+            summary="A person walks by.",
+            suspicion_score=0.1,
+            entities=[DetectedEntityResult(type="person", confidence=0.9, label="someone")],
+            input_tokens=50,
+            output_tokens=10,
+        )
+    ]
+    result = await analyze_clip(worker_ctx, str(clip_id))
+    assert result == "ok"
+
+    async with worker_ctx["sessionmaker"]() as session:
+        baseline = (
+            await session.execute(
+                select(CameraBaseline).where(CameraBaseline.camera_id == camera_id)
+            )
+        ).scalar_one()
+        assert baseline.hourly_entity_counts == {str(recorded_hour): {"person": 1}}
+        assert baseline.total_observations == 1
+
+
+async def test_analysis_is_conditioned_on_existing_baseline_and_feedback(
+    worker_ctx: dict[str, Any], sample_clip_path: Path
+) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        camera, clip = await _make_camera_and_clip(session, sample_clip_path)
+        clip_id = clip.id
+        await update_baseline(session, camera.id, clip.recorded_at, ["person", "person", "person"])
+        await session.commit()
+        await update_ai_settings(
+            session,
+            AISettingsUpdate(
+                enabled=True,
+                tier1_provider=AIProviderKind.OPENAI,
+                tier1_model="gpt-5-nano",
+                tier2_enabled=False,
+            ),
+            get_settings().encryption_key,
+        )
+
+    ScriptedProvider.queued = [
+        AnalysisResult(
+            summary="A person walks by.",
+            suspicion_score=0.1,
+            entities=[],
+            input_tokens=50,
+            output_tokens=10,
+        )
+    ]
+    result = await analyze_clip(worker_ctx, str(clip_id))
+    assert result == "ok"
+
+    assert len(ScriptedProvider.calls) == 1
+    assert ScriptedProvider.calls[0].baseline_context is not None
+    assert "person" in ScriptedProvider.calls[0].baseline_context
