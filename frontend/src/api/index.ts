@@ -48,6 +48,18 @@ export type AiUsageResponse = components["schemas"]["AiUsageResponse"];
 
 export type UserCreate = components["schemas"]["UserCreate"];
 
+export type ModelPack = components["schemas"]["ModelPack"];
+export type ExecutionProviderPreference = components["schemas"]["ExecutionProviderPreference"];
+export type BiometricsSettingsRead = components["schemas"]["BiometricsSettingsRead"];
+export type BiometricsSettingsUpdate = components["schemas"]["BiometricsSettingsUpdate"];
+export type PersonRead = components["schemas"]["PersonRead"];
+export type PersonCreate = components["schemas"]["PersonCreate"];
+export type PersonUpdate = components["schemas"]["PersonUpdate"];
+export type FaceEmbeddingRead = components["schemas"]["FaceEmbeddingRead"];
+export type DetectedFaceRead = components["schemas"]["DetectedFaceRead"];
+export type EnrollFaceRequest = components["schemas"]["EnrollFaceRequest"];
+export type RecognizedPersonRead = components["schemas"]["RecognizedPersonRead"];
+
 export { ApiError } from "./client";
 
 export function getHealth(): Promise<HealthReport> {
@@ -130,6 +142,7 @@ export type ClipListParams = {
   since?: string;
   until?: string;
   downloaded_only?: boolean;
+  recognized_person_id?: string;
   page?: number;
   page_size?: number;
 };
@@ -315,4 +328,72 @@ export function listUsers(): Promise<UserRead[]> {
 
 export function createUser(body: UserCreate): Promise<UserRead> {
   return api<UserRead>("/users", { json: body });
+}
+
+// -------------------------------------------------------------- Biometrics
+
+export function getBiometricsSettings(): Promise<BiometricsSettingsRead> {
+  return api<BiometricsSettingsRead>("/biometrics/settings");
+}
+
+export function updateBiometricsSettings(
+  body: BiometricsSettingsUpdate,
+): Promise<BiometricsSettingsRead> {
+  return api<BiometricsSettingsRead>("/biometrics/settings", { method: "PUT", json: body });
+}
+
+export function listPeople(): Promise<PersonRead[]> {
+  return api<PersonRead[]>("/biometrics/people");
+}
+
+export function getPerson(personId: string): Promise<PersonRead> {
+  return api<PersonRead>(`/biometrics/people/${personId}`);
+}
+
+export function createPerson(body: PersonCreate): Promise<PersonRead> {
+  return api<PersonRead>("/biometrics/people", { json: body });
+}
+
+export function updatePerson(personId: string, body: PersonUpdate): Promise<PersonRead> {
+  return api<PersonRead>(`/biometrics/people/${personId}`, { method: "PUT", json: body });
+}
+
+export function deletePerson(personId: string): Promise<void> {
+  return api<void>(`/biometrics/people/${personId}`, { method: "DELETE" });
+}
+
+export function personThumbnailUrl(personId: string): string {
+  return `/api/biometrics/people/${personId}/thumbnail`;
+}
+
+export function listPersonFaces(personId: string): Promise<FaceEmbeddingRead[]> {
+  return api<FaceEmbeddingRead[]>(`/biometrics/people/${personId}/faces`);
+}
+
+export function faceThumbnailUrl(personId: string, faceId: string): string {
+  return `/api/biometrics/people/${personId}/faces/${faceId}/thumbnail`;
+}
+
+export function deleteFace(personId: string, faceId: string): Promise<void> {
+  return api<void>(`/biometrics/people/${personId}/faces/${faceId}`, { method: "DELETE" });
+}
+
+export function clipFrameUrl(clipId: string, frameSeconds: number): string {
+  return `/api/biometrics/clips/${clipId}/frame?frame_seconds=${frameSeconds}`;
+}
+
+export function detectFacesInClipFrame(
+  clipId: string,
+  frameSeconds: number,
+): Promise<DetectedFaceRead[]> {
+  return api<DetectedFaceRead[]>(
+    `/biometrics/clips/${clipId}/detect-faces${queryString({ frame_seconds: frameSeconds })}`,
+  );
+}
+
+export function enrollFace(
+  personId: string,
+  body: EnrollFaceRequest,
+): Promise<FaceEmbeddingRead> {
+  return api<FaceEmbeddingRead>(`/biometrics/people/${personId}/enroll`, { json: body });
 }
