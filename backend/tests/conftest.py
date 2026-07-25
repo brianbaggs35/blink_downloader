@@ -62,7 +62,10 @@ def app() -> FastAPI:
     return create_app()
 
 
-TEST_TABLES = "access_tokens, users, blink_accounts, app_settings, ai_settings, alert_settings"
+TEST_TABLES = (
+    "access_tokens, users, blink_accounts, app_settings, ai_settings, alert_settings, "
+    "people, biometrics_settings"
+)
 
 
 @pytest.fixture
