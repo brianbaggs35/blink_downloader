@@ -16,6 +16,7 @@ from app.ai.pipeline import AnalysisSkippedError, run_analysis
 from app.ai.service import get_ai_settings
 from app.alerts.models import AlertSettings
 from app.alerts.service import get_alert_settings
+from app.biometrics.service import get_biometrics_settings
 from app.blink.models import Camera, Clip
 from app.config import get_settings
 from app.logs import get_logger
@@ -47,6 +48,7 @@ async def analyze_clip(ctx: dict[Any, Any], clip_id: str) -> str:
         feedback_examples = await feedback_examples_for(
             session, camera.id, ai_settings.feedback_context_count
         )
+        biometrics_settings = await get_biometrics_settings(session)
         try:
             analysis = await run_analysis(
                 session,
@@ -56,6 +58,8 @@ async def analyze_clip(ctx: dict[Any, Any], clip_id: str) -> str:
                 settings.encryption_key,
                 baseline_context=baseline_context,
                 feedback_examples=feedback_examples,
+                biometrics_settings=biometrics_settings,
+                biometrics_model_cache_dir=settings.biometrics_model_cache_dir,
             )
         except AnalysisSkippedError as exc:
             logger.info("ai.analyze_skipped", clip_id=clip_id, reason=str(exc))

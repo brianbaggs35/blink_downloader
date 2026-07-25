@@ -8,8 +8,14 @@ test_worker_download.py's "genuinely exercised" philosophy.
 
 # pytest calls autouse fixtures implicitly; pyright can't see that usage.
 # pyright: reportUnusedFunction=false
+# White-box: _bbox_overlap_ratio/_upgrade_person_labels are exercised
+# directly for edge cases a full run_analysis integration test can't reach
+# naturally — same policy as test_ai_providers.py's _parse_entities.
+# pyright: reportPrivateUsage=false
 
 import asyncio
+import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import ClassVar
@@ -19,8 +25,23 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.models import AIProviderKind, AISettings, AIUsage, Analysis, AnalysisTier, Event
-from app.ai.pipeline import AnalysisSkippedError, run_analysis, suspicion_label_for
+from app.ai.pipeline import (
+    AnalysisSkippedError,
+    _bbox_overlap_ratio,
+    _upgrade_person_labels,
+    run_analysis,
+    suspicion_label_for,
+)
 from app.ai.providers import AIProviderError, AnalysisRequest, AnalysisResult, DetectedEntityResult
+from app.biometrics.models import (
+    BiometricsSettings,
+    ExecutionProviderPreference,
+    FaceEmbedding,
+    ModelPack,
+    Person,
+    RecognizedFace,
+)
+from app.biometrics.recognition import DetectedFace, FaceMatch
 from app.blink.models import BlinkAccount, Camera, Clip
 from app.config import get_settings
 from app.security.crypto import SecretBox
@@ -183,6 +204,51 @@ def make_settings(
         tier2_suspicion_threshold=tier2_suspicion_threshold,
         keyframes_per_clip=keyframes_per_clip,
     )
+
+
+def _embedding(index: int) -> list[float]:
+    """A 512-dim unit vector along axis `index` - exactly orthogonal to any
+    other _embedding(other_index), so match scores are exact."""
+    vec = [0.0] * 512
+    vec[index] = 1.0
+    return vec
+
+
+def make_biometrics_settings(*, enabled: bool = True) -> BiometricsSettings:
+    return BiometricsSettings(
+        enabled=enabled,
+        model_pack=ModelPack.BUFFALO_SC,
+        execution_provider_preference=ExecutionProviderPreference.CPU,
+        recognition_threshold=0.4,
+    )
+
+
+async def _enroll_test_person(session: AsyncSession, name: str, index: int) -> Person:
+    person = Person(name=name)
+    session.add(person)
+    await session.flush()
+    session.add(
+        FaceEmbedding(person_id=person.id, embedding=_embedding(index), thumbnail_path="x.jpg")
+    )
+    await session.commit()
+    return person
+
+
+def _fake_detect_faces(faces: list[DetectedFace]) -> Callable[..., list[DetectedFace]]:
+    """A stand-in for app.ai.pipeline's imported detect_faces that ignores
+    whatever it's called with and always returns ``faces``."""
+
+    def fake(*_args: object, **_kwargs: object) -> list[DetectedFace]:
+        return faces
+
+    return fake
+
+
+def _unreachable_detect_faces(*_args: object, **_kwargs: object) -> list[DetectedFace]:
+    raise AssertionError("detect_faces should not be called when biometrics is disabled")
+
+
+BIOMETRICS_CACHE_DIR = Path("/fake/insightface/cache")
 
 
 def test_suspicion_label_thresholds() -> None:
@@ -695,3 +761,243 @@ async def test_no_people_detected_leaves_proximity_null(
         app_session, clip, camera, make_settings(tier2_enabled=False), get_settings().encryption_key
     )
     assert analysis.vehicle_proximity is None
+
+
+# --------------------------------------------------------- face recognition
+#
+# Face detection itself is faked at app.ai.pipeline's imported name (real
+# insightface would trigger a model download); matching against enrolled
+# people runs for real against the test database, same split as
+# test_biometrics_service.py.
+
+
+async def _recognized_faces(session: AsyncSession, clip_id: uuid.UUID) -> list[RecognizedFace]:
+    stmt = select(RecognizedFace).where(RecognizedFace.clip_id == clip_id)
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def test_recognized_person_upgrades_matching_entity_label(
+    app_session: AsyncSession, sample_clip_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    camera, clip = await _make_camera_and_clip(app_session, sample_clip_path)
+    alex = await _enroll_test_person(app_session, "Alex", 0)
+    person_bbox = (0.2, 0.2, 0.3, 0.5)
+    ScriptedProvider.queued = [
+        make_result(
+            suspicion=0.1,
+            entities=[
+                DetectedEntityResult(
+                    type="person", confidence=0.9, label="a person", bbox=person_bbox
+                )
+            ],
+        )
+    ]
+    face_bbox = (0.25, 0.25, 0.1, 0.15)  # fully inside person_bbox
+    face = DetectedFace(bbox=face_bbox, confidence=0.95, embedding=_embedding(0))
+    monkeypatch.setattr("app.ai.pipeline.detect_faces", _fake_detect_faces([face]))
+
+    analysis = await run_analysis(
+        app_session,
+        clip,
+        camera,
+        make_settings(tier2_enabled=False),
+        get_settings().encryption_key,
+        biometrics_settings=make_biometrics_settings(),
+        biometrics_model_cache_dir=BIOMETRICS_CACHE_DIR,
+    )
+
+    assert analysis.detected_entities[0]["label"] == "Alex"
+    recognized = await _recognized_faces(app_session, clip.id)
+    assert len(recognized) == 1
+    assert recognized[0].person_id == alex.id
+    assert recognized[0].analysis_id == analysis.id
+    assert recognized[0].confidence == pytest.approx(1.0)
+
+
+async def test_recognized_person_with_no_overlapping_entity_is_not_labeled(
+    app_session: AsyncSession, sample_clip_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    camera, clip = await _make_camera_and_clip(app_session, sample_clip_path)
+    alex = await _enroll_test_person(app_session, "Alex", 1)
+    ScriptedProvider.queued = [
+        make_result(
+            suspicion=0.1,
+            entities=[
+                DetectedEntityResult(
+                    type="person", confidence=0.9, label="a person", bbox=(0.6, 0.6, 0.1, 0.1)
+                )
+            ],
+        )
+    ]
+    far_face = DetectedFace(bbox=(0.0, 0.0, 0.1, 0.1), confidence=0.9, embedding=_embedding(1))
+    monkeypatch.setattr("app.ai.pipeline.detect_faces", _fake_detect_faces([far_face]))
+
+    analysis = await run_analysis(
+        app_session,
+        clip,
+        camera,
+        make_settings(tier2_enabled=False),
+        get_settings().encryption_key,
+        biometrics_settings=make_biometrics_settings(),
+        biometrics_model_cache_dir=BIOMETRICS_CACHE_DIR,
+    )
+
+    assert analysis.detected_entities[0]["label"] == "a person"
+    recognized = await _recognized_faces(app_session, clip.id)
+    assert len(recognized) == 1
+    assert recognized[0].person_id == alex.id
+
+
+async def test_recognized_person_with_no_person_entities_at_all(
+    app_session: AsyncSession, sample_clip_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    camera, clip = await _make_camera_and_clip(app_session, sample_clip_path)
+    alex = await _enroll_test_person(app_session, "Alex", 0)
+    ScriptedProvider.queued = [make_result(suspicion=0.1, entities=[])]
+    face = DetectedFace(bbox=(0.25, 0.25, 0.1, 0.15), confidence=0.9, embedding=_embedding(0))
+    monkeypatch.setattr("app.ai.pipeline.detect_faces", _fake_detect_faces([face]))
+
+    await run_analysis(
+        app_session,
+        clip,
+        camera,
+        make_settings(tier2_enabled=False),
+        get_settings().encryption_key,
+        biometrics_settings=make_biometrics_settings(),
+        biometrics_model_cache_dir=BIOMETRICS_CACHE_DIR,
+    )
+
+    recognized = await _recognized_faces(app_session, clip.id)
+    assert len(recognized) == 1
+    assert recognized[0].person_id == alex.id
+
+
+async def test_no_faces_detected_creates_no_recognized_face_rows(
+    app_session: AsyncSession, sample_clip_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    camera, clip = await _make_camera_and_clip(app_session, sample_clip_path)
+    ScriptedProvider.queued = [make_result(suspicion=0.1)]
+    monkeypatch.setattr("app.ai.pipeline.detect_faces", _fake_detect_faces([]))
+
+    await run_analysis(
+        app_session,
+        clip,
+        camera,
+        make_settings(tier2_enabled=False),
+        get_settings().encryption_key,
+        biometrics_settings=make_biometrics_settings(),
+        biometrics_model_cache_dir=BIOMETRICS_CACHE_DIR,
+    )
+
+    assert await _recognized_faces(app_session, clip.id) == []
+
+
+async def test_unmatched_face_creates_no_recognized_face_row(
+    app_session: AsyncSession, sample_clip_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    camera, clip = await _make_camera_and_clip(app_session, sample_clip_path)
+    await _enroll_test_person(app_session, "Alex", 0)
+    ScriptedProvider.queued = [make_result(suspicion=0.1)]
+    stranger = DetectedFace(bbox=(0.1, 0.1, 0.1, 0.1), confidence=0.9, embedding=_embedding(99))
+    monkeypatch.setattr("app.ai.pipeline.detect_faces", _fake_detect_faces([stranger]))
+
+    await run_analysis(
+        app_session,
+        clip,
+        camera,
+        make_settings(tier2_enabled=False),
+        get_settings().encryption_key,
+        biometrics_settings=make_biometrics_settings(),
+        biometrics_model_cache_dir=BIOMETRICS_CACHE_DIR,
+    )
+
+    assert await _recognized_faces(app_session, clip.id) == []
+
+
+async def test_biometrics_disabled_skips_detection_entirely(
+    app_session: AsyncSession, sample_clip_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    camera, clip = await _make_camera_and_clip(app_session, sample_clip_path)
+    ScriptedProvider.queued = [make_result(suspicion=0.1)]
+    monkeypatch.setattr("app.ai.pipeline.detect_faces", _unreachable_detect_faces)
+
+    await run_analysis(
+        app_session,
+        clip,
+        camera,
+        make_settings(tier2_enabled=False),
+        get_settings().encryption_key,
+        biometrics_settings=make_biometrics_settings(enabled=False),
+        biometrics_model_cache_dir=BIOMETRICS_CACHE_DIR,
+    )
+    # No AssertionError from _unreachable_detect_faces means it was never called.
+
+
+async def test_biometrics_settings_omitted_skips_detection_entirely(
+    app_session: AsyncSession, sample_clip_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    camera, clip = await _make_camera_and_clip(app_session, sample_clip_path)
+    ScriptedProvider.queued = [make_result(suspicion=0.1)]
+    monkeypatch.setattr("app.ai.pipeline.detect_faces", _unreachable_detect_faces)
+
+    await run_analysis(
+        app_session, clip, camera, make_settings(tier2_enabled=False), get_settings().encryption_key
+    )
+    # No AssertionError from _unreachable_detect_faces means it was never called.
+
+
+async def test_reanalyze_updates_existing_recognized_face_row(
+    app_session: AsyncSession, sample_clip_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    camera, clip = await _make_camera_and_clip(app_session, sample_clip_path)
+    alex = await _enroll_test_person(app_session, "Alex", 0)
+    face = DetectedFace(bbox=(0.25, 0.25, 0.1, 0.15), confidence=0.8, embedding=_embedding(0))
+    monkeypatch.setattr("app.ai.pipeline.detect_faces", _fake_detect_faces([face]))
+    ScriptedProvider.queued = [make_result(suspicion=0.1), make_result(suspicion=0.1)]
+
+    first = await run_analysis(
+        app_session,
+        clip,
+        camera,
+        make_settings(tier2_enabled=False),
+        get_settings().encryption_key,
+        biometrics_settings=make_biometrics_settings(),
+        biometrics_model_cache_dir=BIOMETRICS_CACHE_DIR,
+    )
+    second = await run_analysis(
+        app_session,
+        clip,
+        camera,
+        make_settings(tier2_enabled=False),
+        get_settings().encryption_key,
+        biometrics_settings=make_biometrics_settings(),
+        biometrics_model_cache_dir=BIOMETRICS_CACHE_DIR,
+    )
+
+    assert first.id != second.id
+    recognized = await _recognized_faces(app_session, clip.id)
+    assert len(recognized) == 1  # updated, not duplicated
+    assert recognized[0].analysis_id == second.id
+    assert recognized[0].person_id == alex.id
+
+
+def test_bbox_overlap_ratio_zero_area_face_is_zero_not_a_division_error() -> None:
+    assert _bbox_overlap_ratio((0.5, 0.5, 0.0, 0.0), (0.0, 0.0, 1.0, 1.0)) == 0.0
+
+
+def test_upgrade_person_labels_skips_a_match_with_no_resolved_name() -> None:
+    """Guards a person deleted between the match query and the name lookup
+    - narrow, but a real race in a live system, not a hypothetical one."""
+    entities = [
+        DetectedEntityResult(
+            type="person", confidence=0.9, label="a person", bbox=(0.2, 0.2, 0.3, 0.5)
+        )
+    ]
+    face = DetectedFace(bbox=(0.25, 0.25, 0.1, 0.15), confidence=0.9, embedding=_embedding(0))
+    vanished_person_id = uuid.uuid4()
+
+    _upgrade_person_labels(
+        entities, [(face, FaceMatch(person_id=vanished_person_id, score=1.0))], {}
+    )
+
+    assert entities[0].label == "a person"

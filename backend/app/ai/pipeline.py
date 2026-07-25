@@ -9,6 +9,7 @@ by the feedback/baseline-learning task — the seam is here, the data source
 isn't yet.
 """
 
+import asyncio
 import io
 import time
 import uuid
@@ -37,6 +38,9 @@ from app.ai.providers import (
     DetectedEntityResult,
     build_provider,
 )
+from app.biometrics.models import BiometricsSettings, Person, RecognizedFace
+from app.biometrics.recognition import DetectedFace, FaceMatch, detect_faces
+from app.biometrics.service import match_faces
 from app.blink.models import Camera, Clip
 from app.logs import get_logger
 from app.security.crypto import SecretBox
@@ -48,6 +52,13 @@ logger = get_logger(__name__)
 
 SUSPICIOUS_THRESHOLD = 0.6
 UNCERTAIN_THRESHOLD = 0.3
+
+_FACE_TO_PERSON_OVERLAP_THRESHOLD = 0.5
+"""Fraction of a recognized face's bbox that must fall inside a VLM-detected
+"person" entity's bbox before that entity's label is upgraded to the
+recognized name. Deliberately not a symmetric IoU: a face is naturally a
+small fraction of a whole-body box, so IoU would stay low even for a
+correct nested match — this measures containment instead."""
 
 _ENTITY_EVENT_TYPES = {
     "person": EventType.PERSON_DETECTED,
@@ -78,6 +89,8 @@ async def run_analysis(
     *,
     baseline_context: str | None = None,
     feedback_examples: list[str] | None = None,
+    biometrics_settings: BiometricsSettings | None = None,
+    biometrics_model_cache_dir: Path | None = None,
 ) -> Analysis:
     if not clip.storage_path:
         raise AnalysisSkippedError("Clip has not been downloaded yet.")
@@ -132,6 +145,20 @@ async def run_analysis(
             if tier2_result is not None:
                 final_result, final_tier, escalated = tier2_result, AnalysisTier.TIER2, True
 
+    recognized_scores: dict[uuid.UUID, float] = {}
+    if (
+        biometrics_settings is not None
+        and biometrics_model_cache_dir is not None
+        and biometrics_settings.enabled
+    ):
+        recognized_scores = await _recognize_and_label(
+            session,
+            keyframes,
+            final_result.entities,
+            biometrics_settings,
+            biometrics_model_cache_dir,
+        )
+
     label = suspicion_label_for(final_result.suspicion_score)
     await _supersede_current_analysis(session, clip.id)
 
@@ -167,6 +194,9 @@ async def run_analysis(
 
     if vehicle is not None and proximity is not None and proximity.breached:
         await _record_proximity_breach(session, vehicle, clip, analysis.id, proximity)
+
+    if recognized_scores:
+        await _upsert_recognized_faces(session, clip.id, analysis.id, recognized_scores)
 
     # Every ai_usage row for this run (success or failure) is created with
     # analysis_id=None — the Analysis row didn't exist yet, and setting a
@@ -386,3 +416,116 @@ async def _record_proximity_breach(
         )
     )
     await session.execute(stmt)
+
+
+async def _recognize_and_label(
+    session: AsyncSession,
+    keyframes: list[bytes],
+    entities: list[DetectedEntityResult],
+    biometrics_settings: BiometricsSettings,
+    model_cache_dir: Path,
+) -> dict[uuid.UUID, float]:
+    """Runs local face detection + matching against every keyframe and, for
+    any match found in the first keyframe, upgrades the corresponding
+    "person" entity's generic label to the recognized name in place
+    (entities from keyframes[0] onward is the same frame _closest_proximity
+    already interprets bboxes against).
+
+    Never sends a face image, embedding, or name to the VLM - the VLM call
+    already happened before this runs, on the same generic keyframes as
+    always. Returns the best match score per recognized person, for the
+    caller to persist as RecognizedFace rows once an Analysis row exists.
+    """
+    best_score: dict[uuid.UUID, float] = {}
+    first_frame_matches: list[tuple[DetectedFace, FaceMatch]] = []
+
+    for index, frame in enumerate(keyframes):
+        faces = await asyncio.to_thread(
+            detect_faces,
+            frame,
+            model_pack=biometrics_settings.model_pack,
+            provider_preference=biometrics_settings.execution_provider_preference,
+            model_cache_dir=model_cache_dir,
+        )
+        if not faces:
+            continue
+        matches = await match_faces(session, faces, biometrics_settings.recognition_threshold)
+        for face, match in zip(faces, matches, strict=True):
+            if match is None:
+                continue
+            if index == 0:
+                first_frame_matches.append((face, match))
+            if match.person_id not in best_score or match.score > best_score[match.person_id]:
+                best_score[match.person_id] = match.score
+
+    if first_frame_matches:
+        names = await _person_names(session, {match.person_id for _, match in first_frame_matches})
+        _upgrade_person_labels(entities, first_frame_matches, names)
+
+    return best_score
+
+
+async def _person_names(session: AsyncSession, person_ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:
+    stmt = select(Person.id, Person.name).where(Person.id.in_(person_ids))
+    return {row.id: row.name for row in await session.execute(stmt)}
+
+
+def _bbox_overlap_ratio(
+    face_bbox: tuple[float, float, float, float], person_bbox: tuple[float, float, float, float]
+) -> float:
+    """What fraction of ``face_bbox`` falls inside ``person_bbox``. 1.0
+    means fully contained; see _FACE_TO_PERSON_OVERLAP_THRESHOLD for why
+    this isn't a symmetric IoU."""
+    fx, fy, fw, fh = face_bbox
+    px, py, pw, ph = person_bbox
+    ix1, iy1 = max(fx, px), max(fy, py)
+    ix2, iy2 = min(fx + fw, px + pw), min(fy + fh, py + ph)
+    intersection = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+    face_area = fw * fh
+    if face_area <= 0:
+        return 0.0
+    return intersection / face_area
+
+
+def _upgrade_person_labels(
+    entities: list[DetectedEntityResult],
+    face_matches: list[tuple[DetectedFace, FaceMatch]],
+    names_by_person_id: dict[uuid.UUID, str],
+) -> None:
+    person_entities = [e for e in entities if e.type == "person" and e.bbox is not None]
+    if not person_entities:
+        return
+    for face, match in face_matches:
+        name = names_by_person_id.get(match.person_id)
+        if name is None:
+            continue
+        overlaps = [
+            (entity, _bbox_overlap_ratio(face.bbox, entity.bbox))  # type: ignore[arg-type]
+            for entity in person_entities
+        ]
+        best_entity, best_overlap = max(overlaps, key=lambda pair: pair[1])
+        if best_overlap >= _FACE_TO_PERSON_OVERLAP_THRESHOLD:
+            best_entity.label = name
+
+
+async def _upsert_recognized_faces(
+    session: AsyncSession,
+    clip_id: uuid.UUID,
+    analysis_id: uuid.UUID,
+    best_score: dict[uuid.UUID, float],
+) -> None:
+    for person_id, score in best_score.items():
+        stmt = (
+            insert(RecognizedFace)
+            .values(
+                clip_id=clip_id,
+                analysis_id=analysis_id,
+                person_id=person_id,
+                confidence=score,
+            )
+            .on_conflict_do_update(
+                index_elements=[RecognizedFace.clip_id, RecognizedFace.person_id],
+                set_={"analysis_id": analysis_id, "confidence": score},
+            )
+        )
+        await session.execute(stmt)
