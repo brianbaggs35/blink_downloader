@@ -15,6 +15,7 @@ const baseClip: ClipRead = {
   downloaded_at: "2026-07-20T18:31:00Z",
   deleted_on_blink: false,
   thumbnail_generated: true,
+  recognized_people: [],
 };
 
 function mountCard(overrides: Partial<ClipRead> = {}, selected = false, selectable = true) {
@@ -88,5 +89,22 @@ describe("ClipCard", () => {
     const wrapper = mountCard({}, false, false);
     expect(wrapper.find(".checkbox-overlay").exists()).toBe(false);
     expect(wrapper.findComponent({ name: "Checkbox" }).exists()).toBe(false);
+  });
+
+  it("omits the recognized badge when nobody was recognized", () => {
+    const wrapper = mountCard();
+    expect(wrapper.find('[data-testid="recognized-badge"]').exists()).toBe(false);
+  });
+
+  it("shows a recognized badge with a count and name tooltip", () => {
+    const wrapper = mountCard({
+      recognized_people: [
+        { id: "p-1", name: "Alex" },
+        { id: "p-2", name: "Sam" },
+      ],
+    });
+    const badge = wrapper.find('[data-testid="recognized-badge"]');
+    expect(badge.text()).toContain("2");
+    expect(badge.attributes("title")).toBe("Recognized: Alex, Sam");
   });
 });

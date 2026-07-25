@@ -38,6 +38,7 @@ const clip: ClipRead = {
   downloaded_at: "2026-07-20T18:31:00Z",
   deleted_on_blink: false,
   thumbnail_generated: true,
+  recognized_people: [],
 };
 
 const otherClip: ClipRead = { ...clip, id: "clip-2" };

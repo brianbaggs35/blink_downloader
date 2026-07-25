@@ -18,6 +18,7 @@ import {
   downloadClipsAsZip,
   listCameras,
   listClips,
+  listPeople,
 } from "@/api";
 import ClipCard from "@/components/ClipCard.vue";
 import ClipDetailModal from "@/components/ClipDetailModal.vue";
@@ -26,7 +27,7 @@ import PageHeader from "@/components/PageHeader.vue";
 import { useAuthStore } from "@/stores/auth";
 import { useBlinkStore } from "@/stores/blink";
 
-import type { CameraRead, ClipRead } from "@/api";
+import type { CameraRead, ClipRead, PersonRead } from "@/api";
 
 const PAGE_SIZE = 24;
 
@@ -46,6 +47,8 @@ const cameraNameById = computed(() => {
   return map;
 });
 
+const people = ref<PersonRead[]>([]);
+
 const clips = ref<ClipRead[]>([]);
 const total = ref(0);
 const page = ref(1);
@@ -58,8 +61,13 @@ const cameraFilter = ref<string | null>(
 );
 const sinceFilter = ref<Date | null>(null);
 const untilFilter = ref<Date | null>(null);
+const recognizedPersonFilter = ref<string | null>(null);
 const filtersActive = computed(
-  () => cameraFilter.value !== null || sinceFilter.value !== null || untilFilter.value !== null,
+  () =>
+    cameraFilter.value !== null ||
+    sinceFilter.value !== null ||
+    untilFilter.value !== null ||
+    recognizedPersonFilter.value !== null,
 );
 
 const selected = ref<Set<string>>(new Set());
@@ -77,6 +85,14 @@ async function loadCameras(): Promise<void> {
   }
 }
 
+async function loadPeople(): Promise<void> {
+  try {
+    people.value = await listPeople();
+  } catch {
+    people.value = [];
+  }
+}
+
 async function loadClips(): Promise<void> {
   loading.value = true;
   try {
@@ -84,6 +100,7 @@ async function loadClips(): Promise<void> {
       camera_id: cameraFilter.value ?? undefined,
       since: sinceFilter.value?.toISOString(),
       until: untilFilter.value?.toISOString(),
+      recognized_person_id: recognizedPersonFilter.value ?? undefined,
       page: page.value,
       page_size: PAGE_SIZE,
     });
@@ -112,7 +129,7 @@ async function loadInitial(): Promise<void> {
     return;
   }
   if (blink.isLinked) {
-    await Promise.all([loadCameras(), loadClips()]);
+    await Promise.all([loadCameras(), loadPeople(), loadClips()]);
   } else {
     loading.value = false;
   }
@@ -122,7 +139,7 @@ onMounted(() => {
   void loadInitial();
 });
 
-watch([cameraFilter, sinceFilter, untilFilter], () => {
+watch([cameraFilter, sinceFilter, untilFilter, recognizedPersonFilter], () => {
   page.value = 1;
   selected.value = new Set();
   void loadClips();
@@ -137,6 +154,7 @@ function clearFilters(): void {
   cameraFilter.value = null;
   sinceFilter.value = null;
   untilFilter.value = null;
+  recognizedPersonFilter.value = null;
 }
 
 function toggleSelected(clipId: string, value: boolean): void {
@@ -327,6 +345,16 @@ async function performSingleDelete(clip: ClipRead): Promise<void> {
             show-icon
             show-button-bar
             data-testid="until-filter"
+          />
+          <Select
+            v-if="people.length > 0"
+            v-model="recognizedPersonFilter"
+            :options="people"
+            option-label="name"
+            option-value="id"
+            placeholder="Anyone recognized"
+            show-clear
+            data-testid="recognized-person-filter"
           />
           <Button
             v-if="filtersActive"
