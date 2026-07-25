@@ -29,6 +29,21 @@ def test_clip_path_and_thumbnail_path_are_namespaced_by_camera(
     )
 
 
+def test_person_and_face_sample_paths_are_namespaced_by_person(
+    storage: LocalClipStorage,
+) -> None:
+    person_id = uuid.uuid4()
+    embedding_id = uuid.uuid4()
+    assert (
+        storage.person_thumbnail_path(person_id)
+        == storage.root / "people" / str(person_id) / "profile.jpg"
+    )
+    assert (
+        storage.face_sample_path(person_id, embedding_id)
+        == storage.root / "people" / str(person_id) / "samples" / f"{embedding_id}.jpg"
+    )
+
+
 async def test_write_creates_parent_dirs_and_persists_bytes(storage: LocalClipStorage) -> None:
     path = storage.clip_path(uuid.uuid4(), uuid.uuid4())
     size = await storage.write(path, b"clip-bytes")

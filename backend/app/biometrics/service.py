@@ -1,0 +1,222 @@
+"""People/face CRUD, clip-frame enrollment, and match lookups for the local
+face-recognition pipeline.
+
+Nothing here (or in app.biometrics.recognition) ever makes a network call —
+see app.biometrics.models's module docstring for why that matters. Settings
+values that come from app.config (e.g. the model cache directory) are
+resolved by callers and passed in explicitly, the same layering as
+app.vehicles.service/app.storage.service.
+"""
+
+import asyncio
+import uuid
+from collections.abc import Sequence
+from pathlib import Path
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.biometrics.models import SINGLETON_ID, BiometricsSettings, FaceEmbedding, Person
+from app.biometrics.recognition import (
+    DetectedFace,
+    FaceMatch,
+    best_match,
+    crop_face_thumbnail,
+    detect_faces,
+)
+from app.biometrics.schemas import BiometricsSettingsUpdate
+from app.blink.models import Clip
+from app.storage.service import ClipStorage
+from app.video.ffmpeg import extract_biometrics_frame
+
+_BBOX_MATCH_TOLERANCE = 0.05
+"""Max per-coordinate drift allowed between the bbox a client echoes back
+from a preview response and what re-detecting the same frame finds. Should
+be ~0 in practice (detection is deterministic on identical frame bytes) -
+this only guards the pathological case of the frame changing between
+preview and enroll (e.g. the clip file was replaced mid-flow)."""
+
+
+class ClipFrameError(Exception):
+    """No downloaded clip file to extract a frame from, or ffmpeg couldn't
+    extract one at the requested time."""
+
+
+class FaceNotFoundError(Exception):
+    """No freshly-detected face in the frame matches the bbox the caller
+    asked to enroll."""
+
+
+async def get_biometrics_settings(session: AsyncSession) -> BiometricsSettings:
+    row = await session.get(BiometricsSettings, SINGLETON_ID)
+    if row is None:
+        row = BiometricsSettings(id=SINGLETON_ID)
+        session.add(row)
+        await session.flush()
+    return row
+
+
+async def update_biometrics_settings(
+    session: AsyncSession, payload: BiometricsSettingsUpdate
+) -> BiometricsSettings:
+    row = await get_biometrics_settings(session)
+    row.enabled = payload.enabled
+    row.model_pack = payload.model_pack
+    row.execution_provider_preference = payload.execution_provider_preference
+    row.recognition_threshold = payload.recognition_threshold
+    await session.commit()
+    await session.refresh(row)
+    return row
+
+
+async def list_people(session: AsyncSession) -> Sequence[Person]:
+    stmt = select(Person).options(selectinload(Person.face_embeddings)).order_by(Person.name)
+    return (await session.execute(stmt)).scalars().all()
+
+
+async def get_person(session: AsyncSession, person_id: uuid.UUID) -> Person | None:
+    stmt = (
+        select(Person).where(Person.id == person_id).options(selectinload(Person.face_embeddings))
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def create_person(session: AsyncSession, name: str) -> Person:
+    person = Person(name=name)
+    session.add(person)
+    await session.commit()
+    await session.refresh(person, attribute_names=["face_embeddings"])
+    return person
+
+
+async def rename_person(session: AsyncSession, person: Person, name: str) -> Person:
+    person.name = name
+    await session.commit()
+    await session.refresh(person)
+    return person
+
+
+async def delete_person(session: AsyncSession, person: Person, storage: ClipStorage) -> None:
+    """Queries embedding ids fresh rather than trusting ``person.face_embeddings``
+    to be loaded/current - the DB rows cascade on their own, but the
+    thumbnail files on disk need explicit cleanup same as a vehicle's
+    reference frame, and a relationship collection populated earlier in a
+    longer-lived session can be stale by the time this runs."""
+    await storage.delete(storage.person_thumbnail_path(person.id))
+    stmt = select(FaceEmbedding.id).where(FaceEmbedding.person_id == person.id)
+    embedding_ids = (await session.execute(stmt)).scalars().all()
+    for embedding_id in embedding_ids:
+        await storage.delete(storage.face_sample_path(person.id, embedding_id))
+    await session.delete(person)
+    await session.commit()
+
+
+async def extract_clip_frame(
+    session: AsyncSession, clip_id: uuid.UUID, frame_seconds: float
+) -> bytes:
+    clip = await session.get(Clip, clip_id)
+    if clip is None or not clip.storage_path:
+        raise ClipFrameError("No downloaded clip file to extract a frame from.")
+    frame = await extract_biometrics_frame(Path(clip.storage_path), frame_seconds)
+    if frame is None:
+        raise ClipFrameError("Could not extract a frame at that time.")
+    return frame
+
+
+async def detect_faces_in_clip_frame(
+    session: AsyncSession,
+    clip_id: uuid.UUID,
+    frame_seconds: float,
+    biometrics_settings: BiometricsSettings,
+    model_cache_dir: Path,
+) -> list[DetectedFace]:
+    frame = await extract_clip_frame(session, clip_id, frame_seconds)
+    return await asyncio.to_thread(
+        detect_faces,
+        frame,
+        model_pack=biometrics_settings.model_pack,
+        provider_preference=biometrics_settings.execution_provider_preference,
+        model_cache_dir=model_cache_dir,
+    )
+
+
+def _bbox_distance(
+    a: tuple[float, float, float, float], b: tuple[float, float, float, float]
+) -> float:
+    return max(abs(x - y) for x, y in zip(a, b, strict=True))
+
+
+def _closest_face(
+    detected: Sequence[DetectedFace], bbox: tuple[float, float, float, float]
+) -> DetectedFace | None:
+    if not detected:
+        return None
+    closest = min(detected, key=lambda face: _bbox_distance(face.bbox, bbox))
+    if _bbox_distance(closest.bbox, bbox) > _BBOX_MATCH_TOLERANCE:
+        return None
+    return closest
+
+
+async def enroll_face(
+    session: AsyncSession,
+    storage: ClipStorage,
+    person: Person,
+    clip_id: uuid.UUID,
+    frame_seconds: float,
+    bbox: tuple[float, float, float, float],
+    biometrics_settings: BiometricsSettings,
+    model_cache_dir: Path,
+) -> FaceEmbedding:
+    """Re-extracts the frame and re-runs detection rather than trusting a
+    client-supplied embedding or cached detection result — the clip file is
+    the only source of truth, and raw feature vectors are never something
+    to accept from a client."""
+    frame = await extract_clip_frame(session, clip_id, frame_seconds)
+    detected = await asyncio.to_thread(
+        detect_faces,
+        frame,
+        model_pack=biometrics_settings.model_pack,
+        provider_preference=biometrics_settings.execution_provider_preference,
+        model_cache_dir=model_cache_dir,
+    )
+    face = _closest_face(detected, bbox)
+    if face is None:
+        raise FaceNotFoundError("No detected face matches that selection anymore.")
+
+    embedding_id = uuid.uuid4()
+    thumbnail = crop_face_thumbnail(frame, face.bbox)
+    thumbnail_path = storage.face_sample_path(person.id, embedding_id)
+    await storage.write(thumbnail_path, thumbnail)
+
+    embedding = FaceEmbedding(
+        id=embedding_id,
+        person_id=person.id,
+        embedding=face.embedding,
+        source_clip_id=clip_id,
+        source_frame_seconds=frame_seconds,
+        thumbnail_path=str(thumbnail_path),
+    )
+    session.add(embedding)
+
+    if not person.thumbnail_path:
+        profile_path = storage.person_thumbnail_path(person.id)
+        await storage.write(profile_path, thumbnail)
+        person.thumbnail_path = str(profile_path)
+
+    await session.commit()
+    await session.refresh(embedding)
+    return embedding
+
+
+async def match_faces(
+    session: AsyncSession, detected: Sequence[DetectedFace], threshold: float
+) -> list[FaceMatch | None]:
+    """One result per face in ``detected``, in order. Loads every enrolled
+    (non-negative) sample across every person - cheap at household scale,
+    see app.biometrics.recognition.best_match."""
+    stmt = select(FaceEmbedding.person_id, FaceEmbedding.embedding).where(
+        FaceEmbedding.is_negative.is_(False)
+    )
+    candidates = [(row.person_id, row.embedding) for row in await session.execute(stmt)]
+    return [best_match(face.embedding, candidates, threshold) for face in detected]
