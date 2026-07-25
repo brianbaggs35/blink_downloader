@@ -143,7 +143,49 @@ async def test_full_sync_upserts_camera_and_new_clip(worker_ctx: dict[str, Any])
         assert clip.blink_clip_id == "/media/clip1.mp4"
         assert clip.camera_id == camera.id
 
-    worker_ctx["redis"].enqueue_job.assert_any_call(DOWNLOAD_JOB_NAME, clip_id=str(clip.id))
+    worker_ctx["redis"].enqueue_job.assert_any_call(
+        DOWNLOAD_JOB_NAME, clip_id=str(clip.id), auto_analyze=True
+    )
+
+
+async def test_caps_auto_analysis_to_the_most_recent_clips_in_a_large_batch(
+    worker_ctx: dict[str, Any],
+) -> None:
+    """A first connection or a reconnect after an outage can turn up many new
+    clips in one sync — only the most recent blink_auto_analyze_limit should
+    auto-queue for AI analysis; the rest still download (auto_analyze=False)."""
+    async with worker_ctx["sessionmaker"]() as session:
+        await _make_account(session)
+
+    limit = get_settings().blink_auto_analyze_limit
+    total = limit + 2
+    FakeBlinkService.next_cameras = [_camera_info()]
+    FakeBlinkService.next_media = [
+        _media_item(
+            media_id=f"/media/clip{i}.mp4",
+            created_at=datetime(2026, 7, 20, tzinfo=UTC) + timedelta(minutes=i),
+        )
+        for i in range(total)
+    ]
+
+    result = await sync_blink_account(worker_ctx)
+    assert result == "ok"
+
+    async with worker_ctx["sessionmaker"]() as session:
+        clips = (await session.execute(select(Clip))).scalars().all()
+        assert len(clips) == total
+        newest_first = sorted(clips, key=lambda c: c.recorded_at, reverse=True)
+
+    calls = {
+        call.kwargs["clip_id"]: call.kwargs["auto_analyze"]
+        for call in worker_ctx["redis"].enqueue_job.await_args_list
+        if call.args and call.args[0] == DOWNLOAD_JOB_NAME
+    }
+    assert len(calls) == total
+    for clip in newest_first[:limit]:
+        assert calls[str(clip.id)] is True
+    for clip in newest_first[limit:]:
+        assert calls[str(clip.id)] is False
 
 
 async def test_token_data_is_rotated_and_reencrypted(worker_ctx: dict[str, Any]) -> None:

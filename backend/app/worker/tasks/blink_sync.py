@@ -73,7 +73,7 @@ async def _run_sync(session: AsyncSession, settings: Settings, ctx: dict[Any, An
         await service.close()
 
     cameras_by_name = await _upsert_cameras(session, account, cameras)
-    new_clip_ids = await _insert_new_clips(session, cameras_by_name, media_items)
+    new_clips = await _insert_new_clips(session, cameras_by_name, media_items)
 
     account.status = BlinkAccountStatus.ACTIVE
     account.last_error = None
@@ -81,16 +81,29 @@ async def _run_sync(session: AsyncSession, settings: Settings, ctx: dict[Any, An
     account.encrypted_token_data = box.encrypt(json.dumps(service.token_data))
     await session.commit()
 
-    for clip_id in new_clip_ids:
-        await ctx["redis"].enqueue_job(DOWNLOAD_JOB_NAME, clip_id=str(clip_id))
+    auto_analyze_ids = _select_auto_analyze_ids(new_clips, settings.blink_auto_analyze_limit)
+    for clip_id, _recorded_at in new_clips:
+        await ctx["redis"].enqueue_job(
+            DOWNLOAD_JOB_NAME, clip_id=str(clip_id), auto_analyze=clip_id in auto_analyze_ids
+        )
 
     logger.info(
         "blink.sync_completed",
         account_id=str(account.id),
         cameras=len(cameras),
-        new_clips=len(new_clip_ids),
+        new_clips=len(new_clips),
+        queued_for_analysis=len(auto_analyze_ids),
     )
     return "ok"
+
+
+def _select_auto_analyze_ids(new_clips: list[tuple[UUID, datetime]], limit: int) -> set[UUID]:
+    """The N most recently recorded clips from this sync, auto-queued for AI
+    analysis. Caps a first-connection or post-outage backlog from flooding
+    the analysis queue — everything still downloads, just not all of it gets
+    auto-analyzed. See Settings.blink_auto_analyze_limit."""
+    newest_first = sorted(new_clips, key=lambda pair: pair[1], reverse=True)
+    return {clip_id for clip_id, _recorded_at in newest_first[:limit]}
 
 
 async def _upsert_cameras(
@@ -131,8 +144,8 @@ async def _insert_new_clips(
     session: AsyncSession,
     cameras_by_name: dict[str, Camera],
     media_items: list[Any],
-) -> list[UUID]:
-    new_ids: list[UUID] = []
+) -> list[tuple[UUID, datetime]]:
+    new_clips: list[tuple[UUID, datetime]] = []
     for item in media_items:
         if item.deleted:
             continue
@@ -150,10 +163,10 @@ async def _insert_new_clips(
                 raw_metadata=item.raw,
             )
             .on_conflict_do_nothing(index_elements=[Clip.camera_id, Clip.blink_clip_id])
-            .returning(Clip.id)
+            .returning(Clip.id, Clip.recorded_at)
         )
         result = await session.execute(stmt)
         row = result.first()
         if row is not None:
-            new_ids.append(row[0])
-    return new_ids
+            new_clips.append((row[0], row[1]))
+    return new_clips

@@ -26,7 +26,7 @@ logger = get_logger(__name__)
 DOWNLOAD_JOB_NAME = "download_clip"
 
 
-async def download_clip(ctx: dict[Any, Any], clip_id: str) -> str:
+async def download_clip(ctx: dict[Any, Any], clip_id: str, auto_analyze: bool = True) -> str:
     settings = get_settings()
     sessionmaker: async_sessionmaker[AsyncSession] = ctx["sessionmaker"]
     async with sessionmaker() as session:
@@ -97,6 +97,9 @@ async def download_clip(ctx: dict[Any, Any], clip_id: str) -> str:
             logger.error("blink.metadata_probe_failed", clip_id=clip_id, error=str(exc))
         await session.commit()
 
-        await ctx["redis"].enqueue_job(ANALYZE_JOB_NAME, clip_id=clip_id)
-        logger.info("blink.download_completed", clip_id=clip_id, bytes=size)
+        if auto_analyze:
+            await ctx["redis"].enqueue_job(ANALYZE_JOB_NAME, clip_id=clip_id)
+        logger.info(
+            "blink.download_completed", clip_id=clip_id, bytes=size, auto_analyze=auto_analyze
+        )
         return "ok"
