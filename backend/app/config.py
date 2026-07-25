@@ -32,7 +32,18 @@ class Settings(BaseSettings):
     storage_dir: Path = Path("/data/clips")
 
     blink_sync_interval_seconds: int = 30
-    blink_initial_sync_days: int = 3
+    blink_initial_sync_days: int = 1
+    blink_auto_analyze_limit: int = 5
+    """Cap on how many clips a single sync run auto-queues for AI analysis.
+
+    A first-time connection or a reconnect after an outage can turn up many
+    new clips at once; auto-analyzing all of them would burn through AI
+    budget/rate limits on a backlog nobody asked to analyze. Only the N most
+    recent (by recorded_at) get auto-queued — the rest still download
+    normally and stay one click away via the clip modal's "Analyze now" or
+    bulk-analyze. A routine sync (a handful of new clips) is never affected
+    since it's already under the cap.
+    """
 
     log_level: str = "INFO"
     log_json: bool | None = None

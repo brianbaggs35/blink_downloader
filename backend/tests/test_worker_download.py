@@ -171,6 +171,26 @@ async def test_successful_download_populates_metadata(
     del camera_id
 
 
+async def test_auto_analyze_false_skips_queueing_analysis(
+    worker_ctx: dict[str, Any], tmp_path: Path, synthetic_clip_bytes: bytes
+) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        await set_storage_dir(session, str(tmp_path))
+        _account, _camera, clip = await _make_account_camera_clip(session)
+        clip_id = clip.id
+
+    FakeBlinkService.next_bytes = synthetic_clip_bytes
+    result = await download_clip(worker_ctx, str(clip_id), auto_analyze=False)
+    assert result == "ok"
+
+    async with worker_ctx["sessionmaker"]() as session:
+        clip = await session.get(Clip, clip_id)
+        assert clip is not None
+        assert clip.downloaded_at is not None  # still downloaded
+
+    worker_ctx["redis"].enqueue_job.assert_not_awaited()
+
+
 async def test_download_auth_error_marks_account_errored(worker_ctx: dict[str, Any]) -> None:
     async with worker_ctx["sessionmaker"]() as session:
         account, _camera, clip = await _make_account_camera_clip(session)
