@@ -253,7 +253,14 @@ async function giveFeedback(verdict: FeedbackVerdict): Promise<void> {
               v-for="(entity, index) in analysis.detected_entities"
               :key="index"
               class="entity-tag"
+              :class="{ recognized: entity.recognized_person_id }"
+              :data-testid="entity.recognized_person_id ? 'recognized-entity-tag' : undefined"
             >
+              <i
+                v-if="entity.recognized_person_id"
+                class="pi pi-verified"
+                aria-hidden="true"
+              />
               {{ entity.label }} ({{ Math.round(entity.confidence * 100) }}%)
             </span>
           </div>
@@ -449,6 +456,9 @@ async function giveFeedback(verdict: FeedbackVerdict): Promise<void> {
 }
 
 .entity-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 3px 10px;
   border-radius: 999px;
   background: var(--p-surface-100);
@@ -459,6 +469,16 @@ async function giveFeedback(verdict: FeedbackVerdict): Promise<void> {
 .blink-dark .entity-tag {
   background: var(--p-surface-800);
   color: var(--p-surface-300);
+}
+
+.entity-tag.recognized {
+  background: color-mix(in srgb, var(--p-primary-500) 18%, transparent);
+  color: var(--p-primary-700);
+  font-weight: 600;
+}
+
+.blink-dark .entity-tag.recognized {
+  color: var(--p-primary-300);
 }
 
 .proximity {

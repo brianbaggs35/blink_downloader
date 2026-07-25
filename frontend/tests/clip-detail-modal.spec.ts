@@ -252,6 +252,33 @@ describe("ClipDetailModal — analyzed content", () => {
     await mountModal(clip);
     expect(document.body.querySelector(".entities")).toBeNull();
   });
+
+  it("shows a distinct recognized treatment for a locally-upgraded entity label", async () => {
+    mockedGetAnalysis.mockResolvedValue({
+      ...routineAnalysis,
+      detected_entities: [
+        {
+          type: "person",
+          label: "Alex",
+          confidence: 0.95,
+          bbox: [0.1, 0.1, 0.2, 0.4],
+          recognized_person_id: "person-1",
+        },
+      ],
+    });
+    await mountModal(clip);
+    const tag = document.body.querySelector('[data-testid="recognized-entity-tag"]');
+    expect(tag?.textContent).toContain("Alex (95%)");
+    expect(tag?.className).toContain("recognized");
+  });
+
+  it("leaves an unrecognized entity's tag in the plain style", async () => {
+    mockedGetAnalysis.mockResolvedValue(routineAnalysis);
+    await mountModal(clip);
+    expect(document.body.querySelector('[data-testid="recognized-entity-tag"]')).toBeNull();
+    const tag = document.body.querySelector(".entity-tag");
+    expect(tag?.className).not.toContain("recognized");
+  });
 });
 
 describe("ClipDetailModal — re-analyze", () => {
