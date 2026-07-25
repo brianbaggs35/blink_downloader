@@ -63,6 +63,7 @@ const cameraA: CameraRead = {
   enabled: true,
   battery: "ok",
   last_synced_at: null,
+  security_context: null,
 };
 
 const cameraB: CameraRead = {
@@ -72,6 +73,7 @@ const cameraB: CameraRead = {
   enabled: true,
   battery: "ok",
   last_synced_at: null,
+  security_context: null,
 };
 
 function makeClip(overrides: Partial<ClipRead> = {}): ClipRead {

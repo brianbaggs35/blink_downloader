@@ -1,5 +1,6 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import Select from "primevue/select";
+import Tab from "primevue/tab";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/api/client";
@@ -41,12 +42,26 @@ beforeEach(() => {
   mockedGetStorage.mockResolvedValue({ storage_dir: "/data/clips", is_default: true });
 });
 
+// The other Settings tabs are covered by their own dedicated spec files —
+// stub them here so this file only exercises tab gating/switching, without
+// triggering their real onMounted API calls (PrimeVue's Tabs "lazy" mode
+// still mounts a panel's real content the first time its tab is opened).
+const settingsTabStubs = {
+  SettingsUsersPanel: { template: '<div data-testid="stub-users" />' },
+  SettingsAiProviderPanel: { template: '<div data-testid="stub-ai" />' },
+  SettingsCamerasPanel: { template: '<div data-testid="stub-cameras" />' },
+  SettingsVehiclesPanel: { template: '<div data-testid="stub-vehicles" />' },
+  SettingsAlertsPanel: { template: '<div data-testid="stub-alerts" />' },
+};
+
 function mountSettings(withUser = true) {
   const pinia = makePinia();
   if (withUser) {
     useAuthStore().user = { ...fakeUser, timezone: "America/New_York" };
   }
-  return mount(SettingsView, { global: mountGlobal(pinia) });
+  return mount(SettingsView, {
+    global: { ...mountGlobal(pinia), stubs: settingsTabStubs },
+  });
 }
 
 describe("SettingsView profile", () => {
@@ -251,5 +266,49 @@ describe("SettingsView storage", () => {
     await wrapper.find('[data-testid="save-storage"]').trigger("click");
     await flushPromises();
     expect(wrapper.find('[data-testid="storage-error"]').text()).toBe("Unexpected error.");
+  });
+});
+
+describe("SettingsView tabs", () => {
+  it("shows only the General tab for a non-admin", async () => {
+    const pinia = makePinia();
+    useAuthStore().user = { ...fakeUser, is_superuser: false, timezone: "UTC" };
+    const wrapper = mount(SettingsView, {
+      global: { ...mountGlobal(pinia), stubs: settingsTabStubs },
+    });
+    await flushPromises();
+    const tabs = wrapper.findAllComponents(Tab);
+    expect(tabs.map((t) => t.text())).toEqual(["General"]);
+  });
+
+  it("shows every admin tab for a superuser", async () => {
+    const wrapper = mountSettings();
+    await flushPromises();
+    const tabs = wrapper.findAllComponents(Tab);
+    expect(tabs.map((t) => t.text())).toEqual([
+      "General",
+      "Users",
+      "AI Provider",
+      "Cameras",
+      "Vehicles",
+      "Alerts",
+    ]);
+  });
+
+  it.each([
+    ["Users", "stub-users"],
+    ["AI Provider", "stub-ai"],
+    ["Cameras", "stub-cameras"],
+    ["Vehicles", "stub-vehicles"],
+    ["Alerts", "stub-alerts"],
+  ])("opens the %s tab and mounts its panel, unmounting General", async (label, testId) => {
+    const wrapper = mountSettings();
+    await flushPromises();
+    const tab = wrapper.findAllComponents(Tab).find((t) => t.text() === label);
+    expect(tab).toBeTruthy();
+    await tab!.trigger("click");
+    await flushPromises();
+    expect(wrapper.find(`[data-testid="${testId}"]`).exists()).toBe(true);
+    expect(wrapper.find('[data-testid="display-name"]').exists()).toBe(false);
   });
 });

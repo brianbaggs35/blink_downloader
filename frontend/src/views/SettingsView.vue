@@ -5,12 +5,22 @@ import Message from "primevue/message";
 import Password from "primevue/password";
 import Select from "primevue/select";
 import SelectButton from "primevue/selectbutton";
+import Tab from "primevue/tab";
+import TabList from "primevue/tablist";
+import TabPanel from "primevue/tabpanel";
+import TabPanels from "primevue/tabpanels";
+import Tabs from "primevue/tabs";
 import { useToast } from "primevue/usetoast";
 import { onMounted, ref } from "vue";
 
 import { ApiError, getStorageSettings, updateMe, updateStorageSettings } from "@/api";
 import BlinkAccountPanel from "@/components/BlinkAccountPanel.vue";
 import PageHeader from "@/components/PageHeader.vue";
+import SettingsAiProviderPanel from "@/components/SettingsAiProviderPanel.vue";
+import SettingsAlertsPanel from "@/components/SettingsAlertsPanel.vue";
+import SettingsCamerasPanel from "@/components/SettingsCamerasPanel.vue";
+import SettingsUsersPanel from "@/components/SettingsUsersPanel.vue";
+import SettingsVehiclesPanel from "@/components/SettingsVehiclesPanel.vue";
 import { useTheme } from "@/composables/useTheme";
 import { useAuthStore } from "@/stores/auth";
 
@@ -123,197 +133,264 @@ async function saveStorageDir(): Promise<void> {
   <section>
     <PageHeader
       title="Settings"
-      description="Your profile, security, appearance, and (soon) Blink account, AI, and alerting configuration."
+      description="Your profile, security, appearance, and — for admins — Blink, AI, cameras, vehicles, alerts, and household access."
     />
 
-    <div class="panels">
-      <article class="panel">
-        <h3 class="panel-title">
-          Profile
-        </h3>
-        <p class="panel-hint">
-          Shown around the app and used for report timestamps.
-        </p>
-        <div class="panel-body">
-          <label class="field">
-            <span class="field-label">Display name</span>
-            <InputText
-              v-model="displayName"
-              fluid
-              data-testid="display-name"
-            />
-          </label>
-          <label class="field">
-            <span class="field-label">Timezone</span>
-            <Select
-              v-model="timezone"
-              :options="timezones"
-              filter
-              fluid
-              data-testid="timezone"
-            />
-          </label>
-          <div class="panel-actions">
-            <Button
-              label="Save profile"
-              :loading="savingProfile"
-              data-testid="save-profile"
-              @click="saveProfile"
-            />
-          </div>
-        </div>
-      </article>
-
-      <article class="panel">
-        <h3 class="panel-title">
-          Security
-        </h3>
-        <p class="panel-hint">
-          Use at least {{ MIN_PASSWORD_LENGTH }} characters.
-        </p>
-        <div class="panel-body">
-          <label class="field">
-            <span class="field-label">New password</span>
-            <Password
-              v-model="newPassword"
-              toggle-mask
-              fluid
-              data-testid="new-password"
-            />
-          </label>
-          <label class="field">
-            <span class="field-label">Confirm new password</span>
-            <Password
-              v-model="confirmPassword"
-              :feedback="false"
-              toggle-mask
-              fluid
-              data-testid="confirm-password"
-            />
-          </label>
-          <p
-            v-if="passwordError"
-            class="field-error"
-            data-testid="password-error"
-          >
-            {{ passwordError }}
-          </p>
-          <div class="panel-actions">
-            <Button
-              label="Update password"
-              severity="secondary"
-              :loading="savingPassword"
-              data-testid="save-password"
-              @click="savePassword"
-            />
-          </div>
-        </div>
-      </article>
-
-      <article class="panel">
-        <h3 class="panel-title">
-          Appearance
-        </h3>
-        <p class="panel-hint">
-          Dark is the default for a security console.
-        </p>
-        <div class="panel-body">
-          <SelectButton
-            :model-value="isDark"
-            :options="themeOptions"
-            option-label="label"
-            option-value="value"
-            :allow-empty="false"
-            data-testid="theme-select"
-            @update:model-value="setDark"
-          />
-        </div>
-      </article>
-
-      <BlinkAccountPanel />
-
-      <article
-        v-if="auth.user?.is_superuser"
-        class="panel"
-      >
-        <h3 class="panel-title">
-          Storage
-        </h3>
-        <p class="panel-hint">
-          Where downloaded clips are saved on this server.
-        </p>
-        <div class="panel-body">
-          <label class="field">
-            <span class="field-label">Clip storage directory</span>
-            <InputText
-              v-model="storageDir"
-              placeholder="/data/clips"
-              fluid
-              data-testid="storage-dir"
-            />
-          </label>
-          <p class="muted">
-            {{ storageIsDefault ? "Using the default from server configuration." : "Custom location." }}
-            Changing this does not move already-downloaded clips.
-          </p>
-          <Message
-            v-if="storageError"
-            severity="error"
-            :closable="false"
-            data-testid="storage-error"
-          >
-            {{ storageError }}
-          </Message>
-          <div class="panel-actions">
-            <Button
-              label="Save"
-              :loading="savingStorage"
-              data-testid="save-storage"
-              @click="saveStorageDir"
-            />
-          </div>
-        </div>
-      </article>
-
-      <article class="panel panel-upcoming">
-        <h3 class="panel-title">
-          Coming soon
-        </h3>
-        <ul class="upcoming-list">
-          <li><i class="pi pi-sparkles" /> AI provider keys and analysis preferences</li>
-          <li><i class="pi pi-bell" /> Alerting: Discord &amp; Slack webhooks, SMTP email</li>
-          <li><i class="pi pi-users" /> Household member invitations</li>
-          <li><i class="pi pi-cloud" /> S3, Google Drive &amp; OneDrive archive storage</li>
-        </ul>
-      </article>
-
-      <article class="panel">
-        <h3 class="panel-title">
-          About
-        </h3>
-        <p class="panel-hint">
-          Blink AI Security is built on
-          <a
-            href="https://github.com/fronzbot/blinkpy"
-            target="_blank"
-            rel="noopener noreferrer"
-          >blinkpy</a>, the unofficial Blink API client this project relies on for all Blink
-          communication.
-        </p>
-        <a
-          class="about-link"
-          href="https://github.com/brianbaggs35/blink_downloader"
-          target="_blank"
-          rel="noopener noreferrer"
+    <Tabs
+      value="general"
+      lazy
+    >
+      <TabList>
+        <Tab value="general">
+          General
+        </Tab>
+        <Tab
+          v-if="auth.isAdmin"
+          value="users"
         >
-          <i
-            class="pi pi-github"
-            aria-hidden="true"
-          />
-          View source on GitHub
-        </a>
-      </article>
-    </div>
+          Users
+        </Tab>
+        <Tab
+          v-if="auth.isAdmin"
+          value="ai"
+        >
+          AI Provider
+        </Tab>
+        <Tab
+          v-if="auth.isAdmin"
+          value="cameras"
+        >
+          Cameras
+        </Tab>
+        <Tab
+          v-if="auth.isAdmin"
+          value="vehicles"
+        >
+          Vehicles
+        </Tab>
+        <Tab
+          v-if="auth.isAdmin"
+          value="alerts"
+        >
+          Alerts
+        </Tab>
+      </TabList>
+      <TabPanels>
+        <TabPanel value="general">
+          <div class="panels">
+            <article class="panel">
+              <h3 class="panel-title">
+                Profile
+              </h3>
+              <p class="panel-hint">
+                Shown around the app and used for report timestamps.
+              </p>
+              <div class="panel-body">
+                <label class="field">
+                  <span class="field-label">Display name</span>
+                  <InputText
+                    v-model="displayName"
+                    fluid
+                    data-testid="display-name"
+                  />
+                </label>
+                <label class="field">
+                  <span class="field-label">Timezone</span>
+                  <Select
+                    v-model="timezone"
+                    :options="timezones"
+                    filter
+                    fluid
+                    data-testid="timezone"
+                  />
+                </label>
+                <div class="panel-actions">
+                  <Button
+                    label="Save profile"
+                    :loading="savingProfile"
+                    data-testid="save-profile"
+                    @click="saveProfile"
+                  />
+                </div>
+              </div>
+            </article>
+
+            <article class="panel">
+              <h3 class="panel-title">
+                Security
+              </h3>
+              <p class="panel-hint">
+                Use at least {{ MIN_PASSWORD_LENGTH }} characters.
+              </p>
+              <div class="panel-body">
+                <label class="field">
+                  <span class="field-label">New password</span>
+                  <Password
+                    v-model="newPassword"
+                    toggle-mask
+                    fluid
+                    data-testid="new-password"
+                  />
+                </label>
+                <label class="field">
+                  <span class="field-label">Confirm new password</span>
+                  <Password
+                    v-model="confirmPassword"
+                    :feedback="false"
+                    toggle-mask
+                    fluid
+                    data-testid="confirm-password"
+                  />
+                </label>
+                <p
+                  v-if="passwordError"
+                  class="field-error"
+                  data-testid="password-error"
+                >
+                  {{ passwordError }}
+                </p>
+                <div class="panel-actions">
+                  <Button
+                    label="Update password"
+                    severity="secondary"
+                    :loading="savingPassword"
+                    data-testid="save-password"
+                    @click="savePassword"
+                  />
+                </div>
+              </div>
+            </article>
+
+            <article class="panel">
+              <h3 class="panel-title">
+                Appearance
+              </h3>
+              <p class="panel-hint">
+                Dark is the default for a security console.
+              </p>
+              <div class="panel-body">
+                <SelectButton
+                  :model-value="isDark"
+                  :options="themeOptions"
+                  option-label="label"
+                  option-value="value"
+                  :allow-empty="false"
+                  data-testid="theme-select"
+                  @update:model-value="setDark"
+                />
+              </div>
+            </article>
+
+            <BlinkAccountPanel />
+
+            <article
+              v-if="auth.user?.is_superuser"
+              class="panel"
+            >
+              <h3 class="panel-title">
+                Storage
+              </h3>
+              <p class="panel-hint">
+                Where downloaded clips are saved on this server.
+              </p>
+              <div class="panel-body">
+                <label class="field">
+                  <span class="field-label">Clip storage directory</span>
+                  <InputText
+                    v-model="storageDir"
+                    placeholder="/data/clips"
+                    fluid
+                    data-testid="storage-dir"
+                  />
+                </label>
+                <p class="muted">
+                  {{ storageIsDefault ? "Using the default from server configuration." : "Custom location." }}
+                  Changing this does not move already-downloaded clips.
+                </p>
+                <Message
+                  v-if="storageError"
+                  severity="error"
+                  :closable="false"
+                  data-testid="storage-error"
+                >
+                  {{ storageError }}
+                </Message>
+                <div class="panel-actions">
+                  <Button
+                    label="Save"
+                    :loading="savingStorage"
+                    data-testid="save-storage"
+                    @click="saveStorageDir"
+                  />
+                </div>
+              </div>
+            </article>
+
+            <article class="panel">
+              <h3 class="panel-title">
+                About
+              </h3>
+              <p class="panel-hint">
+                Blink AI Security is built on
+                <a
+                  href="https://github.com/fronzbot/blinkpy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >blinkpy</a>, the unofficial Blink API client this project relies on for all Blink
+                communication.
+              </p>
+              <a
+                class="about-link"
+                href="https://github.com/brianbaggs35/blink_downloader"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <i
+                  class="pi pi-github"
+                  aria-hidden="true"
+                />
+                View source on GitHub
+              </a>
+            </article>
+          </div>
+        </TabPanel>
+
+        <TabPanel
+          v-if="auth.isAdmin"
+          value="users"
+        >
+          <SettingsUsersPanel />
+        </TabPanel>
+
+        <TabPanel
+          v-if="auth.isAdmin"
+          value="ai"
+        >
+          <SettingsAiProviderPanel />
+        </TabPanel>
+
+        <TabPanel
+          v-if="auth.isAdmin"
+          value="cameras"
+        >
+          <SettingsCamerasPanel />
+        </TabPanel>
+
+        <TabPanel
+          v-if="auth.isAdmin"
+          value="vehicles"
+        >
+          <SettingsVehiclesPanel />
+        </TabPanel>
+
+        <TabPanel
+          v-if="auth.isAdmin"
+          value="alerts"
+        >
+          <SettingsAlertsPanel />
+        </TabPanel>
+      </TabPanels>
+    </Tabs>
   </section>
 </template>
 
@@ -380,22 +457,6 @@ async function saveStorageDir(): Promise<void> {
 .panel-actions {
   display: flex;
   justify-content: flex-end;
-}
-
-.upcoming-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  font-size: 0.88rem;
-  color: var(--p-surface-500);
-}
-
-.upcoming-list i {
-  margin-right: 8px;
-  color: var(--p-primary-500);
 }
 
 .muted {
