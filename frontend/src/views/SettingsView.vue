@@ -19,6 +19,7 @@ import BlinkAccountPanel from "@/components/BlinkAccountPanel.vue";
 import PageHeader from "@/components/PageHeader.vue";
 import SettingsAiProviderPanel from "@/components/SettingsAiProviderPanel.vue";
 import SettingsAlertsPanel from "@/components/SettingsAlertsPanel.vue";
+import SettingsBiometricsPanel from "@/components/SettingsBiometricsPanel.vue";
 import SettingsCamerasPanel from "@/components/SettingsCamerasPanel.vue";
 import SettingsUsersPanel from "@/components/SettingsUsersPanel.vue";
 import SettingsVehiclesPanel from "@/components/SettingsVehiclesPanel.vue";
@@ -32,7 +33,7 @@ const toast = useToast();
 const route = useRoute();
 const { isDark, setDark } = useTheme();
 
-const ADMIN_TABS = ["users", "ai", "cameras", "vehicles", "alerts"];
+const ADMIN_TABS = ["users", "ai", "biometrics", "cameras", "vehicles", "alerts"];
 const requestedTab = typeof route.query.tab === "string" ? route.query.tab : "general";
 const activeTab = ref(
   auth.isAdmin && ADMIN_TABS.includes(requestedTab) ? requestedTab : "general",
@@ -141,7 +142,7 @@ async function saveStorageDir(): Promise<void> {
   <section>
     <PageHeader
       title="Settings"
-      description="Your profile, security, appearance, and — for admins — Blink, AI, cameras, vehicles, alerts, and household access."
+      description="Your profile, security, appearance, and — for admins — Blink, AI, biometrics, cameras, vehicles, alerts, and household access."
     />
 
     <Tabs
@@ -163,6 +164,12 @@ async function saveStorageDir(): Promise<void> {
           value="ai"
         >
           AI Provider
+        </Tab>
+        <Tab
+          v-if="auth.isAdmin"
+          value="biometrics"
+        >
+          Biometrics
         </Tab>
         <Tab
           v-if="auth.isAdmin"
@@ -375,6 +382,13 @@ async function saveStorageDir(): Promise<void> {
           value="ai"
         >
           <SettingsAiProviderPanel />
+        </TabPanel>
+
+        <TabPanel
+          v-if="auth.isAdmin"
+          value="biometrics"
+        >
+          <SettingsBiometricsPanel />
         </TabPanel>
 
         <TabPanel

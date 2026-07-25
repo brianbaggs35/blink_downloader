@@ -57,6 +57,7 @@ afterEach(async () => {
 const settingsTabStubs = {
   SettingsUsersPanel: { template: '<div data-testid="stub-users" />' },
   SettingsAiProviderPanel: { template: '<div data-testid="stub-ai" />' },
+  SettingsBiometricsPanel: { template: '<div data-testid="stub-biometrics" />' },
   SettingsCamerasPanel: { template: '<div data-testid="stub-cameras" />' },
   SettingsVehiclesPanel: { template: '<div data-testid="stub-vehicles" />' },
   SettingsAlertsPanel: { template: '<div data-testid="stub-alerts" />' },
@@ -297,6 +298,7 @@ describe("SettingsView tabs", () => {
       "General",
       "Users",
       "AI Provider",
+      "Biometrics",
       "Cameras",
       "Vehicles",
       "Alerts",
@@ -306,6 +308,7 @@ describe("SettingsView tabs", () => {
   it.each([
     ["Users", "stub-users"],
     ["AI Provider", "stub-ai"],
+    ["Biometrics", "stub-biometrics"],
     ["Cameras", "stub-cameras"],
     ["Vehicles", "stub-vehicles"],
     ["Alerts", "stub-alerts"],
