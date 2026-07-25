@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     session_lifetime_seconds: int = 60 * 60 * 24 * 7
 
     storage_dir: Path = Path("/data/clips")
+    biometrics_model_cache_dir: Path = Path("/data/insightface")
+    """Where insightface's detection/recognition ONNX models are downloaded
+    to on first use (a few hundred MB) — its own default is a dotfile under
+    the process's home directory, which isn't stable across dev-as-root vs.
+    prod-as-nonroot images, so this is pinned explicitly and volume-mounted
+    like storage_dir."""
 
     blink_sync_interval_seconds: int = 30
     blink_initial_sync_days: int = 1
