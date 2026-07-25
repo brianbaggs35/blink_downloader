@@ -83,7 +83,17 @@ describe("camera endpoints", () => {
     expect(mock.mock.calls[0]?.[0]).toBe("/api/cameras/1");
     const init = mock.mock.calls[0]?.[1] as RequestInit;
     expect(init.method).toBe("PATCH");
-    expect(JSON.parse(init.body as string)).toEqual({ enabled: false });
+    expect(JSON.parse(init.body as string)).toEqual({ enabled: false, security_context: null });
+  });
+
+  it("updateCamera PATCHes with a security context", async () => {
+    const mock = capture(jsonResponse({ id: "1", enabled: true }));
+    await updateCamera("1", true, "Watches the driveway");
+    const init = mock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(init.body as string)).toEqual({
+      enabled: true,
+      security_context: "Watches the driveway",
+    });
   });
 });
 

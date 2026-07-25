@@ -22,6 +22,32 @@ export type BulkActionResponse = components["schemas"]["BulkActionResponse"];
 export type StorageSettingsRead = components["schemas"]["StorageSettingsRead"];
 export type StorageSettingsUpdate = components["schemas"]["StorageSettingsUpdate"];
 
+export type AIProviderKind = components["schemas"]["AIProviderKind"];
+export type AISettingsRead = components["schemas"]["AISettingsRead"];
+export type AISettingsUpdate = components["schemas"]["AISettingsUpdate"];
+export type AIConnectionTestRequest = components["schemas"]["AIConnectionTestRequest"];
+export type AIConnectionTestResponse = components["schemas"]["AIConnectionTestResponse"];
+
+export type AnalysisRead = components["schemas"]["AnalysisRead"];
+export type DetectedEntityRead = components["schemas"]["DetectedEntityRead"];
+export type SuspicionLabel = components["schemas"]["SuspicionLabel"];
+export type FeedbackCreate = components["schemas"]["FeedbackCreate"];
+export type FeedbackRead = components["schemas"]["FeedbackRead"];
+export type FeedbackVerdict = components["schemas"]["FeedbackVerdict"];
+
+export type VehicleRead = components["schemas"]["VehicleRead"];
+export type VehicleUpdate = components["schemas"]["VehicleUpdate"];
+export type ProximityEventRead = components["schemas"]["ProximityEventRead"];
+
+export type AlertSettingsRead = components["schemas"]["AlertSettingsRead"];
+export type AlertSettingsUpdate = components["schemas"]["AlertSettingsUpdate"];
+export type AlertTestResponse = components["schemas"]["AlertTestResponse"];
+
+export type AiStatsResponse = components["schemas"]["AiStatsResponse"];
+export type AiUsageResponse = components["schemas"]["AiUsageResponse"];
+
+export type UserCreate = components["schemas"]["UserCreate"];
+
 export { ApiError } from "./client";
 
 export function getHealth(): Promise<HealthReport> {
@@ -86,8 +112,15 @@ export function listCameras(): Promise<CameraRead[]> {
   return api<CameraRead[]>("/cameras");
 }
 
-export function updateCamera(id: string, enabled: boolean): Promise<CameraRead> {
-  return api<CameraRead>(`/cameras/${id}`, { method: "PATCH", json: { enabled } });
+export function updateCamera(
+  id: string,
+  enabled: boolean,
+  securityContext: string | null = null,
+): Promise<CameraRead> {
+  return api<CameraRead>(`/cameras/${id}`, {
+    method: "PATCH",
+    json: { enabled, security_context: securityContext },
+  });
 }
 
 // ------------------------------------------------------------------- Clips
@@ -126,6 +159,26 @@ export function deleteClip(id: string): Promise<void> {
 
 export function bulkDeleteClips(clipIds: string[]): Promise<BulkActionResponse> {
   return api<BulkActionResponse>("/clips/bulk-delete", { json: { clip_ids: clipIds } });
+}
+
+export function getClipAnalysis(clipId: string): Promise<AnalysisRead> {
+  return api<AnalysisRead>(`/clips/${clipId}/analysis`);
+}
+
+export function reanalyzeClip(clipId: string): Promise<{ status: string }> {
+  return api<{ status: string }>(`/clips/${clipId}/reanalyze`, { method: "POST" });
+}
+
+export function bulkAnalyzeClips(clipIds: string[]): Promise<BulkActionResponse> {
+  return api<BulkActionResponse>("/clips/bulk-analyze", { json: { clip_ids: clipIds } });
+}
+
+export function submitFeedback(clipId: string, body: FeedbackCreate): Promise<FeedbackRead> {
+  return api<FeedbackRead>(`/clips/${clipId}/feedback`, { json: body });
+}
+
+export function listFeedback(clipId: string): Promise<FeedbackRead[]> {
+  return api<FeedbackRead[]>(`/clips/${clipId}/feedback`);
 }
 
 /** Not fetch()-based: this URL is meant for <video src>/<img src> directly. */
@@ -184,4 +237,82 @@ export function updateStorageSettings(
   body: StorageSettingsUpdate,
 ): Promise<StorageSettingsRead> {
   return api<StorageSettingsRead>("/settings/storage", { method: "PATCH", json: body });
+}
+
+export function getAiSettings(): Promise<AISettingsRead> {
+  return api<AISettingsRead>("/settings/ai");
+}
+
+export function updateAiSettings(body: AISettingsUpdate): Promise<AISettingsRead> {
+  return api<AISettingsRead>("/settings/ai", { method: "PUT", json: body });
+}
+
+export function testAiConnection(
+  body: AIConnectionTestRequest,
+): Promise<AIConnectionTestResponse> {
+  return api<AIConnectionTestResponse>("/settings/ai/test-connection", { json: body });
+}
+
+// ---------------------------------------------------------------- Vehicles
+
+export function listVehicles(): Promise<VehicleRead[]> {
+  return api<VehicleRead[]>("/vehicles");
+}
+
+export function getVehicle(cameraId: string): Promise<VehicleRead> {
+  return api<VehicleRead>(`/vehicles/${cameraId}`);
+}
+
+export function putVehicle(cameraId: string, body: VehicleUpdate): Promise<VehicleRead> {
+  return api<VehicleRead>(`/vehicles/${cameraId}`, { method: "PUT", json: body });
+}
+
+export function deleteVehicle(cameraId: string): Promise<void> {
+  return api<void>(`/vehicles/${cameraId}`, { method: "DELETE" });
+}
+
+export function captureVehicleReferenceFrame(cameraId: string): Promise<void> {
+  return api<void>(`/vehicles/${cameraId}/reference-frame`, { method: "POST" });
+}
+
+export function vehicleReferenceFrameUrl(cameraId: string): string {
+  return `/api/vehicles/${cameraId}/reference-frame`;
+}
+
+export function listProximityEvents(cameraId: string): Promise<ProximityEventRead[]> {
+  return api<ProximityEventRead[]>(`/vehicles/${cameraId}/proximity-events`);
+}
+
+// ------------------------------------------------------------------ Alerts
+
+export function getAlertSettings(): Promise<AlertSettingsRead> {
+  return api<AlertSettingsRead>("/alerts/settings");
+}
+
+export function updateAlertSettings(body: AlertSettingsUpdate): Promise<AlertSettingsRead> {
+  return api<AlertSettingsRead>("/alerts/settings", { method: "PUT", json: body });
+}
+
+export function testAlertChannels(): Promise<AlertTestResponse> {
+  return api<AlertTestResponse>("/alerts/settings/test", { method: "POST" });
+}
+
+// --------------------------------------------------------------- AI stats
+
+export function getAiStats(): Promise<AiStatsResponse> {
+  return api<AiStatsResponse>("/ai/stats");
+}
+
+export function getAiUsage(): Promise<AiUsageResponse> {
+  return api<AiUsageResponse>("/ai/usage");
+}
+
+// ------------------------------------------------------------------ Users
+
+export function listUsers(): Promise<UserRead[]> {
+  return api<UserRead[]>("/users");
+}
+
+export function createUser(body: UserCreate): Promise<UserRead> {
+  return api<UserRead>("/users", { json: body });
 }
