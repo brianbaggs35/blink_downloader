@@ -21,6 +21,7 @@ from app.biometrics import recognition
 from app.biometrics.models import ExecutionProviderPreference, ModelPack
 from app.biometrics.recognition import (
     RecognitionError,
+    available_providers,
     best_match,
     cosine_similarity,
     detect_faces,
@@ -72,6 +73,16 @@ def _fake_engine(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(recognition, "FaceAnalysis", FakeFaceAnalysis)
     recognition._engines.clear()
     FakeFaceAnalysis.instances.clear()
+
+
+# ---------------------------------------------------------- available_providers
+
+
+def test_available_providers_reflects_onnxruntime(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        recognition.onnxruntime, "get_available_providers", lambda: ["CPUExecutionProvider"]
+    )
+    assert available_providers() == ["CPUExecutionProvider"]
 
 
 # ----------------------------------------------------------- resolve_providers

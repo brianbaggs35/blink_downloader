@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.biometrics.schemas import RecognizedPersonRead
 from app.blink.models import BlinkAccountStatus
 
 
@@ -58,6 +59,7 @@ class ClipRead(BaseModel):
     downloaded_at: datetime | None
     deleted_on_blink: bool
     thumbnail_generated: bool
+    recognized_people: list[RecognizedPersonRead] = []
 
     model_config = {"from_attributes": True}
 

@@ -22,6 +22,8 @@ from starlette.background import BackgroundTask
 from app.ai.learning import record_feedback
 from app.ai.models import Analysis, Feedback
 from app.ai.schemas import AnalysisRead, FeedbackCreate, FeedbackRead
+from app.biometrics.models import Person, RecognizedFace
+from app.biometrics.schemas import RecognizedPersonRead
 from app.blink.models import Camera, Clip
 from app.blink.schemas import BulkActionResponse, BulkClipIds, ClipListResponse, ClipRead
 from app.config import get_settings
@@ -40,6 +42,37 @@ router = APIRouter(prefix="/clips", tags=["clips"])
 MAX_PAGE_SIZE = 100
 
 
+async def _recognized_people_by_clip(
+    session: AsyncSession, clip_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, list[RecognizedPersonRead]]:
+    if not clip_ids:
+        return {}
+    stmt = (
+        select(RecognizedFace.clip_id, Person.id, Person.name)
+        .join(Person, RecognizedFace.person_id == Person.id)
+        .where(RecognizedFace.clip_id.in_(clip_ids))
+        .order_by(Person.name)
+    )
+    by_clip: dict[uuid.UUID, list[RecognizedPersonRead]] = {}
+    for row in await session.execute(stmt):
+        by_clip.setdefault(row.clip_id, []).append(RecognizedPersonRead(id=row.id, name=row.name))
+    return by_clip
+
+
+def _clip_read(clip: Clip, recognized_people: list[RecognizedPersonRead]) -> ClipRead:
+    return ClipRead(
+        id=clip.id,
+        camera_id=clip.camera_id,
+        recorded_at=clip.recorded_at,
+        duration_seconds=clip.duration_seconds,
+        file_size_bytes=clip.file_size_bytes,
+        downloaded_at=clip.downloaded_at,
+        deleted_on_blink=clip.deleted_on_blink,
+        thumbnail_generated=clip.thumbnail_generated,
+        recognized_people=recognized_people,
+    )
+
+
 @router.get("", response_model=ClipListResponse)
 async def list_clips(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -48,6 +81,7 @@ async def list_clips(
     since: datetime | None = None,
     until: datetime | None = None,
     downloaded_only: bool = False,
+    recognized_person_id: uuid.UUID | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=24, ge=1, le=MAX_PAGE_SIZE),
 ) -> ClipListResponse:
@@ -65,12 +99,19 @@ async def list_clips(
     if downloaded_only:
         stmt = stmt.where(Clip.downloaded_at.is_not(None))
         count_stmt = count_stmt.where(Clip.downloaded_at.is_not(None))
+    if recognized_person_id is not None:
+        recognized_clip_ids = select(RecognizedFace.clip_id).where(
+            RecognizedFace.person_id == recognized_person_id
+        )
+        stmt = stmt.where(Clip.id.in_(recognized_clip_ids))
+        count_stmt = count_stmt.where(Clip.id.in_(recognized_clip_ids))
 
     total = (await session.execute(count_stmt)).scalar_one()
     stmt = stmt.order_by(Clip.recorded_at.desc()).offset((page - 1) * page_size).limit(page_size)
     items = (await session.execute(stmt)).scalars().all()
+    recognized_by_clip = await _recognized_people_by_clip(session, [c.id for c in items])
     return ClipListResponse(
-        items=[ClipRead.model_validate(c) for c in items],
+        items=[_clip_read(c, recognized_by_clip.get(c.id, [])) for c in items],
         total=total,
         page=page,
         page_size=page_size,
@@ -89,8 +130,10 @@ async def get_clip(
     clip_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     _user: Annotated[object, Depends(current_active_user)],
-) -> Clip:
-    return await _get_clip_or_404(session, clip_id)
+) -> ClipRead:
+    clip = await _get_clip_or_404(session, clip_id)
+    recognized = (await _recognized_people_by_clip(session, [clip.id])).get(clip.id, [])
+    return _clip_read(clip, recognized)
 
 
 async def _get_current_analysis_or_404(session: AsyncSession, clip_id: uuid.UUID) -> Analysis:

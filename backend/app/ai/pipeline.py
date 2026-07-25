@@ -218,6 +218,7 @@ def _entity_to_dict(entity: DetectedEntityResult) -> dict[str, object]:
         "label": entity.label,
         "confidence": entity.confidence,
         "bbox": list(entity.bbox) if entity.bbox else None,
+        "recognized_person_id": entity.recognized_person_id,
     }
 
 
@@ -506,6 +507,7 @@ def _upgrade_person_labels(
         best_entity, best_overlap = max(overlaps, key=lambda pair: pair[1])
         if best_overlap >= _FACE_TO_PERSON_OVERLAP_THRESHOLD:
             best_entity.label = name
+            best_entity.recognized_person_id = str(match.person_id)
 
 
 async def _upsert_recognized_faces(

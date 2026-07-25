@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from httpx import AsyncClient
 
 from app.ai.models import AIProviderKind, Analysis, AnalysisTier, SuspicionLabel
+from app.biometrics.models import Person, RecognizedFace
 from app.blink.models import BlinkAccount, Camera, Clip
 from app.config import get_settings
 from app.security.crypto import SecretBox
@@ -108,6 +109,53 @@ async def test_list_filters_by_camera(admin_client: AsyncClient, app: FastAPI) -
     body = response.json()
     assert body["total"] == 1
     assert body["items"][0]["camera_id"] == str(cam_a.id)
+
+
+async def _recognize(app: FastAPI, clip: Clip, name: str) -> Person:
+    async with app.state.sessionmaker() as session:
+        person = Person(name=name)
+        session.add(person)
+        await session.flush()
+        session.add(RecognizedFace(clip_id=clip.id, person_id=person.id, confidence=0.9))
+        await session.commit()
+        await session.refresh(person)
+        return person
+
+
+async def test_list_includes_recognized_people(admin_client: AsyncClient, app: FastAPI) -> None:
+    camera = await _make_camera(app)
+    recognized_clip = await _make_clip(app, camera)
+    plain_clip = await _make_clip(app, camera)  # no recognized person
+    person = await _recognize(app, recognized_clip, "Alex")
+
+    response = await admin_client.get("/api/clips")
+    body = response.json()
+    by_id = {item["id"]: item["recognized_people"] for item in body["items"]}
+    assert by_id[str(recognized_clip.id)] == [{"id": str(person.id), "name": "Alex"}]
+    assert by_id[str(plain_clip.id)] == []
+
+
+async def test_get_clip_includes_recognized_people(admin_client: AsyncClient, app: FastAPI) -> None:
+    camera = await _make_camera(app)
+    clip = await _make_clip(app, camera)
+    person = await _recognize(app, clip, "Sam")
+
+    response = await admin_client.get(f"/api/clips/{clip.id}")
+    assert response.json()["recognized_people"] == [{"id": str(person.id), "name": "Sam"}]
+
+
+async def test_list_filters_by_recognized_person(admin_client: AsyncClient, app: FastAPI) -> None:
+    camera = await _make_camera(app)
+    recognized_clip = await _make_clip(app, camera)
+    await _make_clip(app, camera)
+    person = await _recognize(app, recognized_clip, "Alex")
+
+    response = await admin_client.get(
+        "/api/clips", params={"recognized_person_id": str(person.id)}
+    )
+    body = response.json()
+    assert body["total"] == 1
+    assert body["items"][0]["id"] == str(recognized_clip.id)
 
 
 async def test_list_filters_by_date_range(admin_client: AsyncClient, app: FastAPI) -> None:

@@ -12,6 +12,14 @@ from app.biometrics.models import (
 )
 
 
+class RecognizedPersonRead(BaseModel):
+    """Embedded on ClipRead (see app.blink.schemas) so the Library grid and
+    clip modal can show who was recognized without a separate round trip."""
+
+    id: uuid.UUID
+    name: str
+
+
 class PersonRead(BaseModel):
     id: uuid.UUID
     name: str
