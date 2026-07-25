@@ -296,6 +296,22 @@ describe("LibraryView — filters", () => {
       expect.objectContaining({ camera_id: undefined, since: undefined, until: undefined }),
     );
   });
+
+  it("pre-filters by camera when landing from a ?camera_id= link", async () => {
+    mockedStatus.mockResolvedValue(linkedStatus());
+    mockedClips.mockResolvedValue(clipsResponse([makeClip()], 1));
+    const router = makeRouter();
+    await router.push("/?camera_id=cam-2");
+    const pinia = makePinia();
+    useAuthStore().user = { ...fakeUser, is_superuser: true };
+    const wrapper = mount(LibraryView, { global: mountGlobal(pinia, router) });
+    await flushPromises();
+
+    expect(mockedClips).toHaveBeenCalledWith(
+      expect.objectContaining({ camera_id: "cam-2", page: 1 }),
+    );
+    expect(wrapper.find('[data-testid="clear-filters"]').exists()).toBe(true);
+  });
 });
 
 describe("LibraryView — selection", () => {
