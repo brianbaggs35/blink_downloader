@@ -144,6 +144,180 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/biometrics/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Settings Route */
+        get: operations["get_settings_route_api_biometrics_settings_get"];
+        /** Update Settings Route */
+        put: operations["update_settings_route_api_biometrics_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/biometrics/people": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List People Route */
+        get: operations["list_people_route_api_biometrics_people_get"];
+        put?: never;
+        /** Create Person Route */
+        post: operations["create_person_route_api_biometrics_people_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/biometrics/people/{person_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Person Route */
+        get: operations["get_person_route_api_biometrics_people__person_id__get"];
+        /** Update Person Route */
+        put: operations["update_person_route_api_biometrics_people__person_id__put"];
+        post?: never;
+        /** Delete Person Route */
+        delete: operations["delete_person_route_api_biometrics_people__person_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/biometrics/people/{person_id}/thumbnail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Person Thumbnail Route */
+        get: operations["person_thumbnail_route_api_biometrics_people__person_id__thumbnail_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/biometrics/people/{person_id}/faces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Person Faces Route */
+        get: operations["list_person_faces_route_api_biometrics_people__person_id__faces_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/biometrics/people/{person_id}/faces/{face_id}/thumbnail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Face Thumbnail Route */
+        get: operations["face_thumbnail_route_api_biometrics_people__person_id__faces__face_id__thumbnail_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/biometrics/people/{person_id}/faces/{face_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Face Route */
+        delete: operations["delete_face_route_api_biometrics_people__person_id__faces__face_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/biometrics/clips/{clip_id}/frame": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Clip Frame Route */
+        get: operations["clip_frame_route_api_biometrics_clips__clip_id__frame_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/biometrics/clips/{clip_id}/detect-faces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Detect Faces Route */
+        get: operations["detect_faces_route_api_biometrics_clips__clip_id__detect_faces_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/biometrics/people/{person_id}/enroll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enroll Face Route */
+        post: operations["enroll_face_route_api_biometrics_people__person_id__enroll_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/blink/link": {
         parameters: {
             query?: never;
@@ -967,6 +1141,39 @@ export interface components {
          * @enum {string}
          */
         AnalysisTier: "tier1" | "tier2";
+        /** BiometricsSettingsRead */
+        BiometricsSettingsRead: {
+            /** Enabled */
+            enabled: boolean;
+            model_pack: components["schemas"]["ModelPack"];
+            execution_provider_preference: components["schemas"]["ExecutionProviderPreference"];
+            /** Recognition Threshold */
+            recognition_threshold: number;
+            /** Available Providers */
+            available_providers: string[];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** BiometricsSettingsUpdate */
+        BiometricsSettingsUpdate: {
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /** @default buffalo_l */
+            model_pack: components["schemas"]["ModelPack"];
+            /** @default auto */
+            execution_provider_preference: components["schemas"]["ExecutionProviderPreference"];
+            /**
+             * Recognition Threshold
+             * @default 0.4
+             */
+            recognition_threshold: number;
+        };
         /**
          * BlinkAccountStatus
          * @enum {string}
@@ -1115,6 +1322,11 @@ export interface components {
             deleted_on_blink: boolean;
             /** Thumbnail Generated */
             thumbnail_generated: boolean;
+            /**
+             * Recognized People
+             * @default []
+             */
+            recognized_people: components["schemas"]["RecognizedPersonRead"][];
         };
         /** DetectedEntityRead */
         DetectedEntityRead: {
@@ -1127,12 +1339,73 @@ export interface components {
             /** Bbox */
             bbox: number[] | null;
         };
+        /**
+         * DetectedFaceRead
+         * @description A face found in a preview frame, for the enrollment UI to draw boxes
+         *     over and let the household member pick one — never includes the raw
+         *     embedding, which has no use client-side.
+         */
+        DetectedFaceRead: {
+            /** Bbox */
+            bbox: [
+                number,
+                number,
+                number,
+                number
+            ];
+            /** Confidence */
+            confidence: number;
+        };
+        /** EnrollFaceRequest */
+        EnrollFaceRequest: {
+            /**
+             * Clip Id
+             * Format: uuid
+             */
+            clip_id: string;
+            /** Frame Seconds */
+            frame_seconds: number;
+            /**
+             * Bbox
+             * @description The detected face (from the preview response) to enroll.
+             */
+            bbox: [
+                number,
+                number,
+                number,
+                number
+            ];
+        };
         /** ErrorModel */
         ErrorModel: {
             /** Detail */
             detail: string | {
                 [key: string]: string;
             };
+        };
+        /**
+         * ExecutionProviderPreference
+         * @description "auto" picks CUDA when onnxruntime reports it's available, else falls
+         *     back to CPU (see app.biometrics.recognition) — GPU is never assumed.
+         * @enum {string}
+         */
+        ExecutionProviderPreference: "auto" | "cpu";
+        /** FaceEmbeddingRead */
+        FaceEmbeddingRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Source Clip Id */
+            source_clip_id: string | null;
+            /** Source Frame Seconds */
+            source_frame_seconds: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** FeedbackCreate */
         FeedbackCreate: {
@@ -1203,6 +1476,47 @@ export interface components {
              */
             worker: "ok" | "error" | "unknown";
         };
+        /**
+         * ModelPack
+         * @description insightface named model packs, smallest/fastest to largest/most
+         *     accurate. Chosen in Settings based on available CPU/GPU headroom.
+         * @enum {string}
+         */
+        ModelPack: "buffalo_sc" | "buffalo_s" | "buffalo_m" | "buffalo_l";
+        /** PersonCreate */
+        PersonCreate: {
+            /** Name */
+            name: string;
+        };
+        /** PersonRead */
+        PersonRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Has Thumbnail */
+            has_thumbnail: boolean;
+            /** Face Count */
+            face_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** PersonUpdate */
+        PersonUpdate: {
+            /** Name */
+            name: string;
+        };
         /** ProximityEventRead */
         ProximityEventRead: {
             /**
@@ -1224,6 +1538,20 @@ export interface components {
              * Format: date-time
              */
             occurred_at: string;
+        };
+        /**
+         * RecognizedPersonRead
+         * @description Embedded on ClipRead (see app.blink.schemas) so the Library grid and
+         *     clip modal can show who was recognized without a separate round trip.
+         */
+        RecognizedPersonRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
         };
         /**
          * SetupRequest
@@ -1880,6 +2208,432 @@ export interface operations {
             };
         };
     };
+    get_settings_route_api_biometrics_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BiometricsSettingsRead"];
+                };
+            };
+        };
+    };
+    update_settings_route_api_biometrics_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BiometricsSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BiometricsSettingsRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_people_route_api_biometrics_people_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonRead"][];
+                };
+            };
+        };
+    };
+    create_person_route_api_biometrics_people_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PersonCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_person_route_api_biometrics_people__person_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                person_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_person_route_api_biometrics_people__person_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                person_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PersonUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_person_route_api_biometrics_people__person_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                person_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    person_thumbnail_route_api_biometrics_people__person_id__thumbnail_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                person_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_person_faces_route_api_biometrics_people__person_id__faces_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                person_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FaceEmbeddingRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    face_thumbnail_route_api_biometrics_people__person_id__faces__face_id__thumbnail_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                person_id: string;
+                face_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_face_route_api_biometrics_people__person_id__faces__face_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                person_id: string;
+                face_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clip_frame_route_api_biometrics_clips__clip_id__frame_get: {
+        parameters: {
+            query: {
+                frame_seconds: number;
+            };
+            header?: never;
+            path: {
+                clip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    detect_faces_route_api_biometrics_clips__clip_id__detect_faces_get: {
+        parameters: {
+            query: {
+                frame_seconds: number;
+            };
+            header?: never;
+            path: {
+                clip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DetectedFaceRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enroll_face_route_api_biometrics_people__person_id__enroll_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                person_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnrollFaceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FaceEmbeddingRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     link_account_api_blink_link_post: {
         parameters: {
             query?: never;
@@ -2068,6 +2822,7 @@ export interface operations {
                 since?: string | null;
                 until?: string | null;
                 downloaded_only?: boolean;
+                recognized_person_id?: string | null;
                 page?: number;
                 page_size?: number;
             };
