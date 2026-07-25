@@ -147,6 +147,7 @@ jobs:
           target: prod
           push: false
           load: true
+          pull: true
           tags: blink-backend:ci
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
@@ -158,6 +159,7 @@ jobs:
           target: prod
           push: false
           load: true
+          pull: true
           tags: blink-frontend:ci
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
