@@ -12,6 +12,7 @@ import { useRoute, useRouter } from "vue-router";
 
 import {
   ApiError,
+  bulkAnalyzeClips,
   bulkDeleteClips,
   deleteClip,
   downloadClipsAsZip,
@@ -164,6 +165,29 @@ async function bulkDownload(): Promise<void> {
     toast.add({
       severity: "error",
       summary: "Download failed",
+      detail: caught instanceof ApiError ? caught.message : "Unexpected error.",
+      life: 4000,
+    });
+  } finally {
+    bulkWorking.value = false;
+  }
+}
+
+async function performBulkAnalyze(): Promise<void> {
+  bulkWorking.value = true;
+  try {
+    const result = await bulkAnalyzeClips([...selected.value]);
+    toast.add({
+      severity: result.failed > 0 ? "warn" : "success",
+      summary: `Queued ${result.succeeded} clip(s) for analysis`,
+      detail: result.failed > 0 ? `${result.failed} could not be queued.` : undefined,
+      life: 3500,
+    });
+    clearSelection();
+  } catch (caught) {
+    toast.add({
+      severity: "error",
+      summary: "Bulk analyze failed",
       detail: caught instanceof ApiError ? caught.message : "Unexpected error.",
       life: 4000,
     });
@@ -330,6 +354,15 @@ async function performSingleDelete(clip: ClipRead): Promise<void> {
             :loading="bulkWorking"
             data-testid="bulk-download"
             @click="bulkDownload"
+          />
+          <Button
+            label="Analyze"
+            icon="pi pi-sparkles"
+            severity="secondary"
+            outlined
+            :loading="bulkWorking"
+            data-testid="bulk-analyze"
+            @click="performBulkAnalyze"
           />
           <Button
             label="Delete"

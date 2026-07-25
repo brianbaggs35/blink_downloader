@@ -8,6 +8,7 @@ vi.mock("@/api", async (importOriginal) => ({
   listClips: vi.fn(),
   deleteClip: vi.fn(),
   bulkDeleteClips: vi.fn(),
+  bulkAnalyzeClips: vi.fn(),
   downloadClipsAsZip: vi.fn(),
 }));
 
@@ -18,6 +19,7 @@ const confirmRequire = vi.fn();
 vi.mock("primevue/useconfirm", () => ({ useConfirm: () => ({ require: confirmRequire }) }));
 
 import {
+  bulkAnalyzeClips,
   bulkDeleteClips,
   deleteClip,
   downloadClipsAsZip,
@@ -39,6 +41,7 @@ const mockedCameras = vi.mocked(listCameras);
 const mockedClips = vi.mocked(listClips);
 const mockedDeleteClip = vi.mocked(deleteClip);
 const mockedBulkDelete = vi.mocked(bulkDeleteClips);
+const mockedBulkAnalyze = vi.mocked(bulkAnalyzeClips);
 const mockedDownloadZip = vi.mocked(downloadClipsAsZip);
 
 function linkedStatus(overrides: Partial<BlinkStatusResponse> = {}): BlinkStatusResponse {
@@ -423,6 +426,77 @@ describe("LibraryView — bulk download", () => {
 
     await wrapper.find('[data-testid="bulk-download"]').trigger("click");
     await flushPromises();
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: "Unexpected error." }));
+  });
+});
+
+describe("LibraryView — bulk analyze", () => {
+  beforeEach(async () => {
+    mockedStatus.mockResolvedValue(linkedStatus());
+    mockedClips.mockResolvedValue(clipsResponse([makeClip({ id: "clip-1" })], 1));
+  });
+
+  it("queues the selected clips for analysis, toasts success, and clears selection", async () => {
+    mockedBulkAnalyze.mockResolvedValue({ succeeded: 1, failed: 0 });
+    const { wrapper } = await mountLibrary();
+    await wrapper.findComponent(ClipCard).vm.$emit("update:selected", true);
+    await flushPromises();
+
+    await wrapper.find('[data-testid="bulk-analyze"]').trigger("click");
+    await flushPromises();
+
+    expect(mockedBulkAnalyze).toHaveBeenCalledWith(["clip-1"]);
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: "success",
+        summary: "Queued 1 clip(s) for analysis",
+        detail: undefined,
+      }),
+    );
+    expect(wrapper.find('[data-testid="bulk-bar"]').exists()).toBe(false);
+  });
+
+  it("shows a warning toast when some clips can't be queued (not downloaded yet)", async () => {
+    mockedBulkAnalyze.mockResolvedValue({ succeeded: 0, failed: 1 });
+    const { wrapper } = await mountLibrary();
+    await wrapper.findComponent(ClipCard).vm.$emit("update:selected", true);
+    await flushPromises();
+
+    await wrapper.find('[data-testid="bulk-analyze"]').trigger("click");
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: "warn", detail: "1 could not be queued." }),
+    );
+  });
+
+  it("shows an error toast with the API message when the request itself fails", async () => {
+    mockedBulkAnalyze.mockRejectedValue(new ApiError(500, "Server exploded."));
+    const { wrapper } = await mountLibrary();
+    await wrapper.findComponent(ClipCard).vm.$emit("update:selected", true);
+    await flushPromises();
+
+    await wrapper.find('[data-testid="bulk-analyze"]').trigger("click");
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: "error",
+        summary: "Bulk analyze failed",
+        detail: "Server exploded.",
+      }),
+    );
+  });
+
+  it("shows a generic error detail when the request fails with a non-API error", async () => {
+    mockedBulkAnalyze.mockRejectedValue(new TypeError("boom"));
+    const { wrapper } = await mountLibrary();
+    await wrapper.findComponent(ClipCard).vm.$emit("update:selected", true);
+    await flushPromises();
+
+    await wrapper.find('[data-testid="bulk-analyze"]').trigger("click");
+    await flushPromises();
+
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: "Unexpected error." }));
   });
 });
