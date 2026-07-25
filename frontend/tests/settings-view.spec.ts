@@ -1,12 +1,12 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import Select from "primevue/select";
 import Tab from "primevue/tab";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/api/client";
 import { useAuthStore } from "@/stores/auth";
 import SettingsView from "@/views/SettingsView.vue";
-import { fakeUser, makePinia, mountGlobal } from "./helpers";
+import { fakeUser, makePinia, makeRouter, mountGlobal } from "./helpers";
 
 vi.mock("@/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api")>()),
@@ -42,6 +42,14 @@ beforeEach(() => {
   mockedGetStorage.mockResolvedValue({ storage_dir: "/data/clips", is_default: true });
 });
 
+// PrimeVue's TabList schedules a setTimeout(…, 150) on mount to measure and
+// position the active-tab ink bar. Letting it fire after the environment
+// for this test has already been torn down throws — wait it out here so
+// each test's own timer resolves while the DOM is still alive.
+afterEach(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 160));
+});
+
 // The other Settings tabs are covered by their own dedicated spec files —
 // stub them here so this file only exercises tab gating/switching, without
 // triggering their real onMounted API calls (PrimeVue's Tabs "lazy" mode
@@ -60,7 +68,7 @@ function mountSettings(withUser = true) {
     useAuthStore().user = { ...fakeUser, timezone: "America/New_York" };
   }
   return mount(SettingsView, {
-    global: { ...mountGlobal(pinia), stubs: settingsTabStubs },
+    global: { ...mountGlobal(pinia, makeRouter()), stubs: settingsTabStubs },
   });
 }
 
@@ -79,7 +87,7 @@ describe("SettingsView profile", () => {
     expect(Intl.supportedValuesOf("timeZone")).not.toContain("UTC");
     const pinia = makePinia();
     useAuthStore().user = { ...fakeUser, timezone: "UTC" };
-    const wrapper = mount(SettingsView, { global: mountGlobal(pinia) });
+    const wrapper = mount(SettingsView, { global: mountGlobal(pinia, makeRouter()) });
     await flushPromises();
     const select = wrapper.findComponent({ name: "Select" });
     expect(select.props("modelValue")).toBe("UTC");
@@ -201,7 +209,7 @@ describe("SettingsView storage", () => {
   it("is hidden for a non-superuser", async () => {
     const pinia = makePinia();
     useAuthStore().user = { ...fakeUser, is_superuser: false, timezone: "UTC" };
-    const wrapper = mount(SettingsView, { global: mountGlobal(pinia) });
+    const wrapper = mount(SettingsView, { global: mountGlobal(pinia, makeRouter()) });
     await flushPromises();
     expect(wrapper.find('[data-testid="storage-dir"]').exists()).toBe(false);
     expect(mockedGetStorage).not.toHaveBeenCalled();
@@ -274,7 +282,7 @@ describe("SettingsView tabs", () => {
     const pinia = makePinia();
     useAuthStore().user = { ...fakeUser, is_superuser: false, timezone: "UTC" };
     const wrapper = mount(SettingsView, {
-      global: { ...mountGlobal(pinia), stubs: settingsTabStubs },
+      global: { ...mountGlobal(pinia, makeRouter()), stubs: settingsTabStubs },
     });
     await flushPromises();
     const tabs = wrapper.findAllComponents(Tab);
@@ -310,5 +318,41 @@ describe("SettingsView tabs", () => {
     await flushPromises();
     expect(wrapper.find(`[data-testid="${testId}"]`).exists()).toBe(true);
     expect(wrapper.find('[data-testid="display-name"]').exists()).toBe(false);
+  });
+
+  it("opens directly on the tab named in the ?tab= query for an admin", async () => {
+    const pinia = makePinia();
+    useAuthStore().user = { ...fakeUser, timezone: "UTC" };
+    const router = makeRouter();
+    await router.push({ path: "/settings", query: { tab: "cameras" } });
+    const wrapper = mount(SettingsView, {
+      global: { ...mountGlobal(pinia, router), stubs: settingsTabStubs },
+    });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="stub-cameras"]').exists()).toBe(true);
+  });
+
+  it("ignores an admin-only ?tab= query for a non-admin", async () => {
+    const pinia = makePinia();
+    useAuthStore().user = { ...fakeUser, is_superuser: false, timezone: "UTC" };
+    const router = makeRouter();
+    await router.push({ path: "/settings", query: { tab: "cameras" } });
+    const wrapper = mount(SettingsView, {
+      global: { ...mountGlobal(pinia, router), stubs: settingsTabStubs },
+    });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="display-name"]').exists()).toBe(true);
+  });
+
+  it("falls back to General for an unrecognized ?tab= value", async () => {
+    const pinia = makePinia();
+    useAuthStore().user = { ...fakeUser, timezone: "UTC" };
+    const router = makeRouter();
+    await router.push({ path: "/settings", query: { tab: "not-a-real-tab" } });
+    const wrapper = mount(SettingsView, {
+      global: { ...mountGlobal(pinia, router), stubs: settingsTabStubs },
+    });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="display-name"]').exists()).toBe(true);
   });
 });
