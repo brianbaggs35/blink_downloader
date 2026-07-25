@@ -47,6 +47,15 @@ async def test_create_rejects_a_weak_password(admin_client: AsyncClient) -> None
     assert response.status_code == 400
 
 
+async def test_create_rejects_a_duplicate_email(admin_client: AsyncClient) -> None:
+    response = await admin_client.post(
+        "/api/users",
+        json={"email": "admin@example.com", "password": "a-fine-long-password"},
+    )
+    assert response.status_code == 400
+    assert "already exists" in response.json()["detail"]
+
+
 async def test_create_requires_admin(viewer_client: AsyncClient) -> None:
     response = await viewer_client.post(
         "/api/users", json={"email": "nope@example.com", "password": "a-fine-long-password"}

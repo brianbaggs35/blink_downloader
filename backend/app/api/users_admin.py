@@ -11,6 +11,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi_users import InvalidPasswordException
+from fastapi_users.exceptions import UserAlreadyExists
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -56,5 +57,10 @@ async def create_user(
         )
     except InvalidPasswordException as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.reason) from exc
+    except UserAlreadyExists as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A user with this email already exists.",
+        ) from exc
     logger.info("users.created_by_admin", user_id=str(user.id), is_superuser=user.is_superuser)
     return user
