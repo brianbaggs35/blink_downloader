@@ -29,7 +29,10 @@ const confirmPassword = ref("");
 const passwordError = ref("");
 const savingPassword = ref(false);
 
-const timezones = Intl.supportedValuesOf("timeZone");
+// "UTC" is a valid Intl timeZone but, oddly, isn't in the IANA-backed
+// supportedValuesOf() enumeration — add it explicitly so it's selectable
+// (new accounts default to it) rather than showing a blank field.
+const timezones = ["UTC", ...Intl.supportedValuesOf("timeZone")];
 
 const themeOptions = [
   { label: "Dark", value: true },

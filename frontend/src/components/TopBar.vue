@@ -3,6 +3,7 @@ import Button from "primevue/button";
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
+import { useMobileNav } from "@/composables/useMobileNav";
 import { useTheme } from "@/composables/useTheme";
 import { useAuthStore } from "@/stores/auth";
 
@@ -10,6 +11,7 @@ const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 const { isDark, toggle } = useTheme();
+const mobileNav = useMobileNav();
 
 const title = computed(() => (route.meta.title as string | undefined) ?? "");
 
@@ -30,9 +32,21 @@ async function signOut(): Promise<void> {
 
 <template>
   <header class="topbar">
-    <p class="page-title">
-      {{ title }}
-    </p>
+    <div class="title-group">
+      <Button
+        icon="pi pi-bars"
+        severity="secondary"
+        text
+        rounded
+        class="menu-toggle"
+        aria-label="Open navigation menu"
+        data-testid="mobile-nav-toggle"
+        @click="mobileNav.open()"
+      />
+      <p class="page-title">
+        {{ title }}
+      </p>
+    </div>
     <div class="actions">
       <Button
         :icon="isDark ? 'pi pi-sun' : 'pi pi-moon'"
@@ -86,11 +100,26 @@ async function signOut(): Promise<void> {
   background: color-mix(in srgb, var(--p-surface-950) 75%, transparent);
 }
 
+.title-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.menu-toggle {
+  display: none;
+  flex-shrink: 0;
+}
+
 .page-title {
   margin: 0;
   font-size: 1.05rem;
   font-weight: 600;
   letter-spacing: 0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .actions {
@@ -131,5 +160,24 @@ async function signOut(): Promise<void> {
 .user-name {
   font-size: 0.85rem;
   font-weight: 500;
+}
+
+@media (max-width: 768px) {
+  .topbar {
+    padding: 0 12px;
+  }
+
+  .menu-toggle {
+    display: inline-flex;
+  }
+
+  .user-chip {
+    padding: 4px;
+    border: none;
+  }
+
+  .user-name {
+    display: none;
+  }
 }
 </style>

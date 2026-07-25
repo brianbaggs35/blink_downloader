@@ -57,6 +57,20 @@ describe("SettingsView profile", () => {
     expect(input.value).toBe("Brian Baggs");
   });
 
+  it("offers UTC as a selectable timezone for new accounts, unlike the raw Intl enumeration", async () => {
+    // Intl.supportedValuesOf("timeZone") omits the literal "UTC" even though
+    // it's a valid Intl timeZone — new accounts default to it, so it must be
+    // selectable or the field renders blank for every fresh signup.
+    expect(Intl.supportedValuesOf("timeZone")).not.toContain("UTC");
+    const pinia = makePinia();
+    useAuthStore().user = { ...fakeUser, timezone: "UTC" };
+    const wrapper = mount(SettingsView, { global: mountGlobal(pinia) });
+    await flushPromises();
+    const select = wrapper.findComponent({ name: "Select" });
+    expect(select.props("modelValue")).toBe("UTC");
+    expect(select.props("options")).toContain("UTC");
+  });
+
   it("leaves defaults when no user is loaded", async () => {
     const wrapper = mountSettings(false);
     await flushPromises();

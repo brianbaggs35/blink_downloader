@@ -3,7 +3,7 @@ import Button from "primevue/button";
 import Dialog from "primevue/dialog";
 import { computed } from "vue";
 
-import { clipDownloadUrl, clipStreamUrl } from "@/api";
+import { clipDownloadUrl, clipStreamUrl, clipThumbnailUrl } from "@/api";
 import { useFormatting } from "@/composables/useFormatting";
 import VideoPlayer from "@/components/VideoPlayer.vue";
 
@@ -45,6 +45,7 @@ const visible = computed({
         v-if="clip.downloaded_at"
         :key="clip.id"
         :src="clipStreamUrl(clip.id)"
+        :poster="clip.thumbnail_generated ? clipThumbnailUrl(clip.id) : undefined"
         class="player"
       />
       <p

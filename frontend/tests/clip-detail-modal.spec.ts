@@ -54,8 +54,14 @@ describe("ClipDetailModal", () => {
     const wrapper = await mountModal(clip);
     expect(wrapper.findComponent(VideoPlayer).exists()).toBe(true);
     expect(wrapper.findComponent(VideoPlayer).props("src")).toBe("/api/clips/clip-1/stream");
+    expect(wrapper.findComponent(VideoPlayer).props("poster")).toBe("/api/clips/clip-1/thumbnail");
     expect(document.body.textContent).toContain("1:05");
     expect(document.body.textContent).toContain("2.0 KB");
+  });
+
+  it("omits the poster when no thumbnail has been generated", async () => {
+    const wrapper = await mountModal({ ...clip, thumbnail_generated: false });
+    expect(wrapper.findComponent(VideoPlayer).props("poster")).toBeUndefined();
   });
 
   it("shows a not-ready message instead of the player when undownloaded", async () => {
