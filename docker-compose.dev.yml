@@ -24,6 +24,7 @@ services:
       - ./backend:/app
       - dev-venv:/opt/venv
       - dev-uv-cache:/root/.cache/uv
+      - dev-clips:/data/clips
     environment:
       BLINK_ENVIRONMENT: development
       BLINK_DATABASE_URL: postgresql+asyncpg://blink:blink@postgres:5432/blink
@@ -50,6 +51,7 @@ services:
       - ./backend:/app
       - dev-venv:/opt/venv
       - dev-uv-cache:/root/.cache/uv
+      - dev-clips:/data/clips
     environment:
       BLINK_ENVIRONMENT: development
       BLINK_DATABASE_URL: postgresql+asyncpg://blink:blink@postgres:5432/blink
@@ -125,3 +127,4 @@ volumes:
   dev-pgdata:
   dev-venv:
   dev-uv-cache:
+  dev-clips:
