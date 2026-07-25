@@ -1,3 +1,4 @@
+import pluginSecurity from "eslint-plugin-security";
 import pluginVue from "eslint-plugin-vue";
 import tseslint from "typescript-eslint";
 
@@ -7,6 +8,7 @@ export default tseslint.config(
   },
   ...tseslint.configs.recommended,
   ...pluginVue.configs["flat/recommended"],
+  pluginSecurity.configs.recommended,
   {
     files: ["**/*.vue"],
     languageOptions: {
