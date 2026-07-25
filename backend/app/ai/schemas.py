@@ -63,6 +63,11 @@ class DetectedEntityRead(BaseModel):
     label: str
     confidence: float
     bbox: list[float] | None
+    recognized_person_id: str | None = None
+    """Set only when label was locally upgraded from generic to an enrolled
+    person's name (see app.ai.pipeline._upgrade_person_labels) — lets the
+    frontend distinguish a real recognized name from the VLM's own
+    generic/descriptive label text."""
 
     model_config = {"from_attributes": True}
 

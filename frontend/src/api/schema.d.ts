@@ -1338,6 +1338,8 @@ export interface components {
             confidence: number;
             /** Bbox */
             bbox: number[] | null;
+            /** Recognized Person Id */
+            recognized_person_id?: string | null;
         };
         /**
          * DetectedFaceRead
