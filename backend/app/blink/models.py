@@ -9,11 +9,12 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Index, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
+from app.db import str_enum as _str_enum
 
 
 class BlinkAccountStatus(StrEnum):
@@ -26,13 +27,6 @@ class StorageBackend(StrEnum):
     LOCAL = "local"
 
 
-def _str_enum(enum_cls: type[StrEnum], name: str) -> Enum:
-    # native_enum=False: a VARCHAR + CHECK constraint rather than a Postgres
-    # enum type, so adding a value later is a plain migration, not a
-    # multi-step ALTER TYPE dance.
-    return Enum(enum_cls, name=name, native_enum=False, length=20, validate_strings=True)
-
-
 class BlinkAccount(Base):
     __tablename__ = "blink_accounts"
 
@@ -41,7 +35,7 @@ class BlinkAccount(Base):
     encrypted_password: Mapped[str] = mapped_column(Text, nullable=False)
     encrypted_token_data: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[BlinkAccountStatus] = mapped_column(
-        _str_enum(BlinkAccountStatus, "blink_account_status"),
+        _str_enum(BlinkAccountStatus, "blink_account_status", length=20),
         default=BlinkAccountStatus.ACTIVE,
         server_default=BlinkAccountStatus.ACTIVE.value,
     )
@@ -77,6 +71,9 @@ class Camera(Base):
     battery: Mapped[str | None] = mapped_column(Text)
     thumbnail_path: Mapped[str | None] = mapped_column(Text)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Free-text context the AI prompt is given verbatim, e.g. "watches the
+    # driveway and front walkway" — never guessed, always admin-authored.
+    security_context: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -102,7 +99,7 @@ class Clip(Base):
     deleted_on_blink: Mapped[bool] = mapped_column(default=False, server_default="false")
 
     storage_backend: Mapped[StorageBackend] = mapped_column(
-        _str_enum(StorageBackend, "clip_storage_backend"),
+        _str_enum(StorageBackend, "clip_storage_backend", length=20),
         default=StorageBackend.LOCAL,
         server_default=StorageBackend.LOCAL.value,
     )

@@ -1,9 +1,10 @@
 """Async SQLAlchemy base, engine construction, and the request-scoped session."""
 
 from collections.abc import AsyncIterator
+from enum import StrEnum
 
 from fastapi import Request
-from sqlalchemy import MetaData
+from sqlalchemy import Enum, MetaData
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -37,3 +38,14 @@ async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
     sessionmaker: async_sessionmaker[AsyncSession] = request.app.state.sessionmaker
     async with sessionmaker() as session:
         yield session
+
+
+def str_enum(enum_cls: type[StrEnum], name: str, *, length: int | None = None) -> Enum:
+    """A VARCHAR + CHECK constraint rather than a Postgres enum type, so
+    adding a value later is a plain migration, not a multi-step ALTER TYPE
+    dance. Length defaults to the longest member's value, with room to
+    override for a table whose column width is already fixed."""
+    resolved_length = length or max(len(member.value) for member in enum_cls)
+    return Enum(
+        enum_cls, name=name, native_enum=False, length=resolved_length, validate_strings=True
+    )

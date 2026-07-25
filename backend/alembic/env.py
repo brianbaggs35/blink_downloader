@@ -7,11 +7,14 @@ from alembic import context
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from app.ai import models as ai_models  # noqa: F401  — register tables on Base.metadata
+from app.alerts import models as alert_models  # noqa: F401
 from app.blink import models as blink_models  # noqa: F401  — register tables on Base.metadata
 from app.config import get_settings
 from app.db import Base
 from app.settings import models as settings_models  # noqa: F401
 from app.users import models  # noqa: F401  — register tables on Base.metadata
+from app.vehicles import models as vehicle_models  # noqa: F401
 
 config = context.config
 
