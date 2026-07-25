@@ -22,10 +22,19 @@ from app.ai.models import AIProviderKind, CameraBaseline
 from app.ai.providers import AnalysisRequest, AnalysisResult, DetectedEntityResult
 from app.ai.schemas import AISettingsUpdate
 from app.ai.service import get_ai_settings, update_ai_settings
+from app.alerts.schemas import AlertSettingsUpdate
+from app.alerts.service import update_alert_settings
 from app.blink.models import BlinkAccount, Camera, Clip
 from app.config import get_settings
 from app.security.crypto import SecretBox
+from app.vehicles.models import Vehicle
+from app.worker.tasks.alerts import SEND_ALERT_JOB_NAME
 from app.worker.tasks.analyze import analyze_clip
+
+VEHICLE_OUTLINE = [[0.3, 0.4], [0.7, 0.4], [0.7, 0.7], [0.3, 0.7]]
+# Same 64x64-frame geometry as test_ai_pipeline.py: outline max span
+# 25.6px, 15ft length -> ~1.707 px/ft; average adult measures ~0.149 tall.
+PERSON_HEIGHT = 0.14934
 
 
 class ScriptedProvider:
@@ -116,6 +125,19 @@ async def _make_camera_and_clip(
     await session.refresh(camera)
     await session.refresh(clip)
     return camera, clip
+
+
+async def _make_vehicle(session: AsyncSession, camera: Camera, **overrides: object) -> Vehicle:
+    defaults: dict[str, object] = {
+        "camera_id": camera.id,
+        "description": "The blue sedan",
+        "outline_points": VEHICLE_OUTLINE,
+    }
+    defaults.update(overrides)
+    vehicle = Vehicle(**defaults)  # type: ignore[arg-type]
+    session.add(vehicle)
+    await session.commit()
+    return vehicle
 
 
 async def test_clip_not_found_is_a_clean_noop(worker_ctx: dict[str, Any]) -> None:
@@ -259,3 +281,153 @@ async def test_analysis_is_conditioned_on_existing_baseline_and_feedback(
     assert len(ScriptedProvider.calls) == 1
     assert ScriptedProvider.calls[0].baseline_context is not None
     assert "person" in ScriptedProvider.calls[0].baseline_context
+
+
+# ------------------------------------------------------------- alert triggers
+
+
+async def test_suspicious_analysis_enqueues_an_alert(
+    worker_ctx: dict[str, Any], sample_clip_path: Path
+) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        camera, clip = await _make_camera_and_clip(session, sample_clip_path)
+        camera_id, clip_id = camera.id, clip.id
+        await update_ai_settings(
+            session,
+            AISettingsUpdate(
+                enabled=True,
+                tier1_provider=AIProviderKind.OPENAI,
+                tier1_model="gpt-5-nano",
+                tier2_enabled=False,
+            ),
+            get_settings().encryption_key,
+        )
+
+    ScriptedProvider.queued = [
+        AnalysisResult(
+            summary="Someone is prying at the window.",
+            suspicion_score=0.9,
+            entities=[],
+            input_tokens=50,
+            output_tokens=10,
+        )
+    ]
+    result = await analyze_clip(worker_ctx, str(clip_id))
+    assert result == "ok"
+
+    worker_ctx["redis"].enqueue_job.assert_awaited_once()
+    call = worker_ctx["redis"].enqueue_job.await_args
+    assert call.args == (SEND_ALERT_JOB_NAME,)
+    assert call.kwargs["camera_id"] == str(camera_id)
+    assert call.kwargs["reason"] == "suspicious_activity"
+    assert "Someone is prying" in call.kwargs["message"]
+
+
+async def test_routine_analysis_does_not_enqueue_an_alert(
+    worker_ctx: dict[str, Any], sample_clip_path: Path
+) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        _camera, clip = await _make_camera_and_clip(session, sample_clip_path)
+        clip_id = clip.id
+        await update_ai_settings(
+            session,
+            AISettingsUpdate(
+                enabled=True,
+                tier1_provider=AIProviderKind.OPENAI,
+                tier1_model="gpt-5-nano",
+                tier2_enabled=False,
+            ),
+            get_settings().encryption_key,
+        )
+
+    ScriptedProvider.queued = [
+        AnalysisResult(
+            summary="Nothing unusual.",
+            suspicion_score=0.1,
+            entities=[],
+            input_tokens=50,
+            output_tokens=10,
+        )
+    ]
+    result = await analyze_clip(worker_ctx, str(clip_id))
+    assert result == "ok"
+    worker_ctx["redis"].enqueue_job.assert_not_awaited()
+
+
+async def test_alert_on_suspicious_disabled_skips_the_alert(
+    worker_ctx: dict[str, Any], sample_clip_path: Path
+) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        _camera, clip = await _make_camera_and_clip(session, sample_clip_path)
+        clip_id = clip.id
+        await update_ai_settings(
+            session,
+            AISettingsUpdate(
+                enabled=True,
+                tier1_provider=AIProviderKind.OPENAI,
+                tier1_model="gpt-5-nano",
+                tier2_enabled=False,
+            ),
+            get_settings().encryption_key,
+        )
+        await update_alert_settings(
+            session,
+            AlertSettingsUpdate(alert_on_suspicious_clip=False),
+            get_settings().encryption_key,
+        )
+
+    ScriptedProvider.queued = [
+        AnalysisResult(
+            summary="Someone is prying at the window.",
+            suspicion_score=0.9,
+            entities=[],
+            input_tokens=50,
+            output_tokens=10,
+        )
+    ]
+    result = await analyze_clip(worker_ctx, str(clip_id))
+    assert result == "ok"
+    worker_ctx["redis"].enqueue_job.assert_not_awaited()
+
+
+async def test_vehicle_proximity_breach_enqueues_an_alert(
+    worker_ctx: dict[str, Any], sample_clip_path: Path
+) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        camera, clip = await _make_camera_and_clip(session, sample_clip_path)
+        camera_id, clip_id = camera.id, clip.id
+        await _make_vehicle(session, camera)
+        await update_ai_settings(
+            session,
+            AISettingsUpdate(
+                enabled=True,
+                tier1_provider=AIProviderKind.OPENAI,
+                tier1_model="gpt-5-nano",
+                tier2_enabled=False,
+            ),
+            get_settings().encryption_key,
+        )
+
+    close_bbox = (0.71, 0.55 - PERSON_HEIGHT, 0.02, PERSON_HEIGHT)
+    ScriptedProvider.queued = [
+        AnalysisResult(
+            summary="A person is at the car.",
+            suspicion_score=0.1,
+            entities=[
+                DetectedEntityResult(
+                    type="person", confidence=0.9, label="someone", bbox=close_bbox
+                )
+            ],
+            input_tokens=50,
+            output_tokens=10,
+        )
+    ]
+    result = await analyze_clip(worker_ctx, str(clip_id))
+    assert result == "ok"
+
+    worker_ctx["redis"].enqueue_job.assert_awaited_once()
+    call = worker_ctx["redis"].enqueue_job.await_args
+    assert call.args == (SEND_ALERT_JOB_NAME,)
+    assert call.kwargs["camera_id"] == str(camera_id)
+    assert call.kwargs["reason"] == "vehicle_proximity"
+    assert "from your vehicle" in call.kwargs["message"]

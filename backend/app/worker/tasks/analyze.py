@@ -11,11 +11,15 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.learning import baseline_context_for, feedback_examples_for, update_baseline
+from app.ai.models import Analysis, SuspicionLabel
 from app.ai.pipeline import AnalysisSkippedError, run_analysis
 from app.ai.service import get_ai_settings
+from app.alerts.models import AlertSettings
+from app.alerts.service import get_alert_settings
 from app.blink.models import Camera, Clip
 from app.config import get_settings
 from app.logs import get_logger
+from app.worker.tasks.alerts import SEND_ALERT_JOB_NAME
 
 logger = get_logger(__name__)
 
@@ -61,6 +65,9 @@ async def analyze_clip(ctx: dict[Any, Any], clip_id: str) -> str:
         await update_baseline(session, camera.id, clip.recorded_at, entity_types)
         await session.commit()
 
+        alert_settings = await get_alert_settings(session)
+        await _maybe_send_alerts(ctx, alert_settings, camera, analysis)
+
         logger.info(
             "ai.analyze_completed",
             clip_id=clip_id,
@@ -68,3 +75,36 @@ async def analyze_clip(ctx: dict[Any, Any], clip_id: str) -> str:
             escalated=analysis.escalated,
         )
         return "ok"
+
+
+async def _maybe_send_alerts(
+    ctx: dict[Any, Any], alert_settings: AlertSettings, camera: Camera, analysis: Analysis
+) -> None:
+    if (
+        alert_settings.alert_on_suspicious_clip
+        and analysis.suspicion_label == SuspicionLabel.SUSPICIOUS
+        and analysis.suspicion_score >= alert_settings.suspicion_alert_threshold
+    ):
+        message = (
+            f"[{camera.name}] Suspicious activity (score {analysis.suspicion_score:.2f}): "
+            f"{analysis.summary}"
+        )
+        await ctx["redis"].enqueue_job(
+            SEND_ALERT_JOB_NAME,
+            camera_id=str(camera.id),
+            reason="suspicious_activity",
+            message=message,
+        )
+
+    proximity = analysis.vehicle_proximity
+    if alert_settings.alert_on_vehicle_proximity and proximity and proximity["breached_threshold"]:
+        message = (
+            f"[{camera.name}] Someone is ~{proximity['distance_feet']}ft "
+            f"(±{proximity['error_margin_feet']}ft) from your vehicle: {analysis.summary}"
+        )
+        await ctx["redis"].enqueue_job(
+            SEND_ALERT_JOB_NAME,
+            camera_id=str(camera.id),
+            reason="vehicle_proximity",
+            message=message,
+        )
