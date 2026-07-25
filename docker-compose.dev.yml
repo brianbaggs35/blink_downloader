@@ -1,0 +1,127 @@
+# Development stack with hot reload. Entry point: `make dev`.
+name: blink-dev
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+      target: dev
+    command:
+      [
+        "uv",
+        "run",
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--reload",
+      ]
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+      - dev-venv:/opt/venv
+      - dev-uv-cache:/root/.cache/uv
+    environment:
+      BLINK_ENVIRONMENT: development
+      BLINK_DATABASE_URL: postgresql+asyncpg://blink:blink@postgres:5432/blink
+      BLINK_REDIS_URL: redis://redis:6379/0
+      BLINK_COOKIE_SECURE: "false" # vite dev server terminates plain HTTP
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+      target: dev
+    command: ["uv", "run", "arq", "app.worker.main.WorkerSettings", "--watch", "app"]
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+      - dev-venv:/opt/venv
+      - dev-uv-cache:/root/.cache/uv
+    environment:
+      BLINK_ENVIRONMENT: development
+      BLINK_DATABASE_URL: postgresql+asyncpg://blink:blink@postgres:5432/blink
+      BLINK_REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+      target: dev
+    command: ["uv", "run", "alembic", "upgrade", "head"]
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+      - dev-venv:/opt/venv
+      - dev-uv-cache:/root/.cache/uv
+    environment:
+      BLINK_ENVIRONMENT: development
+      BLINK_DATABASE_URL: postgresql+asyncpg://blink:blink@postgres:5432/blink
+      BLINK_REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  frontend:
+    image: node:24-slim
+    working_dir: /app
+    command: ["sh", "-c", "npm install --no-audit --no-fund && npm run dev -- --host 0.0.0.0"]
+    volumes:
+      - ./frontend:/app
+    environment:
+      VITE_API_PROXY_TARGET: http://backend:8000
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      - backend
+
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: blink
+      POSTGRES_PASSWORD: blink
+      POSTGRES_DB: blink
+    volumes:
+      - dev-pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U blink -d blink"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  dev-pgdata:
+  dev-venv:
+  dev-uv-cache:

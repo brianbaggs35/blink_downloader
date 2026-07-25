@@ -1,0 +1,16 @@
+{
+  "name": "blink-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "~1.61.1",
+    "@types/node": "^26.1.1",
+    "typescript": "~5.9.3"
+  }
+}

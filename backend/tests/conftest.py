@@ -17,6 +17,7 @@ os.environ.setdefault("BLINK_SECRET_KEY", "test-secret-key-not-for-production-us
 os.environ.setdefault("BLINK_ENCRYPTION_KEY", "iRZbYNDbXbGGoHy4JV2XChcPYDbdCTC9YXf29CQzB1I=")
 
 import pytest
+from alembic import command
 from alembic.config import Config as AlembicConfig
 from asgi_lifespan import LifespanManager
 from fastapi import FastAPI
@@ -25,7 +26,6 @@ from pydantic_settings import SettingsConfigDict
 from redis.asyncio import Redis
 from sqlalchemy import text
 
-from alembic import command
 from app.config import Settings
 from app.main import create_app
 

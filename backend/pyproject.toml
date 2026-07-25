@@ -48,6 +48,11 @@ select = [
     "ISC", "LOG", "N", "PERF", "PIE", "PTH", "RET", "RUF", "S", "SIM",
     "T20", "TID", "UP", "W",
 ]
+[tool.ruff.lint.isort]
+# The repo's alembic/ scripts directory must not make ruff treat the installed
+# alembic package as first-party.
+known-third-party = ["alembic"]
+
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105", "S106", "ARG001", "ARG002"]
 # Protocol implementations and framework hooks keep their signatures even

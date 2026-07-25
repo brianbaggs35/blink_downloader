@@ -32,9 +32,7 @@ async def seed() -> bool:
     try:
         sessionmaker = build_sessionmaker(engine)
         async with sessionmaker() as session:
-            count = (
-                await session.execute(select(func.count()).select_from(User))
-            ).scalar_one()
+            count = (await session.execute(select(func.count()).select_from(User))).scalar_one()
             if count > 0:
                 logger.info("seed.skipped", users=count)
                 return False
