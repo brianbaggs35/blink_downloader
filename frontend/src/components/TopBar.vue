@@ -30,9 +30,9 @@ async function signOut(): Promise<void> {
 
 <template>
   <header class="topbar">
-    <h1 class="page-title">
+    <p class="page-title">
       {{ title }}
-    </h1>
+    </p>
     <div class="actions">
       <Button
         :icon="isDark ? 'pi pi-sun' : 'pi pi-moon'"

@@ -8,9 +8,9 @@ defineProps<{
 <template>
   <div class="page-header">
     <div>
-      <h2 class="title">
+      <h1 class="title">
         {{ title }}
-      </h2>
+      </h1>
       <p
         v-if="description"
         class="description"
