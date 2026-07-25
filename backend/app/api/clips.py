@@ -8,6 +8,7 @@ import asyncio
 import tempfile
 import uuid
 import zipfile
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
@@ -18,8 +19,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.background import BackgroundTask
 
-from app.ai.models import Analysis
-from app.ai.schemas import AnalysisRead
+from app.ai.learning import record_feedback
+from app.ai.models import Analysis, Feedback
+from app.ai.schemas import AnalysisRead, FeedbackCreate, FeedbackRead
 from app.blink.models import Camera, Clip
 from app.blink.schemas import BulkActionResponse, BulkClipIds, ClipListResponse, ClipRead
 from app.config import get_settings
@@ -28,6 +30,7 @@ from app.logs import get_logger
 from app.settings.service import resolve_storage_dir
 from app.storage.service import ClipStorage, StorageError, get_clip_storage
 from app.users.auth import current_active_user, current_superuser
+from app.users.models import User
 from app.worker.tasks.analyze import ANALYZE_JOB_NAME
 
 logger = get_logger(__name__)
@@ -90,13 +93,7 @@ async def get_clip(
     return await _get_clip_or_404(session, clip_id)
 
 
-@router.get("/{clip_id}/analysis", response_model=AnalysisRead)
-async def get_clip_analysis(
-    clip_id: uuid.UUID,
-    session: Annotated[AsyncSession, Depends(get_session)],
-    _user: Annotated[object, Depends(current_active_user)],
-) -> Analysis:
-    await _get_clip_or_404(session, clip_id)
+async def _get_current_analysis_or_404(session: AsyncSession, clip_id: uuid.UUID) -> Analysis:
     stmt = select(Analysis).where(Analysis.clip_id == clip_id, Analysis.is_current.is_(True))
     analysis = (await session.execute(stmt)).scalar_one_or_none()
     if analysis is None:
@@ -104,6 +101,46 @@ async def get_clip_analysis(
             status_code=status.HTTP_404_NOT_FOUND, detail="This clip has not been analyzed yet."
         )
     return analysis
+
+
+@router.get("/{clip_id}/analysis", response_model=AnalysisRead)
+async def get_clip_analysis(
+    clip_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _user: Annotated[object, Depends(current_active_user)],
+) -> Analysis:
+    await _get_clip_or_404(session, clip_id)
+    return await _get_current_analysis_or_404(session, clip_id)
+
+
+@router.post(
+    "/{clip_id}/feedback", response_model=FeedbackRead, status_code=status.HTTP_201_CREATED
+)
+async def submit_feedback(
+    clip_id: uuid.UUID,
+    payload: FeedbackCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> Feedback:
+    clip = await _get_clip_or_404(session, clip_id)
+    analysis = await _get_current_analysis_or_404(session, clip_id)
+    return await record_feedback(session, analysis, clip, user.id, payload.verdict, payload.note)
+
+
+@router.get("/{clip_id}/feedback", response_model=list[FeedbackRead])
+async def list_feedback(
+    clip_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _user: Annotated[object, Depends(current_active_user)],
+) -> Sequence[Feedback]:
+    await _get_clip_or_404(session, clip_id)
+    stmt = (
+        select(Feedback)
+        .join(Analysis, Feedback.analysis_id == Analysis.id)
+        .where(Analysis.clip_id == clip_id)
+        .order_by(Feedback.created_at.desc())
+    )
+    return (await session.execute(stmt)).scalars().all()
 
 
 def _clip_file_or_404(path_str: str | None, what: str) -> Path:

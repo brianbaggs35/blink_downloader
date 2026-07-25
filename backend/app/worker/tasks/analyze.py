@@ -10,6 +10,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.ai.learning import baseline_context_for, feedback_examples_for, update_baseline
 from app.ai.pipeline import AnalysisSkippedError, run_analysis
 from app.ai.service import get_ai_settings
 from app.blink.models import Camera, Clip
@@ -38,13 +39,27 @@ async def analyze_clip(ctx: dict[Any, Any], clip_id: str) -> str:
         if camera is None:  # pragma: no cover — FK guarantees this can't happen
             return "camera_missing"
 
+        baseline_context = await baseline_context_for(session, camera.id, clip.recorded_at.hour)
+        feedback_examples = await feedback_examples_for(
+            session, camera.id, ai_settings.feedback_context_count
+        )
         try:
             analysis = await run_analysis(
-                session, clip, camera, ai_settings, settings.encryption_key
+                session,
+                clip,
+                camera,
+                ai_settings,
+                settings.encryption_key,
+                baseline_context=baseline_context,
+                feedback_examples=feedback_examples,
             )
         except AnalysisSkippedError as exc:
             logger.info("ai.analyze_skipped", clip_id=clip_id, reason=str(exc))
             return "skipped"
+
+        entity_types = [str(e.get("type", "unknown")) for e in analysis.detected_entities]
+        await update_baseline(session, camera.id, clip.recorded_at, entity_types)
+        await session.commit()
 
         logger.info(
             "ai.analyze_completed",
