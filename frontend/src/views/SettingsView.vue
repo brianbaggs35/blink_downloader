@@ -1,0 +1,291 @@
+<script setup lang="ts">
+import Button from "primevue/button";
+import InputText from "primevue/inputtext";
+import Password from "primevue/password";
+import Select from "primevue/select";
+import SelectButton from "primevue/selectbutton";
+import { useToast } from "primevue/usetoast";
+import { onMounted, ref } from "vue";
+
+import { ApiError, updateMe } from "@/api";
+import PageHeader from "@/components/PageHeader.vue";
+import { useTheme } from "@/composables/useTheme";
+import { useAuthStore } from "@/stores/auth";
+
+const MIN_PASSWORD_LENGTH = 12;
+
+const auth = useAuthStore();
+const toast = useToast();
+const { isDark, setDark } = useTheme();
+
+const displayName = ref("");
+const timezone = ref("UTC");
+const savingProfile = ref(false);
+
+const newPassword = ref("");
+const confirmPassword = ref("");
+const passwordError = ref("");
+const savingPassword = ref(false);
+
+const timezones = Intl.supportedValuesOf("timeZone");
+
+const themeOptions = [
+  { label: "Dark", value: true },
+  { label: "Light", value: false },
+];
+
+onMounted(() => {
+  if (auth.user) {
+    displayName.value = auth.user.display_name;
+    timezone.value = auth.user.timezone;
+  }
+});
+
+async function saveProfile(): Promise<void> {
+  savingProfile.value = true;
+  try {
+    auth.user = await updateMe({ display_name: displayName.value, timezone: timezone.value });
+    toast.add({ severity: "success", summary: "Profile saved", life: 2500 });
+  } catch (caught) {
+    toast.add({
+      severity: "error",
+      summary: "Could not save profile",
+      detail: caught instanceof ApiError ? caught.message : "Unexpected error.",
+      life: 4000,
+    });
+  } finally {
+    savingProfile.value = false;
+  }
+}
+
+async function savePassword(): Promise<void> {
+  passwordError.value = "";
+  if (newPassword.value.length < MIN_PASSWORD_LENGTH) {
+    passwordError.value = `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`;
+    return;
+  }
+  if (newPassword.value !== confirmPassword.value) {
+    passwordError.value = "Passwords do not match.";
+    return;
+  }
+  savingPassword.value = true;
+  try {
+    await updateMe({ password: newPassword.value });
+    newPassword.value = "";
+    confirmPassword.value = "";
+    toast.add({ severity: "success", summary: "Password updated", life: 2500 });
+  } catch (caught) {
+    passwordError.value = caught instanceof ApiError ? caught.message : "Unexpected error.";
+  } finally {
+    savingPassword.value = false;
+  }
+}
+</script>
+
+<template>
+  <section>
+    <PageHeader
+      title="Settings"
+      description="Your profile, security, appearance, and (soon) Blink account, AI, and alerting configuration."
+    />
+
+    <div class="panels">
+      <article class="panel">
+        <h3 class="panel-title">
+          Profile
+        </h3>
+        <p class="panel-hint">
+          Shown around the app and used for report timestamps.
+        </p>
+        <div class="panel-body">
+          <label class="field">
+            <span class="field-label">Display name</span>
+            <InputText
+              v-model="displayName"
+              fluid
+              data-testid="display-name"
+            />
+          </label>
+          <label class="field">
+            <span class="field-label">Timezone</span>
+            <Select
+              v-model="timezone"
+              :options="timezones"
+              filter
+              fluid
+              data-testid="timezone"
+            />
+          </label>
+          <div class="panel-actions">
+            <Button
+              label="Save profile"
+              :loading="savingProfile"
+              data-testid="save-profile"
+              @click="saveProfile"
+            />
+          </div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <h3 class="panel-title">
+          Security
+        </h3>
+        <p class="panel-hint">
+          Use at least {{ MIN_PASSWORD_LENGTH }} characters.
+        </p>
+        <div class="panel-body">
+          <label class="field">
+            <span class="field-label">New password</span>
+            <Password
+              v-model="newPassword"
+              toggle-mask
+              fluid
+              data-testid="new-password"
+            />
+          </label>
+          <label class="field">
+            <span class="field-label">Confirm new password</span>
+            <Password
+              v-model="confirmPassword"
+              :feedback="false"
+              toggle-mask
+              fluid
+              data-testid="confirm-password"
+            />
+          </label>
+          <p
+            v-if="passwordError"
+            class="field-error"
+            data-testid="password-error"
+          >
+            {{ passwordError }}
+          </p>
+          <div class="panel-actions">
+            <Button
+              label="Update password"
+              severity="secondary"
+              :loading="savingPassword"
+              data-testid="save-password"
+              @click="savePassword"
+            />
+          </div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <h3 class="panel-title">
+          Appearance
+        </h3>
+        <p class="panel-hint">
+          Dark is the default for a security console.
+        </p>
+        <div class="panel-body">
+          <SelectButton
+            :model-value="isDark"
+            :options="themeOptions"
+            option-label="label"
+            option-value="value"
+            :allow-empty="false"
+            data-testid="theme-select"
+            @update:model-value="setDark"
+          />
+        </div>
+      </article>
+
+      <article class="panel panel-upcoming">
+        <h3 class="panel-title">
+          Coming soon
+        </h3>
+        <ul class="upcoming-list">
+          <li><i class="pi pi-link" /> Blink account linking &amp; camera discovery</li>
+          <li><i class="pi pi-sparkles" /> AI provider keys and analysis preferences</li>
+          <li><i class="pi pi-bell" /> Alerting: Discord &amp; Slack webhooks, SMTP email</li>
+          <li><i class="pi pi-users" /> Household member invitations</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+</template>
+
+<style scoped>
+.panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.panel {
+  padding: 22px 24px;
+  border-radius: 14px;
+  border: 1px solid var(--p-surface-200);
+  background: var(--p-surface-0);
+}
+
+.blink-dark .panel {
+  border-color: var(--p-surface-800);
+  background: color-mix(in srgb, var(--p-surface-900) 60%, transparent);
+}
+
+.panel-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.panel-hint {
+  margin: 4px 0 16px;
+  font-size: 0.82rem;
+  color: var(--p-surface-500);
+}
+
+.panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--p-surface-600);
+}
+
+.blink-dark .field-label {
+  color: var(--p-surface-300);
+}
+
+.field-error {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--p-red-500);
+}
+
+.panel-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.upcoming-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 0.88rem;
+  color: var(--p-surface-500);
+}
+
+.upcoming-list i {
+  margin-right: 8px;
+  color: var(--p-primary-500);
+}
+</style>
