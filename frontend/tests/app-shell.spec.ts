@@ -1,6 +1,12 @@
-import { mount } from "@vue/test-utils";
-import { describe, expect, it } from "vitest";
+import { flushPromises, mount } from "@vue/test-utils";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/api")>()),
+  getBlinkStatus: vi.fn(),
+}));
+
+import { getBlinkStatus } from "@/api";
 import App from "@/App.vue";
 import AppLogo from "@/components/AppLogo.vue";
 import NavSidebar from "@/components/NavSidebar.vue";
@@ -10,6 +16,19 @@ import { useAuthStore } from "@/stores/auth";
 import LibraryView from "@/views/LibraryView.vue";
 import { fakeUser, makePinia, makeRouter, mountGlobal } from "./helpers";
 
+const mockedStatus = vi.mocked(getBlinkStatus);
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockedStatus.mockResolvedValue({
+    linked: false,
+    status: null,
+    last_sync: null,
+    last_error: null,
+    camera_count: 0,
+  });
+});
+
 describe("application shell", () => {
   it("renders sidebar, topbar, and the routed view", async () => {
     const pinia = makePinia();
@@ -17,6 +36,7 @@ describe("application shell", () => {
     const router = makeRouter();
     await router.push("/");
     const wrapper = mount(App, { global: mountGlobal(pinia, router) });
+    await flushPromises();
     expect(wrapper.findComponent(NavSidebar).exists()).toBe(true);
     expect(wrapper.findComponent(TopBar).exists()).toBe(true);
     expect(wrapper.findComponent(LibraryView).exists()).toBe(true);
