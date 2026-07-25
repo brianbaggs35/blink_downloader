@@ -24,6 +24,7 @@ from app.blink.service import BlinkAuthError, BlinkError
 from app.config import get_settings
 from app.security.crypto import SecretBox
 from app.settings.service import set_storage_dir
+from app.worker.tasks.analyze import ANALYZE_JOB_NAME
 from app.worker.tasks.download import download_clip
 
 
@@ -129,6 +130,7 @@ async def test_already_downloaded_short_circuits(worker_ctx: dict[str, Any]) -> 
     result = await download_clip(worker_ctx, str(clip_id))
     assert result == "already_downloaded"
     assert FakeBlinkService.instances == []  # never even tried to fetch
+    worker_ctx["redis"].enqueue_job.assert_not_awaited()
 
 
 async def test_disabled_camera_is_skipped(worker_ctx: dict[str, Any]) -> None:
@@ -165,6 +167,7 @@ async def test_successful_download_populates_metadata(
         assert Path(clip.storage_path).read_bytes() == synthetic_clip_bytes
 
     assert FakeBlinkService.instances[-1].closed is True
+    worker_ctx["redis"].enqueue_job.assert_awaited_once_with(ANALYZE_JOB_NAME, clip_id=str(clip_id))
     del camera_id
 
 

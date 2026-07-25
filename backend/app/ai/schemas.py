@@ -1,0 +1,86 @@
+"""Pydantic schemas for the AI settings and analysis API surface."""
+
+import uuid
+from datetime import datetime
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
+
+from app.ai.models import AIProviderKind, AnalysisTier, SuspicionLabel
+
+
+class AISettingsRead(BaseModel):
+    enabled: bool
+    tier1_provider: AIProviderKind | None
+    tier1_model: str | None
+    tier1_api_key_set: bool
+    tier1_base_url: str | None
+    tier2_enabled: bool
+    tier2_provider: AIProviderKind | None
+    tier2_model: str | None
+    tier2_api_key_set: bool
+    tier2_base_url: str | None
+    keyframes_per_clip: int
+    tier2_suspicion_threshold: float
+    feedback_context_count: int
+
+
+class AISettingsUpdate(BaseModel):
+    enabled: bool
+    tier1_provider: AIProviderKind | None = None
+    tier1_model: str | None = None
+    tier1_api_key: str | None = None
+    """None leaves the stored key untouched; "" clears it; anything else replaces it."""
+    tier1_base_url: str | None = None
+
+    tier2_enabled: bool = True
+    tier2_provider: AIProviderKind | None = None
+    tier2_model: str | None = None
+    tier2_api_key: str | None = None
+    tier2_base_url: str | None = None
+
+    keyframes_per_clip: int = Field(default=4, ge=1, le=12)
+    tier2_suspicion_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    feedback_context_count: int = Field(default=5, ge=0, le=20)
+
+
+class AIConnectionTestRequest(BaseModel):
+    tier: Literal["tier1", "tier2"]
+    provider: AIProviderKind
+    model: str = Field(min_length=1)
+    api_key: str | None = None
+    """Omit to test with the already-saved key for this tier, if any."""
+    base_url: str | None = None
+
+
+class AIConnectionTestResponse(BaseModel):
+    ok: bool
+    detail: str | None = None
+
+
+class DetectedEntityRead(BaseModel):
+    type: str
+    label: str
+    confidence: float
+    bbox: list[float] | None
+
+    model_config = {"from_attributes": True}
+
+
+class AnalysisRead(BaseModel):
+    id: uuid.UUID
+    clip_id: uuid.UUID
+    summary: str
+    suspicion_score: float
+    suspicion_label: SuspicionLabel
+    tier: AnalysisTier
+    escalated: bool
+    tier1_provider: AIProviderKind | None
+    tier1_model: str | None
+    tier2_provider: AIProviderKind | None
+    tier2_model: str | None
+    detected_entities: list[DetectedEntityRead]
+    vehicle_proximity: dict[str, Any] | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

@@ -66,7 +66,9 @@ class AnalysisRequest:
     baseline_context: str | None = None
     feedback_examples: list[str] = field(default_factory=list[str])
     detect_people_for_proximity: bool = False
-    model: str = ""
+    prior_tier_summary: str | None = None
+    """Set only on a tier-2 escalation call: the cheaper tier's own summary
+    and score, so the stronger model refines rather than starts blind."""
 
 
 @dataclass
@@ -143,6 +145,11 @@ def build_prompt(request: AnalysisRequest) -> str:
         parts.append(f"This camera's context (set by the homeowner): {request.camera_context}")
     if request.baseline_context:
         parts.append(f"What this camera normally sees: {request.baseline_context}")
+    if request.prior_tier_summary:
+        parts.append(
+            "A faster preliminary pass found this and flagged it for a closer look: "
+            f"{request.prior_tier_summary}. Confirm, refine, or correct this assessment."
+        )
     if request.feedback_examples:
         examples = "\n".join(f"- {ex}" for ex in request.feedback_examples)
         parts.append(f"This household previously corrected similar clips:\n{examples}")

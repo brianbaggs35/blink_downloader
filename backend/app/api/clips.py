@@ -12,12 +12,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.background import BackgroundTask
 
+from app.ai.models import Analysis
+from app.ai.schemas import AnalysisRead
 from app.blink.models import Camera, Clip
 from app.blink.schemas import BulkActionResponse, BulkClipIds, ClipListResponse, ClipRead
 from app.config import get_settings
@@ -26,6 +28,7 @@ from app.logs import get_logger
 from app.settings.service import resolve_storage_dir
 from app.storage.service import ClipStorage, StorageError, get_clip_storage
 from app.users.auth import current_active_user, current_superuser
+from app.worker.tasks.analyze import ANALYZE_JOB_NAME
 
 logger = get_logger(__name__)
 
@@ -85,6 +88,22 @@ async def get_clip(
     _user: Annotated[object, Depends(current_active_user)],
 ) -> Clip:
     return await _get_clip_or_404(session, clip_id)
+
+
+@router.get("/{clip_id}/analysis", response_model=AnalysisRead)
+async def get_clip_analysis(
+    clip_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _user: Annotated[object, Depends(current_active_user)],
+) -> Analysis:
+    await _get_clip_or_404(session, clip_id)
+    stmt = select(Analysis).where(Analysis.clip_id == clip_id, Analysis.is_current.is_(True))
+    analysis = (await session.execute(stmt)).scalar_one_or_none()
+    if analysis is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="This clip has not been analyzed yet."
+        )
+    return analysis
 
 
 def _clip_file_or_404(path_str: str | None, what: str) -> Path:
@@ -165,6 +184,45 @@ async def delete_clip(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Could not delete file: {exc}"
         ) from exc
+
+
+@router.post("/{clip_id}/reanalyze", status_code=status.HTTP_202_ACCEPTED)
+async def reanalyze_clip(
+    clip_id: uuid.UUID,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _user: Annotated[object, Depends(current_superuser)],
+) -> dict[str, str]:
+    clip = await _get_clip_or_404(session, clip_id)
+    if not clip.storage_path:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This clip has not been downloaded yet.",
+        )
+    await request.app.state.arq_redis.enqueue_job(ANALYZE_JOB_NAME, clip_id=str(clip.id))
+    return {"status": "queued"}
+
+
+@router.post("/bulk-analyze", response_model=BulkActionResponse)
+async def bulk_analyze_clips(
+    payload: BulkClipIds,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _user: Annotated[object, Depends(current_superuser)],
+) -> BulkActionResponse:
+    clips = (
+        (await session.execute(select(Clip).where(Clip.id.in_(payload.clip_ids)))).scalars().all()
+    )
+    queued = 0
+    failed = 0
+    for clip in clips:
+        if clip.storage_path:
+            await request.app.state.arq_redis.enqueue_job(ANALYZE_JOB_NAME, clip_id=str(clip.id))
+            queued += 1
+        else:
+            failed += 1
+    failed += len(payload.clip_ids) - len(clips)  # ids that didn't match any clip
+    return BulkActionResponse(succeeded=queued, failed=failed)
 
 
 @router.post("/bulk-delete", response_model=BulkActionResponse)

@@ -174,7 +174,9 @@ class AIUsage(Base):
     prompt_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     completion_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     total_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    estimated_cost_usd: Mapped[float] = mapped_column(Numeric(10, 6), default=0, server_default="0")
+    estimated_cost_usd: Mapped[float] = mapped_column(
+        Numeric(10, 6, asdecimal=False), default=0, server_default="0"
+    )
     latency_ms: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     success: Mapped[bool] = mapped_column(Boolean, nullable=False)
