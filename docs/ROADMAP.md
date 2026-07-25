@@ -6,40 +6,36 @@ increments.
 
 ## PR queue
 
-1. **Blink integration** — real `BlinkService` on blinkpy: account linking in
-   Settings (encrypted credentials, 2FA PIN flow), camera discovery,
-   `blink_accounts`/`cameras` tables, periodic sync task. *Pauses for Brian's
-   Blink credentials to verify live.*
-2. **Clip pipeline** — media listing + download tasks, storage layout,
-   ffmpeg thumbnails, `clips` table, Library grid with a full-capability video
-   player (scrub/speed/fullscreen/PiP), per-clip download, and bulk actions
-   (download, analyze, archive, delete).
-3. **Status & statistics** — camera health, sync history, storage metrics on
-   the Status tab; worker job introspection.
-4. **AI foundation** — frame extraction, analysis queue, `AIProvider`
+Blink integration (account linking, 2FA, camera discovery, periodic sync) and
+the clip pipeline (download tasks, ffmpeg thumbnails, Library grid with full
+playback and bulk actions) have shipped.
+
+1. **AI foundation** — frame extraction, analysis queue, `AIProvider`
    abstraction (OpenAI, Anthropic, Ollama local/cloud, Moondream local/cloud),
    provider settings UI with encrypted keys **and a "test connection" button**,
    two-tier escalation (cheap model first — the token-saving design carried
    over from the HA version), clip summaries + suspicion scores (`analyses`),
    `events`, re-analyze button, AI tab, `ai_usage` + AI Usage tab with cost
    charts. *Pauses for Brian's API keys.*
-5. **Rules & alerting** — rule engine, Discord/Slack webhooks, SMTP,
+2. **Status & statistics** — camera health, sync history, storage metrics on
+   the Status tab; worker job introspection.
+3. **Rules & alerting** — rule engine, Discord/Slack webhooks, SMTP,
    quiet hours, alert history. Webhook URLs visible only in Settings; SMTP
    password masked with reveal toggle; all encrypted at rest.
-6. **Local CV pipeline** — YOLO via ONNX Runtime with a **model-size setting**
+4. **Local CV pipeline** — YOLO via ONNX Runtime with a **model-size setting**
    (nano/small/medium/large, or a better detector if benchmarks say so),
    ByteTrack tracking, per-camera baselines (`camera_baselines`),
    baseline-aware suspicion.
-7. **Vehicles** — outline drawing UI, protected zones, monocular depth +
+5. **Vehicles** — outline drawing UI, protected zones, monocular depth +
    ground-plane calibration, "within X feet" proximity alerts.
-8. **Biometrics** — local face detection/embeddings (pgvector), enrollment
+6. **Biometrics** — local face detection/embeddings (pgvector), enrollment
    from real frames with clustering + time-window mining, recognition events.
-9. **Feedback learning** — correct/incorrect + suspicion reclassification +
+7. **Feedback learning** — correct/incorrect + suspicion reclassification +
    face false-positive/negative controls wired into galleries, thresholds,
    exemplar retrieval; accuracy trends on the AI tab.
-10. **Product features** — archives + S3/Google Drive/OneDrive, live view
-    (snapshot/short-capture MVP, then stream relay), digests/notifications
-    polish, search, timeline, backups.
+8. **Product features** — archives + S3/Google Drive/OneDrive, live view
+   (snapshot/short-capture MVP, then stream relay), digests/notifications
+   polish, search, timeline, backups.
 
 ## Deferred / watching
 
