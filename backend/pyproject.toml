@@ -61,6 +61,9 @@ known-third-party = ["alembic"]
 # Protocol implementations and framework hooks keep their signatures even
 # when an implementation ignores an argument.
 "app/blink/service.py" = ["ARG002"]
+# A CLI entry point's job is talking to the terminal — print is correct here,
+# not a debug leftover.
+"app/cli.py" = ["T201"]
 "app/users/manager.py" = ["ARG002"]
 "app/worker/main.py" = ["ARG001"]
 

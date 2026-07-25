@@ -109,6 +109,12 @@ api-types: ## Regenerate the typed frontend API client from the backend OpenAPI 
 db-shell: ## psql into the dev database
 	$(COMPOSE_DEV) exec postgres psql -U blink blink
 
+create-admin: ## Create (or reset) an admin account on the dev stack - prompts for email/password
+	$(COMPOSE_DEV) exec backend uv run python -m app.cli create-admin
+
+create-admin-prod: ## Create (or reset) an admin account on the prod stack - prompts for email/password
+	$(COMPOSE_PROD) exec backend python -m app.cli create-admin
+
 clean: ## Stop everything and remove volumes (DESTROYS local data)
 	$(COMPOSE_PROD) down -v --remove-orphans 2>/dev/null || true
 	$(COMPOSE_DEV) down -v --remove-orphans 2>/dev/null || true
