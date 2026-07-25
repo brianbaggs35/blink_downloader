@@ -29,7 +29,9 @@ make prod           # builds and starts everything with HTTPS on :443
 ```
 
 First visit walks you through creating the admin account. TLS uses a generated
-self-signed certificate in `docker/certs/` — drop real ones there any time.
+self-signed certificate in `docker/certs/` — drop real ones there any time
+(`cert.pem` + `key.pem`, and keep them readable by the container:
+`chmod 644 docker/certs/*.pem`).
 
 ## Development
 

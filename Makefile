@@ -26,6 +26,9 @@ certs: ## Generate a self-signed TLS certificate into docker/certs (replace with
 		-days 825 -nodes -keyout docker/certs/key.pem -out docker/certs/cert.pem \
 		-subj "/CN=blink.local" \
 		-addext "subjectAltName=DNS:localhost,DNS:blink.local,IP:127.0.0.1"
+	@# nginx runs as a non-root user in the container and must be able to read
+	@# the mounted key. Applies to user-supplied certificates too.
+	@chmod 644 docker/certs/cert.pem docker/certs/key.pem
 	@echo "Certificates ready in docker/certs/"
 
 prod: certs ## Start the production stack (requires .env — run `make secrets` first)
@@ -74,6 +77,7 @@ test-frontend: ## Run frontend unit tests with coverage
 	cd frontend && npm run test
 
 e2e: certs ## Run Playwright against a production-like seeded stack
+	@$(COMPOSE_TEST) --profile e2e down -v --remove-orphans 2>/dev/null || true
 	$(COMPOSE_TEST) --profile e2e up --build --abort-on-container-exit --exit-code-from playwright; \
 	status=$$?; $(COMPOSE_TEST) --profile e2e down -v; exit $$status
 
