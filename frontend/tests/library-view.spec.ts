@@ -28,8 +28,9 @@ import {
 import { ApiError } from "@/api/client";
 import ClipCard from "@/components/ClipCard.vue";
 import ClipDetailModal from "@/components/ClipDetailModal.vue";
+import { useAuthStore } from "@/stores/auth";
 import LibraryView from "@/views/LibraryView.vue";
-import { makePinia, makeRouter, mountGlobal } from "./helpers";
+import { fakeUser, makePinia, makeRouter, mountGlobal } from "./helpers";
 
 import type { BlinkStatusResponse, CameraRead, ClipListResponse, ClipRead } from "@/api";
 
@@ -91,10 +92,12 @@ function clipsResponse(items: ClipRead[], total = items.length, page = 1): ClipL
   return { items, total, page, page_size: 24 };
 }
 
-async function mountLibrary() {
+async function mountLibrary(isAdmin = true) {
   const router = makeRouter();
   await router.push("/");
-  const wrapper = mount(LibraryView, { global: mountGlobal(makePinia(), router) });
+  const pinia = makePinia();
+  useAuthStore().user = { ...fakeUser, is_superuser: isAdmin };
+  const wrapper = mount(LibraryView, { global: mountGlobal(pinia, router) });
   await flushPromises();
   return { wrapper, router };
 }
@@ -593,5 +596,21 @@ describe("LibraryView — clip detail modal", () => {
     await flushPromises();
 
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: "Unexpected error." }));
+  });
+});
+
+describe("LibraryView — viewer account (read-only)", () => {
+  it("shows clips but no selection, bulk actions, download, or delete", async () => {
+    mockedStatus.mockResolvedValue(linkedStatus());
+    mockedClips.mockResolvedValue(clipsResponse([makeClip({ id: "clip-1" })], 1));
+    const { wrapper } = await mountLibrary(false);
+
+    expect(wrapper.find('[data-testid="clip-grid"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="select-all"]').exists()).toBe(false);
+    expect(wrapper.findComponent(ClipCard).props("selectable")).toBe(false);
+
+    await wrapper.findComponent(ClipCard).vm.$emit("open");
+    await flushPromises();
+    expect(wrapper.findComponent(ClipDetailModal).props("canManage")).toBe(false);
   });
 });

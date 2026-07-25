@@ -9,10 +9,14 @@ import VideoPlayer from "@/components/VideoPlayer.vue";
 
 import type { ClipRead } from "@/api";
 
-const props = defineProps<{
-  clip: ClipRead | null;
-  cameraName: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    clip: ClipRead | null;
+    cameraName: string;
+    canManage?: boolean;
+  }>(),
+  { canManage: true },
+);
 
 const emit = defineEmits<{
   close: [];
@@ -82,7 +86,10 @@ const visible = computed({
         </p>
       </div>
 
-      <div class="actions">
+      <div
+        v-if="canManage"
+        class="actions"
+      >
         <a
           v-if="clip.downloaded_at"
           :href="clipDownloadUrl(clip.id)"
