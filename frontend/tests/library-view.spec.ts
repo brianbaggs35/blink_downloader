@@ -6,6 +6,7 @@ vi.mock("@/api", async (importOriginal) => ({
   getBlinkStatus: vi.fn(),
   listCameras: vi.fn(),
   listClips: vi.fn(),
+  listPeople: vi.fn(),
   deleteClip: vi.fn(),
   bulkDeleteClips: vi.fn(),
   bulkAnalyzeClips: vi.fn(),
@@ -26,6 +27,7 @@ import {
   getBlinkStatus,
   listCameras,
   listClips,
+  listPeople,
 } from "@/api";
 import { ApiError } from "@/api/client";
 import ClipCard from "@/components/ClipCard.vue";
@@ -39,6 +41,7 @@ import type { BlinkStatusResponse, CameraRead, ClipListResponse, ClipRead } from
 const mockedStatus = vi.mocked(getBlinkStatus);
 const mockedCameras = vi.mocked(listCameras);
 const mockedClips = vi.mocked(listClips);
+const mockedPeople = vi.mocked(listPeople);
 const mockedDeleteClip = vi.mocked(deleteClip);
 const mockedBulkDelete = vi.mocked(bulkDeleteClips);
 const mockedBulkAnalyze = vi.mocked(bulkAnalyzeClips);
@@ -89,6 +92,7 @@ function makeClip(overrides: Partial<ClipRead> = {}): ClipRead {
     downloaded_at: "2026-07-20T18:31:00Z",
     deleted_on_blink: false,
     thumbnail_generated: true,
+    recognized_people: [],
     ...overrides,
   };
 }
@@ -120,6 +124,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockedCameras.mockResolvedValue([cameraA, cameraB]);
   mockedClips.mockResolvedValue(clipsResponse([]));
+  mockedPeople.mockResolvedValue([]);
 });
 
 describe("LibraryView — unlinked", () => {
@@ -206,6 +211,15 @@ describe("LibraryView — linked, loading clips", () => {
     const { wrapper } = await mountLibrary();
 
     expect(wrapper.findComponent(ClipCard).props("cameraName")).toBe("Unknown camera");
+    expect(toastAdd).not.toHaveBeenCalled();
+  });
+
+  it("silently falls back to an empty people list when loadPeople fails", async () => {
+    mockedPeople.mockRejectedValue(new Error("network down"));
+    mockedClips.mockResolvedValue(clipsResponse([makeClip()], 1));
+    const { wrapper } = await mountLibrary();
+
+    expect(wrapper.find('[data-testid="recognized-person-filter"]').exists()).toBe(false);
     expect(toastAdd).not.toHaveBeenCalled();
   });
 
@@ -314,6 +328,58 @@ describe("LibraryView — filters", () => {
       expect.objectContaining({ camera_id: "cam-2", page: 1 }),
     );
     expect(wrapper.find('[data-testid="clear-filters"]').exists()).toBe(true);
+  });
+});
+
+describe("LibraryView — recognized person filter", () => {
+  beforeEach(() => {
+    mockedStatus.mockResolvedValue(linkedStatus());
+    mockedPeople.mockResolvedValue([
+      { id: "p-1", name: "Alex", has_thumbnail: false, face_count: 1, created_at: "", updated_at: "" },
+      { id: "p-2", name: "Sam", has_thumbnail: false, face_count: 1, created_at: "", updated_at: "" },
+    ]);
+  });
+
+  it("omits the filter dropdown when nobody has been enrolled", async () => {
+    mockedPeople.mockResolvedValue([]);
+    mockedClips.mockResolvedValue(clipsResponse([]));
+    const { wrapper } = await mountLibrary();
+    expect(wrapper.find('[data-testid="recognized-person-filter"]').exists()).toBe(false);
+  });
+
+  it("reloads filtered to the chosen person and shows the clear-filters button", async () => {
+    mockedClips
+      .mockResolvedValueOnce(clipsResponse([makeClip()], 1))
+      .mockResolvedValueOnce(clipsResponse([], 0));
+    const { wrapper } = await mountLibrary();
+    expect(wrapper.find('[data-testid="clear-filters"]').exists()).toBe(false);
+
+    const selects = wrapper.findAllComponents({ name: "Select" });
+    await selects[1]!.vm.$emit("update:modelValue", "p-1");
+    await flushPromises();
+
+    expect(mockedClips).toHaveBeenLastCalledWith(
+      expect.objectContaining({ recognized_person_id: "p-1", page: 1 }),
+    );
+    expect(wrapper.find('[data-testid="clear-filters"]').exists()).toBe(true);
+  });
+
+  it("clears the recognized-person filter along with the rest via the toolbar button", async () => {
+    mockedClips.mockResolvedValue(clipsResponse([makeClip()], 1));
+    const { wrapper } = await mountLibrary();
+
+    const selects = wrapper.findAllComponents({ name: "Select" });
+    await selects[1]!.vm.$emit("update:modelValue", "p-2");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="clear-filters"]').exists()).toBe(true);
+
+    await wrapper.find('[data-testid="clear-filters"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="clear-filters"]').exists()).toBe(false);
+    expect(mockedClips).toHaveBeenLastCalledWith(
+      expect.objectContaining({ recognized_person_id: undefined }),
+    );
   });
 });
 

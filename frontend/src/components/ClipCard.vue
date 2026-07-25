@@ -78,6 +78,18 @@ function onCheckboxClick(event: Event): void {
         v-if="!props.clip.downloaded_at"
         class="pending-badge"
       >Downloading…</span>
+      <span
+        v-if="props.clip.recognized_people.length > 0"
+        class="recognized-badge"
+        data-testid="recognized-badge"
+        :title="`Recognized: ${props.clip.recognized_people.map((p) => p.name).join(', ')}`"
+      >
+        <i
+          class="pi pi-verified"
+          aria-hidden="true"
+        />
+        {{ props.clip.recognized_people.length }}
+      </span>
     </div>
 
     <div class="meta">
@@ -190,6 +202,22 @@ function onCheckboxClick(event: Event): void {
   right: auto;
   background: color-mix(in srgb, var(--p-primary-600) 75%, transparent);
   animation: pending-pulse 1.8s ease-in-out infinite;
+}
+
+.recognized-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: white;
+  background: color-mix(in srgb, var(--p-primary-600) 85%, transparent);
+  backdrop-filter: blur(4px);
 }
 
 @keyframes pending-pulse {
