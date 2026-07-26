@@ -63,6 +63,7 @@ const settingsTabStubs = {
   SettingsAlertsPanel: { template: '<div data-testid="stub-alerts" />' },
   SettingsLiveViewPanel: { template: '<div data-testid="stub-live-view" />' },
   SettingsSecurityFeedPanel: { template: '<div data-testid="stub-security-feed" />' },
+  SettingsAboutPanel: { template: '<div data-testid="stub-about" />' },
 };
 
 function mountSettings(withUser = true) {
@@ -291,10 +292,10 @@ describe("SettingsView tabs", () => {
     });
     await flushPromises();
     const tabs = wrapper.findAllComponents(Tab);
-    expect(tabs.map((t) => t.text())).toEqual(["General"]);
+    expect(tabs.map((t) => t.text())).toEqual(["General", "About"]);
   });
 
-  it("shows every admin tab for a superuser", async () => {
+  it("shows every admin tab for a superuser, with About last", async () => {
     const wrapper = mountSettings();
     await flushPromises();
     const tabs = wrapper.findAllComponents(Tab);
@@ -308,6 +309,7 @@ describe("SettingsView tabs", () => {
       "Alerts",
       "Live View",
       "Security Feed",
+      "About",
     ]);
   });
 
@@ -318,6 +320,7 @@ describe("SettingsView tabs", () => {
     ["Cameras", "stub-cameras"],
     ["Vehicles", "stub-vehicles"],
     ["Alerts", "stub-alerts"],
+    ["About", "stub-about"],
   ])("opens the %s tab and mounts its panel, unmounting General", async (label, testId) => {
     const wrapper = mountSettings();
     await flushPromises();
@@ -363,6 +366,18 @@ describe("SettingsView tabs", () => {
     });
     await flushPromises();
     expect(wrapper.find('[data-testid="stub-security-feed"]').exists()).toBe(true);
+  });
+
+  it("opens directly on the About tab via ?tab= for a non-admin", async () => {
+    const pinia = makePinia();
+    useAuthStore().user = { ...fakeUser, is_superuser: false, timezone: "UTC" };
+    const router = makeRouter();
+    await router.push({ path: "/settings", query: { tab: "about" } });
+    const wrapper = mount(SettingsView, {
+      global: { ...mountGlobal(pinia, router), stubs: settingsTabStubs },
+    });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="stub-about"]').exists()).toBe(true);
   });
 
   it("ignores an admin-only ?tab= query for a non-admin", async () => {

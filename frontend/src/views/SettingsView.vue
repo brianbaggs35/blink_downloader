@@ -17,6 +17,7 @@ import { useRoute } from "vue-router";
 import { ApiError, getStorageSettings, updateMe, updateStorageSettings } from "@/api";
 import BlinkAccountPanel from "@/components/BlinkAccountPanel.vue";
 import PageHeader from "@/components/PageHeader.vue";
+import SettingsAboutPanel from "@/components/SettingsAboutPanel.vue";
 import SettingsAiProviderPanel from "@/components/SettingsAiProviderPanel.vue";
 import SettingsAlertsPanel from "@/components/SettingsAlertsPanel.vue";
 import SettingsBiometricsPanel from "@/components/SettingsBiometricsPanel.vue";
@@ -47,9 +48,13 @@ const ADMIN_TABS = [
   "live-view",
   "security-feed",
 ];
+// Open to every role, same as "general" - "about" is credits/info, not config.
+const PUBLIC_TABS = ["general", "about"];
 const requestedTab = typeof route.query.tab === "string" ? route.query.tab : "general";
 const activeTab = ref(
-  auth.isAdmin && ADMIN_TABS.includes(requestedTab) ? requestedTab : "general",
+  PUBLIC_TABS.includes(requestedTab) || (auth.isAdmin && ADMIN_TABS.includes(requestedTab))
+    ? requestedTab
+    : "general",
 );
 
 const displayName = ref("");
@@ -225,6 +230,9 @@ async function saveStorageDir(): Promise<void> {
         >
           Security Feed
         </Tab>
+        <Tab value="about">
+          About
+        </Tab>
       </TabList>
       <TabPanels>
         <TabPanel value="general">
@@ -387,33 +395,6 @@ async function saveStorageDir(): Promise<void> {
                 </div>
               </div>
             </article>
-
-            <article class="panel">
-              <h3 class="panel-title">
-                About
-              </h3>
-              <p class="panel-hint">
-                Blink AI Security is built on
-                <a
-                  href="https://github.com/fronzbot/blinkpy"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >blinkpy</a>, the unofficial Blink API client this project relies on for all Blink
-                communication.
-              </p>
-              <a
-                class="about-link"
-                href="https://github.com/brianbaggs35/blink_downloader"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <i
-                  class="pi pi-github"
-                  aria-hidden="true"
-                />
-                View source on GitHub
-              </a>
-            </article>
           </div>
         </TabPanel>
 
@@ -471,6 +452,10 @@ async function saveStorageDir(): Promise<void> {
           value="security-feed"
         >
           <SettingsSecurityFeedPanel />
+        </TabPanel>
+
+        <TabPanel value="about">
+          <SettingsAboutPanel />
         </TabPanel>
       </TabPanels>
     </Tabs>
@@ -546,24 +531,5 @@ async function saveStorageDir(): Promise<void> {
   margin: 0;
   font-size: 0.82rem;
   color: var(--p-surface-500);
-}
-
-.about-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--p-primary-600);
-  text-decoration: none;
-}
-
-.blink-dark .about-link {
-  color: var(--p-primary-300);
-}
-
-.about-link:hover {
-  text-decoration: underline;
 }
 </style>
