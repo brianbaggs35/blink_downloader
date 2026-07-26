@@ -33,6 +33,7 @@ export const fakeUser: UserRead = {
   is_verified: true,
   display_name: "Brian Baggs",
   timezone: "UTC",
+  default_landing_page: "library",
 };
 
 export const healthyReport: HealthReport = {

@@ -25,7 +25,7 @@ async function submit(): Promise<void> {
   try {
     await auth.login(email.value, password.value);
     const redirect = route.query.redirect;
-    await router.push(typeof redirect === "string" ? redirect : { name: "library" });
+    await router.push(typeof redirect === "string" ? redirect : { name: auth.landingRouteName });
   } catch (caught) {
     error.value =
       caught instanceof ApiError && caught.status === 400

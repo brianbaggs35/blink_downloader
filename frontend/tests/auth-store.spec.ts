@@ -128,4 +128,17 @@ describe("auth store actions", () => {
     store.user = { ...fakeUser, is_superuser: true };
     expect(store.isAdmin).toBe(true);
   });
+
+  it("landingRouteName defaults to library, including when signed out", () => {
+    const store = useAuthStore();
+    expect(store.landingRouteName).toBe("library");
+    store.user = { ...fakeUser, default_landing_page: "library" };
+    expect(store.landingRouteName).toBe("library");
+  });
+
+  it("landingRouteName honors a security_feed preference", () => {
+    const store = useAuthStore();
+    store.user = { ...fakeUser, default_landing_page: "security_feed" };
+    expect(store.landingRouteName).toBe("security-feed");
+  });
 });

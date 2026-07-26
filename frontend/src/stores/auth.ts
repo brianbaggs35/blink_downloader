@@ -32,6 +32,10 @@ export const useAuthStore = defineStore("auth", {
       }
       return state.user.display_name || state.user.email;
     },
+    /** Where a fresh login (or the setup wizard) should land, per the
+     * user's Settings > General preference. */
+    landingRouteName: (state) =>
+      state.user?.default_landing_page === "security_feed" ? "security-feed" : "library",
   },
   actions: {
     /** Resolve setup status and (once) probe the session cookie. */
