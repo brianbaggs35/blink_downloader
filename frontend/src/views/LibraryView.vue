@@ -5,7 +5,6 @@ import DatePicker from "primevue/datepicker";
 import Paginator, { type PageState } from "primevue/paginator";
 import Select from "primevue/select";
 import Skeleton from "primevue/skeleton";
-import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -24,6 +23,7 @@ import ClipCard from "@/components/ClipCard.vue";
 import ClipDetailModal from "@/components/ClipDetailModal.vue";
 import EmptyState from "@/components/EmptyState.vue";
 import PageHeader from "@/components/PageHeader.vue";
+import { useDeleteConfirm } from "@/composables/useDeleteConfirm";
 import { useAuthStore } from "@/stores/auth";
 import { useBlinkStore } from "@/stores/blink";
 
@@ -36,7 +36,7 @@ const router = useRouter();
 const auth = useAuthStore();
 const blink = useBlinkStore();
 const toast = useToast();
-const confirm = useConfirm();
+const { confirmDelete } = useDeleteConfirm();
 
 const cameras = ref<CameraRead[]>([]);
 const cameraNameById = computed(() => {
@@ -215,13 +215,10 @@ async function performBulkAnalyze(): Promise<void> {
 }
 
 function confirmBulkDelete(): void {
-  confirm.require({
-    message: `Delete ${selectedCount.value} clip(s)? This cannot be undone.`,
+  confirmDelete({
     header: "Delete clips",
-    icon: "pi pi-exclamation-triangle",
-    acceptProps: { label: "Delete", severity: "danger" },
-    rejectProps: { label: "Cancel", severity: "secondary", outlined: true },
-    accept: () => void performBulkDelete(),
+    message: `Delete ${selectedCount.value} clip(s)? This cannot be undone.`,
+    onAccept: () => void performBulkDelete(),
   });
 }
 
@@ -250,13 +247,10 @@ async function performBulkDelete(): Promise<void> {
 }
 
 function confirmSingleDelete(clip: ClipRead): void {
-  confirm.require({
-    message: "Delete this clip? This cannot be undone.",
+  confirmDelete({
     header: "Delete clip",
-    icon: "pi pi-exclamation-triangle",
-    acceptProps: { label: "Delete", severity: "danger" },
-    rejectProps: { label: "Cancel", severity: "secondary", outlined: true },
-    accept: () => void performSingleDelete(clip),
+    message: "Delete this clip? This cannot be undone.",
+    onAccept: () => void performSingleDelete(clip),
   });
 }
 

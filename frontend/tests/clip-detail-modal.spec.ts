@@ -12,12 +12,27 @@ vi.mock("@/api", async (importOriginal) => ({
   getClipAnalysis: vi.fn(),
   reanalyzeClip: vi.fn(),
   submitFeedback: vi.fn(),
+  reportFalsePositive: vi.fn(),
+  listPeople: vi.fn(),
+  createPerson: vi.fn(),
+  detectFacesInClipFrame: vi.fn(),
+  enrollFace: vi.fn(),
 }));
 
 const toastAdd = vi.fn();
 vi.mock("primevue/usetoast", () => ({ useToast: () => ({ add: toastAdd }) }));
 
-import { getClipAnalysis, reanalyzeClip, submitFeedback } from "@/api";
+const confirmRequire = vi.fn();
+vi.mock("primevue/useconfirm", () => ({ useConfirm: () => ({ require: confirmRequire }) }));
+
+import {
+  detectFacesInClipFrame,
+  getClipAnalysis,
+  listPeople,
+  reanalyzeClip,
+  reportFalsePositive,
+  submitFeedback,
+} from "@/api";
 import { ApiError } from "@/api/client";
 import ClipDetailModal from "@/components/ClipDetailModal.vue";
 import VideoPlayer from "@/components/VideoPlayer.vue";
@@ -28,6 +43,9 @@ import type { AnalysisRead, ClipRead } from "@/api";
 const mockedGetAnalysis = vi.mocked(getClipAnalysis);
 const mockedReanalyze = vi.mocked(reanalyzeClip);
 const mockedSubmitFeedback = vi.mocked(submitFeedback);
+const mockedReportFalsePositive = vi.mocked(reportFalsePositive);
+const mockedListPeople = vi.mocked(listPeople);
+const mockedDetectFaces = vi.mocked(detectFacesInClipFrame);
 
 const clip: ClipRead = {
   id: "clip-1",
@@ -99,6 +117,8 @@ async function mountModal(clipProp: ClipRead | null, canManage = true) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockedListPeople.mockResolvedValue([]);
+  mockedDetectFaces.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -474,5 +494,176 @@ describe("ClipDetailModal — feedback", () => {
     await nextTick();
     await flushPromises();
     expect(document.body.querySelector('[data-testid="feedback-thanks"]')).toBeNull();
+  });
+});
+
+const recognizedAnalysis: AnalysisRead = {
+  ...routineAnalysis,
+  detected_entities: [
+    {
+      type: "person",
+      label: "Alex",
+      confidence: 0.95,
+      bbox: [0.1, 0.1, 0.2, 0.4],
+      recognized_person_id: "person-1",
+    },
+  ],
+};
+
+describe("ClipDetailModal — report a false positive", () => {
+  it("shows a report action only on recognized entities, and only for an admin", async () => {
+    mockedGetAnalysis.mockResolvedValue(recognizedAnalysis);
+    await mountModal(clip);
+    expect(
+      document.body.querySelector('[data-testid="report-false-positive-person-1"]'),
+    ).toBeTruthy();
+  });
+
+  it("hides the report action for a viewer account", async () => {
+    mockedGetAnalysis.mockResolvedValue(recognizedAnalysis);
+    await mountModal(clip, false);
+    expect(
+      document.body.querySelector('[data-testid="report-false-positive-person-1"]'),
+    ).toBeNull();
+  });
+
+  it("omits the report action for an unrecognized entity", async () => {
+    mockedGetAnalysis.mockResolvedValue(routineAnalysis);
+    await mountModal(clip);
+    expect(document.body.querySelector(".report-mismatch")).toBeNull();
+  });
+
+  it("asks for confirmation naming the recognized person before reporting", async () => {
+    mockedGetAnalysis.mockResolvedValue(recognizedAnalysis);
+    await mountModal(clip);
+    document.body
+      .querySelector<HTMLElement>('[data-testid="report-false-positive-person-1"]')
+      ?.click();
+    await nextTick();
+    const options = confirmRequire.mock.calls.at(-1)?.[0] as { message: string };
+    expect(options.message).toContain("Alex");
+  });
+
+  it("reports the false positive on confirm, toasts, and reloads the analysis", async () => {
+    mockedGetAnalysis.mockResolvedValueOnce(recognizedAnalysis).mockResolvedValueOnce(routineAnalysis);
+    mockedReportFalsePositive.mockResolvedValue({ negative_sample_captured: true });
+    await mountModal(clip);
+
+    document.body
+      .querySelector<HTMLElement>('[data-testid="report-false-positive-person-1"]')
+      ?.click();
+    await nextTick();
+    const options = confirmRequire.mock.calls.at(-1)?.[0] as { accept: () => void };
+    options.accept();
+    await flushPromises();
+
+    expect(mockedReportFalsePositive).toHaveBeenCalledWith("clip-1", "person-1");
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: "success" }));
+    expect(mockedGetAnalysis).toHaveBeenCalledTimes(2);
+  });
+
+  it("toasts the API error message when reporting fails", async () => {
+    mockedGetAnalysis.mockResolvedValue(recognizedAnalysis);
+    mockedReportFalsePositive.mockRejectedValue(new ApiError(502, "Could not download the model."));
+    await mountModal(clip);
+
+    document.body
+      .querySelector<HTMLElement>('[data-testid="report-false-positive-person-1"]')
+      ?.click();
+    await nextTick();
+    const options = confirmRequire.mock.calls.at(-1)?.[0] as { accept: () => void };
+    options.accept();
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: "error", detail: "Could not download the model." }),
+    );
+  });
+
+  it("toasts a generic error for a non-API reporting failure", async () => {
+    mockedGetAnalysis.mockResolvedValue(recognizedAnalysis);
+    mockedReportFalsePositive.mockRejectedValue(new TypeError("down"));
+    await mountModal(clip);
+
+    document.body
+      .querySelector<HTMLElement>('[data-testid="report-false-positive-person-1"]')
+      ?.click();
+    await nextTick();
+    const options = confirmRequire.mock.calls.at(-1)?.[0] as { accept: () => void };
+    options.accept();
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: "error", detail: "Unexpected error." }),
+    );
+  });
+});
+
+describe("ClipDetailModal — report a missed face", () => {
+  it("is hidden for a viewer account", async () => {
+    mockedGetAnalysis.mockResolvedValue(routineAnalysis);
+    await mountModal(clip, false);
+    expect(document.body.querySelector('[data-testid="report-missed-face"]')).toBeNull();
+  });
+
+  it("is hidden when the clip hasn't downloaded yet", async () => {
+    mockedGetAnalysis.mockRejectedValue(notFound());
+    await mountModal({ ...clip, downloaded_at: null });
+    expect(document.body.querySelector('[data-testid="report-missed-face"]')).toBeNull();
+  });
+
+  it("opens the missed-face dialog scoped to the current clip", async () => {
+    mockedGetAnalysis.mockResolvedValue(routineAnalysis);
+    const wrapper = await mountModal(clip);
+
+    document.body.querySelector<HTMLElement>('[data-testid="report-missed-face"]')?.click();
+    await flushPromises();
+
+    expect(
+      wrapper.findComponent({ name: "ReportMissedFaceDialog" }).props("clipId"),
+    ).toBe("clip-1");
+    expect(document.body.querySelector('[data-testid="report-missed-face-dialog"]')).toBeTruthy();
+  });
+
+  it("closes the missed-face dialog on its close event", async () => {
+    mockedGetAnalysis.mockResolvedValue(routineAnalysis);
+    const wrapper = await mountModal(clip);
+    document.body.querySelector<HTMLElement>('[data-testid="report-missed-face"]')?.click();
+    await flushPromises();
+
+    await wrapper.findComponent({ name: "ReportMissedFaceDialog" }).vm.$emit("close");
+    await flushPromises();
+    expect(
+      wrapper.findComponent({ name: "ReportMissedFaceDialog" }).props("clipId"),
+    ).toBeNull();
+  });
+
+  it("toasts and reloads the analysis when a missed face is enrolled", async () => {
+    mockedGetAnalysis.mockResolvedValue(routineAnalysis);
+    const wrapper = await mountModal(clip);
+    document.body.querySelector<HTMLElement>('[data-testid="report-missed-face"]')?.click();
+    await flushPromises();
+    mockedGetAnalysis.mockClear();
+
+    await wrapper.findComponent({ name: "ReportMissedFaceDialog" }).vm.$emit("enrolled");
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: "success" }));
+    expect(mockedGetAnalysis).toHaveBeenCalledWith("clip-1");
+  });
+
+  it("skips reloading the analysis if the clip closed before the missed face finished enrolling", async () => {
+    mockedGetAnalysis.mockResolvedValue(routineAnalysis);
+    const wrapper = await mountModal(clip);
+    document.body.querySelector<HTMLElement>('[data-testid="report-missed-face"]')?.click();
+    await flushPromises();
+
+    await wrapper.setProps({ clip: null });
+    mockedGetAnalysis.mockClear();
+    await wrapper.findComponent({ name: "ReportMissedFaceDialog" }).vm.$emit("enrolled");
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: "success" }));
+    expect(mockedGetAnalysis).not.toHaveBeenCalled();
   });
 });

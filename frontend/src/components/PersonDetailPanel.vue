@@ -1,12 +1,10 @@
 <script setup lang="ts">
 import Button from "primevue/button";
-import Dialog from "primevue/dialog";
 import InputText from "primevue/inputtext";
 import Message from "primevue/message";
 import Skeleton from "primevue/skeleton";
-import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
-import { computed, ref, watch } from "vue";
+import { ref, watch } from "vue";
 
 import {
   ApiError,
@@ -18,47 +16,38 @@ import {
   updatePerson,
 } from "@/api";
 import EmptyState from "@/components/EmptyState.vue";
+import PersonEnrollmentPanel from "@/components/PersonEnrollmentPanel.vue";
+import { useDeleteConfirm } from "@/composables/useDeleteConfirm";
 import { useFormatting } from "@/composables/useFormatting";
 import { useAuthStore } from "@/stores/auth";
 
 import type { FaceEmbeddingRead, PersonRead } from "@/api";
 
 const props = defineProps<{
-  personId: string | null;
+  personId: string;
 }>();
 
 const emit = defineEmits<{
-  close: [];
-  "enroll-more": [];
   deleted: [];
 }>();
 
 const auth = useAuthStore();
 const toast = useToast();
-const confirm = useConfirm();
+const { confirmDelete } = useDeleteConfirm();
 const { formatDateTime } = useFormatting();
-
-const visible = computed({
-  get: () => props.personId !== null,
-  set: (value: boolean) => {
-    if (!value) {
-      emit("close");
-    }
-  },
-});
 
 const person = ref<PersonRead | null>(null);
 const faces = ref<FaceEmbeddingRead[]>([]);
 const loading = ref(true);
 const loadError = ref("");
 
-async function load(personId: string): Promise<void> {
+async function load(): Promise<void> {
   loading.value = true;
   loadError.value = "";
   try {
     const [loadedPerson, loadedFaces] = await Promise.all([
-      getPerson(personId),
-      listPersonFaces(personId),
+      getPerson(props.personId),
+      listPersonFaces(props.personId),
     ]);
     person.value = loadedPerson;
     faces.value = loadedFaces;
@@ -69,15 +58,7 @@ async function load(personId: string): Promise<void> {
   }
 }
 
-watch(
-  () => props.personId,
-  (personId) => {
-    if (personId) {
-      void load(personId);
-    }
-  },
-  { immediate: true },
-);
+watch(() => props.personId, load, { immediate: true });
 
 const editingName = ref(false);
 const nameDraft = ref("");
@@ -94,14 +75,13 @@ function startEditingName(): void {
 
 async function saveName(): Promise<void> {
   // Only reachable via the save button inside the v-if="person" block.
-  const personId = props.personId!;
   if (!nameDraft.value.trim()) {
     return;
   }
   savingName.value = true;
   renameError.value = "";
   try {
-    person.value = await updatePerson(personId, { name: nameDraft.value.trim() });
+    person.value = await updatePerson(props.personId, { name: nameDraft.value.trim() });
     editingName.value = false;
   } catch (caught) {
     renameError.value = caught instanceof ApiError ? caught.message : "Could not rename.";
@@ -113,21 +93,17 @@ async function saveName(): Promise<void> {
 const deletingFaceId = ref<string | null>(null);
 
 function confirmDeleteFace(face: FaceEmbeddingRead): void {
-  confirm.require({
-    message: "Delete this face sample? This can't be undone.",
+  confirmDelete({
     header: "Delete face sample",
-    icon: "pi pi-exclamation-triangle",
-    acceptProps: { label: "Delete", severity: "danger" },
-    rejectProps: { label: "Cancel", severity: "secondary", outlined: true },
-    accept: () => void performDeleteFace(face),
+    message: "Delete this face sample? This can't be undone.",
+    onAccept: () => void performDeleteFace(face),
   });
 }
 
 async function performDeleteFace(face: FaceEmbeddingRead): Promise<void> {
-  const personId = props.personId!;
   deletingFaceId.value = face.id;
   try {
-    await deleteFace(personId, face.id);
+    await deleteFace(props.personId, face.id);
     faces.value = faces.value.filter((f) => f.id !== face.id);
     // person is always loaded alongside faces (see load()) by the time this
     // button is reachable.
@@ -147,25 +123,19 @@ async function performDeleteFace(face: FaceEmbeddingRead): Promise<void> {
 const deletingPerson = ref(false);
 
 function confirmDeletePerson(): void {
-  // Only reachable via the footer button, rendered inside the
-  // v-else-if="person" block.
-  confirm.require({
-    message: `Delete ${person.value!.name}? This removes all of their enrolled faces too.`,
+  // Only reachable via the button, rendered inside the v-else-if="person" block.
+  confirmDelete({
     header: "Delete person",
-    icon: "pi pi-exclamation-triangle",
-    acceptProps: { label: "Delete", severity: "danger" },
-    rejectProps: { label: "Cancel", severity: "secondary", outlined: true },
-    accept: () => void performDeletePerson(),
+    message: `Delete ${person.value!.name}? This removes all of their enrolled faces too.`,
+    onAccept: () => void performDeletePerson(),
   });
 }
 
 async function performDeletePerson(): Promise<void> {
-  const personId = props.personId!;
   deletingPerson.value = true;
   try {
-    await deletePerson(personId);
+    await deletePerson(props.personId);
     emit("deleted");
-    visible.value = false;
   } catch (caught) {
     toast.add({
       severity: "error",
@@ -177,92 +147,106 @@ async function performDeletePerson(): Promise<void> {
     deletingPerson.value = false;
   }
 }
+
+async function onEnrolled(): Promise<void> {
+  // Only reachable via the embedded PersonEnrollmentPanel, itself only
+  // rendered inside the template's v-else-if="person" block.
+  faces.value = await listPersonFaces(props.personId);
+  person.value = { ...person.value!, face_count: faces.value.length };
+}
 </script>
 
 <template>
-  <Dialog
-    v-model:visible="visible"
-    modal
-    header="Enrolled person"
-    :style="{ width: '40rem', maxWidth: '96vw' }"
-    data-testid="person-detail-dialog"
+  <div
+    v-if="loading"
+    data-testid="person-detail-loading"
   >
-    <div
-      v-if="loading"
-      data-testid="person-detail-loading"
-    >
-      <Skeleton
-        height="220px"
-        border-radius="12px"
-      />
-    </div>
+    <Skeleton
+      height="220px"
+      border-radius="12px"
+    />
+  </div>
 
+  <Message
+    v-else-if="loadError"
+    severity="error"
+    :closable="false"
+  >
+    {{ loadError }}
+  </Message>
+
+  <div
+    v-else-if="person"
+    class="detail"
+    data-testid="person-detail-panel"
+  >
+    <div class="name-row">
+      <template v-if="editingName">
+        <InputText
+          v-model="nameDraft"
+          fluid
+          data-testid="person-name-input"
+          @keyup.enter="saveName"
+        />
+        <Button
+          icon="pi pi-check"
+          :loading="savingName"
+          data-testid="person-name-save"
+          @click="saveName"
+        />
+        <Button
+          icon="pi pi-times"
+          severity="secondary"
+          text
+          data-testid="person-name-cancel"
+          @click="editingName = false"
+        />
+      </template>
+      <template v-else>
+        <h3 class="person-name">
+          {{ person.name }}
+        </h3>
+        <Button
+          v-if="auth.isAdmin"
+          icon="pi pi-pencil"
+          severity="secondary"
+          text
+          size="small"
+          data-testid="person-rename-start"
+          @click="startEditingName"
+        />
+        <Button
+          v-if="auth.isAdmin"
+          label="Delete person"
+          icon="pi pi-trash"
+          severity="danger"
+          text
+          size="small"
+          class="delete-person-button"
+          :loading="deletingPerson"
+          data-testid="delete-person"
+          @click="confirmDeletePerson"
+        />
+      </template>
+    </div>
     <Message
-      v-else-if="loadError"
+      v-if="renameError"
       severity="error"
       :closable="false"
     >
-      {{ loadError }}
+      {{ renameError }}
     </Message>
 
-    <div
-      v-else-if="person"
-      class="detail"
-    >
-      <div class="name-row">
-        <template v-if="editingName">
-          <InputText
-            v-model="nameDraft"
-            fluid
-            data-testid="person-name-input"
-            @keyup.enter="saveName"
-          />
-          <Button
-            icon="pi pi-check"
-            :loading="savingName"
-            data-testid="person-name-save"
-            @click="saveName"
-          />
-          <Button
-            icon="pi pi-times"
-            severity="secondary"
-            text
-            data-testid="person-name-cancel"
-            @click="editingName = false"
-          />
-        </template>
-        <template v-else>
-          <h3 class="person-name">
-            {{ person.name }}
-          </h3>
-          <Button
-            v-if="auth.isAdmin"
-            icon="pi pi-pencil"
-            severity="secondary"
-            text
-            size="small"
-            data-testid="person-rename-start"
-            @click="startEditingName"
-          />
-        </template>
-      </div>
-      <Message
-        v-if="renameError"
-        severity="error"
-        :closable="false"
-      >
-        {{ renameError }}
-      </Message>
-
-      <p class="muted">
+    <section class="section">
+      <h4 class="section-title">
         {{ faces.length }} enrolled face sample(s)
-      </p>
+      </h4>
 
       <EmptyState
         v-if="faces.length === 0"
         icon="pi pi-images"
         title="No face samples yet"
-        description="Enroll a face from a clip to help recognition find this person."
+        description="Enroll a face from a clip below to help recognition find this person."
       />
 
       <div
@@ -294,60 +278,80 @@ async function performDeletePerson(): Promise<void> {
           />
         </div>
       </div>
-    </div>
+    </section>
 
-    <template
+    <section
       v-if="auth.isAdmin"
-      #footer
+      class="section"
     >
-      <Button
-        label="Delete person"
-        severity="danger"
-        text
-        :loading="deletingPerson"
-        data-testid="delete-person"
-        @click="confirmDeletePerson"
+      <h4 class="section-title">
+        Add a face from a clip
+      </h4>
+      <p class="muted">
+        The more samples you add — different angles, lighting, and times of day — the more
+        accurate recognition gets for {{ person.name }}.
+      </p>
+      <PersonEnrollmentPanel
+        :key="person.id"
+        :person-id="person.id"
+        @enrolled="onEnrolled"
       />
-      <Button
-        label="Enroll another face"
-        icon="pi pi-plus"
-        data-testid="enroll-more"
-        @click="emit('enroll-more')"
-      />
-    </template>
-  </Dialog>
+    </section>
+  </div>
 </template>
 
 <style scoped>
 .detail {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 28px;
 }
 
 .name-row {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .person-name {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 1.3rem;
   font-weight: 700;
 }
 
-.muted {
+.delete-person-button {
+  margin-left: auto;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 20px;
+  border-top: 1px solid var(--p-surface-200);
+}
+
+.blink-dark .section {
+  border-color: var(--p-surface-800);
+}
+
+.section-title {
   margin: 0;
-  font-size: 0.82rem;
-  color: var(--p-surface-500);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--p-surface-600);
+}
+
+.blink-dark .section-title {
+  color: var(--p-surface-300);
 }
 
 .face-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
   gap: 12px;
-  max-height: 320px;
+  max-height: 400px;
   overflow-y: auto;
   padding: 4px 4px 4px 0;
 }

@@ -9,9 +9,8 @@ import { onMounted, ref } from "vue";
 
 import { ApiError, createPerson, listPeople, personThumbnailUrl } from "@/api";
 import EmptyState from "@/components/EmptyState.vue";
-import EnrollFaceDialog from "@/components/EnrollFaceDialog.vue";
 import PageHeader from "@/components/PageHeader.vue";
-import PersonDetailDialog from "@/components/PersonDetailDialog.vue";
+import PersonDetailPanel from "@/components/PersonDetailPanel.vue";
 import { useAuthStore } from "@/stores/auth";
 
 import type { PersonRead } from "@/api";
@@ -37,6 +36,13 @@ async function load(): Promise<void> {
 
 onMounted(load);
 
+const selectedPersonId = ref<string | null>(null);
+
+function backToList(): void {
+  selectedPersonId.value = null;
+  void load();
+}
+
 const addDialogVisible = ref(false);
 const newPersonName = ref("");
 const creating = ref(false);
@@ -56,9 +62,10 @@ async function submitNewPerson(): Promise<void> {
   createError.value = "";
   try {
     const person = await createPerson({ name: newPersonName.value.trim() });
-    people.value = [...people.value, person].sort((a, b) => a.name.localeCompare(b.name));
     addDialogVisible.value = false;
-    enrollDialogPerson.value = person;
+    // Straight into the detail view so they can enroll the person's first
+    // face right away, rather than back to a grid they'd have to re-click.
+    selectedPersonId.value = person.id;
   } catch (caught) {
     createError.value = caught instanceof ApiError ? caught.message : "Could not create person.";
   } finally {
@@ -66,30 +73,9 @@ async function submitNewPerson(): Promise<void> {
   }
 }
 
-const selectedPersonId = ref<string | null>(null);
-const enrollDialogPerson = ref<PersonRead | null>(null);
-
-function openEnrollFor(person: PersonRead): void {
-  selectedPersonId.value = null;
-  enrollDialogPerson.value = person;
-}
-
-function onEnrollMoreFromDetail(): void {
-  const person = people.value.find((p) => p.id === selectedPersonId.value);
-  selectedPersonId.value = null;
-  if (person) {
-    enrollDialogPerson.value = person;
-  }
-}
-
-async function onEnrolled(): Promise<void> {
-  toast.add({ severity: "success", summary: "Face enrolled", life: 2500 });
-  await load();
-}
-
-async function onPersonDeleted(): Promise<void> {
+function onPersonDeleted(): void {
   toast.add({ severity: "success", summary: "Person deleted", life: 2500 });
-  await load();
+  backToList();
 }
 </script>
 
@@ -101,7 +87,7 @@ async function onPersonDeleted(): Promise<void> {
     >
       <template #actions>
         <Button
-          v-if="auth.isAdmin"
+          v-if="auth.isAdmin && selectedPersonId === null"
           label="Add person"
           icon="pi pi-plus"
           data-testid="open-add-person"
@@ -110,96 +96,107 @@ async function onPersonDeleted(): Promise<void> {
       </template>
     </PageHeader>
 
-    <div
-      v-if="loading"
-      class="cards"
-      data-testid="people-loading"
-    >
-      <Skeleton
-        height="160px"
-        border-radius="14px"
-      />
-    </div>
-
-    <EmptyState
-      v-else-if="loadError"
-      icon="pi pi-exclamation-triangle"
-      title="Couldn't load people"
-      description="We weren't able to reach the server. Check your connection and try again."
-      data-testid="people-load-error"
-    >
-      <template #actions>
-        <Button
-          label="Retry"
-          icon="pi pi-refresh"
-          severity="secondary"
-          outlined
-          data-testid="retry-people"
-          @click="load"
+    <template v-if="selectedPersonId === null">
+      <div
+        v-if="loading"
+        class="cards"
+        data-testid="people-loading"
+      >
+        <Skeleton
+          height="160px"
+          border-radius="14px"
         />
-      </template>
-    </EmptyState>
+      </div>
 
-    <EmptyState
-      v-else-if="people.length === 0"
-      icon="pi pi-id-card"
-      title="No one enrolled yet"
-      description="Enroll people from real camera frames for the best accuracy — face data never leaves this machine and is never sent to any AI provider."
-    >
-      <template #actions>
-        <Button
-          v-if="auth.isAdmin"
-          label="Add person"
-          icon="pi pi-plus"
-          data-testid="open-add-person-empty"
-          @click="openAddDialog"
-        />
-      </template>
-    </EmptyState>
+      <EmptyState
+        v-else-if="loadError"
+        icon="pi pi-exclamation-triangle"
+        title="Couldn't load people"
+        description="We weren't able to reach the server. Check your connection and try again."
+        data-testid="people-load-error"
+      >
+        <template #actions>
+          <Button
+            label="Retry"
+            icon="pi pi-refresh"
+            severity="secondary"
+            outlined
+            data-testid="retry-people"
+            @click="load"
+          />
+        </template>
+      </EmptyState>
+
+      <EmptyState
+        v-else-if="people.length === 0"
+        icon="pi pi-id-card"
+        title="No one enrolled yet"
+        description="Enroll people from real camera frames for the best accuracy — face data never leaves this machine and is never sent to any AI provider."
+      >
+        <template #actions>
+          <Button
+            v-if="auth.isAdmin"
+            label="Add person"
+            icon="pi pi-plus"
+            data-testid="open-add-person-empty"
+            @click="openAddDialog"
+          />
+        </template>
+      </EmptyState>
+
+      <div
+        v-else
+        class="cards"
+        data-testid="people-grid"
+      >
+        <article
+          v-for="person in people"
+          :key="person.id"
+          class="person-card"
+          :data-testid="`person-card-${person.id}`"
+          @click="selectedPersonId = person.id"
+        >
+          <div class="thumb">
+            <img
+              v-if="person.has_thumbnail"
+              :src="personThumbnailUrl(person.id)"
+              :alt="person.name"
+            >
+            <div
+              v-else
+              class="thumb-fallback"
+            >
+              <i
+                class="pi pi-user"
+                aria-hidden="true"
+              />
+            </div>
+          </div>
+          <div class="person-meta">
+            <span class="person-name">{{ person.name }}</span>
+            <span class="muted">{{ person.face_count }} face sample(s)</span>
+          </div>
+        </article>
+      </div>
+    </template>
 
     <div
       v-else
-      class="cards"
-      data-testid="people-grid"
+      class="detail-view"
+      data-testid="person-detail-view"
     >
-      <article
-        v-for="person in people"
-        :key="person.id"
-        class="person-card"
-        :data-testid="`person-card-${person.id}`"
-        @click="selectedPersonId = person.id"
-      >
-        <div class="thumb">
-          <img
-            v-if="person.has_thumbnail"
-            :src="personThumbnailUrl(person.id)"
-            :alt="person.name"
-          >
-          <div
-            v-else
-            class="thumb-fallback"
-          >
-            <i
-              class="pi pi-user"
-              aria-hidden="true"
-            />
-          </div>
-        </div>
-        <div class="person-meta">
-          <span class="person-name">{{ person.name }}</span>
-          <span class="muted">{{ person.face_count }} face sample(s)</span>
-        </div>
-        <Button
-          v-if="auth.isAdmin"
-          label="Enroll a face"
-          icon="pi pi-camera"
-          severity="secondary"
-          outlined
-          size="small"
-          :data-testid="`enroll-for-${person.id}`"
-          @click.stop="openEnrollFor(person)"
-        />
-      </article>
+      <Button
+        label="Back to people"
+        icon="pi pi-arrow-left"
+        text
+        severity="secondary"
+        data-testid="back-to-people"
+        @click="backToList"
+      />
+      <PersonDetailPanel
+        :person-id="selectedPersonId"
+        @deleted="onPersonDeleted"
+      />
     </div>
 
     <Dialog
@@ -241,20 +238,6 @@ async function onPersonDeleted(): Promise<void> {
         </div>
       </form>
     </Dialog>
-
-    <PersonDetailDialog
-      :person-id="selectedPersonId"
-      @close="selectedPersonId = null"
-      @enroll-more="onEnrollMoreFromDetail"
-      @deleted="onPersonDeleted"
-    />
-
-    <EnrollFaceDialog
-      :person-id="enrollDialogPerson?.id ?? null"
-      :person-name="enrollDialogPerson?.name ?? ''"
-      @close="enrollDialogPerson = null"
-      @enrolled="onEnrolled"
-    />
   </section>
 </template>
 
@@ -336,6 +319,21 @@ async function onPersonDeleted(): Promise<void> {
 .muted {
   font-size: 0.78rem;
   color: var(--p-surface-500);
+}
+
+.detail-view {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 20px 24px;
+  border-radius: 14px;
+  border: 1px solid var(--p-surface-200);
+  background: var(--p-surface-0);
+}
+
+.blink-dark .detail-view {
+  border-color: var(--p-surface-800);
+  background: color-mix(in srgb, var(--p-surface-900) 60%, transparent);
 }
 
 .add-form {

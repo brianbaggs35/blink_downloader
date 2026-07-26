@@ -7,8 +7,19 @@ import Tag from "primevue/tag";
 import { useToast } from "primevue/usetoast";
 import { computed, ref, watch } from "vue";
 
-import { ApiError, clipDownloadUrl, clipStreamUrl, clipThumbnailUrl, getClipAnalysis, reanalyzeClip, submitFeedback } from "@/api";
+import {
+  ApiError,
+  clipDownloadUrl,
+  clipStreamUrl,
+  clipThumbnailUrl,
+  getClipAnalysis,
+  reanalyzeClip,
+  reportFalsePositive,
+  submitFeedback,
+} from "@/api";
+import ReportMissedFaceDialog from "@/components/ReportMissedFaceDialog.vue";
 import VideoPlayer from "@/components/VideoPlayer.vue";
+import { useDeleteConfirm } from "@/composables/useDeleteConfirm";
 import { useFormatting } from "@/composables/useFormatting";
 
 import type { AnalysisRead, ClipRead, FeedbackVerdict } from "@/api";
@@ -29,6 +40,7 @@ const emit = defineEmits<{
 
 const { formatDateTime, formatDuration, formatFileSize } = useFormatting();
 const toast = useToast();
+const { confirmDelete } = useDeleteConfirm();
 
 const visible = computed({
   get: () => props.clip !== null,
@@ -138,6 +150,57 @@ async function giveFeedback(verdict: FeedbackVerdict): Promise<void> {
     submittingFeedback.value = false;
   }
 }
+
+const reportingPersonId = ref<string | null>(null);
+
+function confirmReportFalsePositive(personId: string, name: string): void {
+  confirmDelete({
+    header: "Report incorrect recognition",
+    message: `Report that ${name} was recognized here by mistake? This also teaches the system to stop matching this specific face to them.`,
+    acceptLabel: "Report",
+    onAccept: () => void performReportFalsePositive(personId),
+  });
+}
+
+async function performReportFalsePositive(personId: string): Promise<void> {
+  // Only reachable via a recognized-entity tag inside the template's
+  // v-if="clip" block.
+  const clip = props.clip!;
+  reportingPersonId.value = personId;
+  try {
+    await reportFalsePositive(clip.id, personId);
+    toast.add({ severity: "success", summary: "Thanks — recognition corrected", life: 3000 });
+    await loadAnalysis(clip.id);
+  } catch (caught) {
+    toast.add({
+      severity: "error",
+      summary: "Could not report this recognition",
+      detail: caught instanceof ApiError ? caught.message : "Unexpected error.",
+      life: 4000,
+    });
+  } finally {
+    reportingPersonId.value = null;
+  }
+}
+
+const missedFaceClipId = ref<string | null>(null);
+
+function openMissedFaceDialog(): void {
+  // Only reachable via the button inside the template's v-if="clip" block.
+  missedFaceClipId.value = props.clip!.id;
+}
+
+async function onMissedFaceEnrolled(): Promise<void> {
+  toast.add({
+    severity: "success",
+    summary: "Face enrolled",
+    detail: "Re-analyze this clip to apply it here.",
+    life: 4000,
+  });
+  if (props.clip) {
+    await loadAnalysis(props.clip.id);
+  }
+}
 </script>
 
 <template>
@@ -187,15 +250,28 @@ async function giveFeedback(verdict: FeedbackVerdict): Promise<void> {
               aria-hidden="true"
             /> AI summary
           </p>
-          <Button
+          <div
             v-if="canManage && clip.downloaded_at"
-            :label="analysis ? 'Re-analyze' : 'Analyze now'"
-            text
-            size="small"
-            :loading="reanalyzing"
-            data-testid="reanalyze"
-            @click="triggerReanalyze"
-          />
+            class="ai-header-actions"
+          >
+            <Button
+              label="Report a missed face"
+              icon="pi pi-user-plus"
+              text
+              size="small"
+              severity="secondary"
+              data-testid="report-missed-face"
+              @click="openMissedFaceDialog"
+            />
+            <Button
+              :label="analysis ? 'Re-analyze' : 'Analyze now'"
+              text
+              size="small"
+              :loading="reanalyzing"
+              data-testid="reanalyze"
+              @click="triggerReanalyze"
+            />
+          </div>
         </div>
 
         <div
@@ -262,6 +338,23 @@ async function giveFeedback(verdict: FeedbackVerdict): Promise<void> {
                 aria-hidden="true"
               />
               {{ entity.label }} ({{ Math.round(entity.confidence * 100) }}%)
+              <button
+                v-if="entity.recognized_person_id && canManage"
+                type="button"
+                class="report-mismatch"
+                :disabled="reportingPersonId === entity.recognized_person_id"
+                :data-testid="`report-false-positive-${entity.recognized_person_id}`"
+                :aria-label="`Report that ${entity.label} was recognized by mistake`"
+                @click="
+                  entity.recognized_person_id &&
+                    confirmReportFalsePositive(entity.recognized_person_id, entity.label)
+                "
+              >
+                <i
+                  class="pi pi-times-circle"
+                  aria-hidden="true"
+                />
+              </button>
             </span>
           </div>
 
@@ -353,6 +446,13 @@ async function giveFeedback(verdict: FeedbackVerdict): Promise<void> {
       </div>
     </template>
   </Dialog>
+
+  <ReportMissedFaceDialog
+    :clip-id="missedFaceClipId"
+    :duration-seconds="clip?.duration_seconds ?? null"
+    @close="missedFaceClipId = null"
+    @enrolled="onMissedFaceEnrolled"
+  />
 </template>
 
 <style scoped>
@@ -398,6 +498,14 @@ async function giveFeedback(verdict: FeedbackVerdict): Promise<void> {
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.ai-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
 }
 
 .ai-label {
@@ -479,6 +587,34 @@ async function giveFeedback(verdict: FeedbackVerdict): Promise<void> {
 
 .blink-dark .entity-tag.recognized {
   color: var(--p-primary-300);
+}
+
+.report-mismatch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  padding: 0;
+  margin-left: 2px;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.6;
+  font-size: 0.9em;
+}
+
+.report-mismatch:hover {
+  opacity: 1;
+  color: var(--p-red-600);
+}
+
+.blink-dark .report-mismatch:hover {
+  color: var(--p-red-300);
+}
+
+.report-mismatch:disabled {
+  cursor: default;
+  opacity: 0.35;
 }
 
 .proximity {
