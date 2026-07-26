@@ -12,12 +12,15 @@ interface NavGroup {
   items: NavItem[];
 }
 
-// Order is part of the product spec: Library, Status, Live View, Storage,
-// AI, AI Usage, Vehicles, Biometrics, Settings.
+// Order is part of the product spec: Security Feed, Library, Status, Live
+// View, Storage, AI, AI Usage, Vehicles, Biometrics, Settings. Security
+// Feed sits first - Brian asked for it "near the top" as the closest thing
+// to an at-a-glance live dashboard.
 const groups: NavGroup[] = [
   {
     label: "Monitor",
     items: [
+      { label: "Security Feed", icon: "pi pi-th-large", to: { name: "security-feed" } },
       { label: "Library", icon: "pi pi-images", to: { name: "library" } },
       { label: "Status", icon: "pi pi-wave-pulse", to: { name: "status" } },
       { label: "Live View", icon: "pi pi-video", to: { name: "live-view" } },
@@ -47,6 +50,7 @@ const groups: NavGroup[] = [
   },
 ];
 
+withDefaults(defineProps<{ collapsed?: boolean }>(), { collapsed: false });
 const emit = defineEmits<{ navigate: [] }>();
 
 const route = useRoute();
@@ -62,7 +66,10 @@ const route = useRoute();
       :key="group.label"
       class="nav-group"
     >
-      <p class="nav-group-label">
+      <p
+        v-if="!collapsed"
+        class="nav-group-label"
+      >
         {{ group.label }}
       </p>
       <RouterLink
@@ -71,13 +78,14 @@ const route = useRoute();
         :to="item.to"
         class="nav-item"
         :class="{ active: route.name === item.to.name }"
+        :title="collapsed ? item.label : undefined"
         @click="emit('navigate')"
       >
         <i
           :class="item.icon"
           aria-hidden="true"
         />
-        <span>{{ item.label }}</span>
+        <span v-show="!collapsed">{{ item.label }}</span>
       </RouterLink>
     </div>
   </nav>

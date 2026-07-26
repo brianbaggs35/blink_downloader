@@ -12,10 +12,11 @@ async function mountLinks(path: string) {
 }
 
 describe("NavLinks", () => {
-  it("renders the nine destinations in product order", async () => {
+  it("renders the ten destinations in product order", async () => {
     const wrapper = await mountLinks("/");
     const labels = wrapper.findAll(".nav-item span").map((node) => node.text());
     expect(labels).toEqual([
+      "Security Feed",
       "Library",
       "Status",
       "Live View",
@@ -32,6 +33,7 @@ describe("NavLinks", () => {
     const wrapper = await mountLinks("/");
     const hrefs = wrapper.findAll("a.nav-item").map((node) => node.attributes("href"));
     expect(hrefs).toEqual([
+      "/security-feed",
       "/",
       "/status",
       "/live",
@@ -42,6 +44,19 @@ describe("NavLinks", () => {
       "/biometrics",
       "/settings",
     ]);
+  });
+
+  it("hides labels but keeps them accessible via title when collapsed", async () => {
+    const router = makeRouter();
+    await router.push("/");
+    const wrapper = mount(NavLinks, {
+      props: { collapsed: true },
+      global: mountGlobal(makePinia(), router),
+    });
+    expect(wrapper.find(".nav-group-label").exists()).toBe(false);
+    const firstLink = wrapper.findAll("a.nav-item")[0]!;
+    expect(firstLink.attributes("title")).toBe("Security Feed");
+    expect(firstLink.find("span").attributes("style")).toContain("display: none");
   });
 
   it("marks only the current page's link active, not the index route on every page", async () => {

@@ -1,5 +1,6 @@
 :root {
   --app-sidebar-width: 264px;
+  --app-sidebar-collapsed-width: 76px;
   --app-topbar-height: 64px;
   --app-content-max-width: 1200px;
   font-synthesis: none;
