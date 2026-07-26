@@ -224,7 +224,13 @@ function finish(): void {
             Link the Blink account your cameras and clips come from. You can skip this and do it
             later from Settings if you'd rather.
           </p>
-          <BlinkAccountPanel />
+          <!-- Stepper has no lazy-panel option (unlike Tabs) - every StepPanel
+          mounts up front, so this must stay un-mounted until step 2 is
+          actually reached. Mounted from step 1, it would call the
+          authenticated getBlinkStatus() while the visitor is still
+          anonymous, fail with a 401, and never retry once step 1 logs
+          them in - it only fetches once, on mount. -->
+          <BlinkAccountPanel v-if="activeStep === '2'" />
           <div class="step-actions">
             <Button
               label="Continue"
