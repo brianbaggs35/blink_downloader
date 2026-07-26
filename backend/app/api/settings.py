@@ -3,14 +3,16 @@ configuration."""
 
 import asyncio
 import os
+from io import BytesIO
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.models import AISettings
-from app.ai.providers import AIProviderError, build_provider
+from app.ai.providers import AIProviderError, AnalysisRequest, build_provider
 from app.ai.schemas import (
     AIConnectionTestRequest,
     AIConnectionTestResponse,
@@ -112,24 +114,59 @@ async def update_ai_provider_settings(
     return _ai_settings_read(row)
 
 
+async def _resolve_test_api_key(
+    session: AsyncSession, payload: AIConnectionTestRequest
+) -> str | None:
+    if payload.api_key:
+        return payload.api_key
+    row = await get_ai_settings(session)
+    encrypted = (
+        row.tier1_encrypted_api_key if payload.tier == "tier1" else row.tier2_encrypted_api_key
+    )
+    return SecretBox(get_settings().encryption_key).decrypt(encrypted) if encrypted else None
+
+
 @router.post("/ai/test-connection", response_model=AIConnectionTestResponse)
 async def test_ai_connection(
     payload: AIConnectionTestRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     _user: Annotated[object, Depends(current_superuser)],
 ) -> AIConnectionTestResponse:
-    api_key = payload.api_key
-    if not api_key:
-        row = await get_ai_settings(session)
-        encrypted = (
-            row.tier1_encrypted_api_key if payload.tier == "tier1" else row.tier2_encrypted_api_key
-        )
-        if encrypted:
-            api_key = SecretBox(get_settings().encryption_key).decrypt(encrypted)
-
+    api_key = await _resolve_test_api_key(session, payload)
     try:
         provider = build_provider(payload.provider, payload.model, api_key, payload.base_url)
         await provider.test_connection()
     except AIProviderError as exc:
         return AIConnectionTestResponse(ok=False, detail=str(exc))
     return AIConnectionTestResponse(ok=True, detail=None)
+
+
+def _sample_test_image() -> bytes:
+    """A tiny synthetic keyframe - just enough for a provider to return a
+    real (if unremarkable) analysis, so "test analysis" exercises the whole
+    request/response contract rather than just reachability."""
+    buffer = BytesIO()
+    Image.new("RGB", (64, 64), color=(90, 90, 90)).save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
+@router.post("/ai/test-analysis", response_model=AIConnectionTestResponse)
+async def test_ai_analysis(
+    payload: AIConnectionTestRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _user: Annotated[object, Depends(current_superuser)],
+) -> AIConnectionTestResponse:
+    """Runs a real analyze() call against a blank sample image - unlike
+    test-connection (reachability/auth only), this also proves the model
+    name is valid and its response actually parses, at the cost of a real
+    (tiny) inference call."""
+    api_key = await _resolve_test_api_key(session, payload)
+    try:
+        provider = build_provider(payload.provider, payload.model, api_key, payload.base_url)
+        result = await provider.analyze(AnalysisRequest(images=[_sample_test_image()]))
+    except AIProviderError as exc:
+        return AIConnectionTestResponse(ok=False, detail=str(exc))
+    return AIConnectionTestResponse(
+        ok=True,
+        detail=f'Model responded: "{result.summary}" (suspicion {result.suspicion_score:.2f}).',
+    )

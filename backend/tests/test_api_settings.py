@@ -14,7 +14,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.ai.models import AIProviderKind
-from app.ai.providers import AIProviderError
+from app.ai.providers import AIProviderError, AnalysisRequest, AnalysisResult
 
 
 async def test_requires_authentication(client: AsyncClient) -> None:
@@ -157,6 +157,18 @@ class FakeConnectionProvider:
         if FakeConnectionProvider.should_fail:
             raise AIProviderError("could not reach the provider")
 
+    async def analyze(self, request: AnalysisRequest) -> AnalysisResult:
+        del request
+        if FakeConnectionProvider.should_fail:
+            raise AIProviderError("could not reach the provider")
+        return AnalysisResult(
+            summary="Nothing notable.",
+            suspicion_score=0.05,
+            entities=[],
+            input_tokens=1,
+            output_tokens=1,
+        )
+
 
 def _fake_build_provider(
     _kind: AIProviderKind, model: str, api_key: str | None, base_url: str | None
@@ -249,3 +261,40 @@ async def test_ai_test_connection_with_no_saved_key_uses_none(admin_client: Asyn
     )
     assert response.status_code == 200
     assert FakeConnectionProvider.received_api_key is None
+
+
+# ------------------------------------------------------ AI test-analysis
+
+
+async def test_ai_test_analysis_requires_admin(viewer_client: AsyncClient) -> None:
+    response = await viewer_client.post(
+        "/api/settings/ai/test-analysis",
+        json={"tier": "tier1", "provider": "ollama", "model": "llava", "api_key": None},
+    )
+    assert response.status_code == 403
+
+
+async def test_ai_test_analysis_success_reports_the_model_response(
+    admin_client: AsyncClient,
+) -> None:
+    response = await admin_client.post(
+        "/api/settings/ai/test-analysis",
+        json={"tier": "tier1", "provider": "ollama", "model": "llava", "api_key": None},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert "Nothing notable." in body["detail"]
+    assert "0.05" in body["detail"]
+
+
+async def test_ai_test_analysis_reports_failure_without_a_500(admin_client: AsyncClient) -> None:
+    FakeConnectionProvider.should_fail = True
+    response = await admin_client.post(
+        "/api/settings/ai/test-analysis",
+        json={"tier": "tier1", "provider": "openai", "model": "gpt-5-nano", "api_key": "sk-x"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is False
+    assert "could not reach" in body["detail"]

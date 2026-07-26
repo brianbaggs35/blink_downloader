@@ -18,6 +18,7 @@ import {
   putVehicle,
   reanalyzeClip,
   submitFeedback,
+  testAiAnalysis,
   testAiConnection,
   testAlertChannels,
   updateAiSettings,
@@ -134,6 +135,18 @@ describe("AI settings endpoints", () => {
       base_url: null,
     });
     expect(mock.mock.calls[0]?.[0]).toBe("/api/settings/ai/test-connection");
+  });
+
+  it("testAiAnalysis posts the tier/provider/model under test", async () => {
+    const mock = capture(jsonResponse({ ok: true, detail: 'Model responded: "All clear."' }));
+    await testAiAnalysis({
+      tier: "tier1",
+      provider: "openai",
+      model: "gpt-4o-mini",
+      api_key: null,
+      base_url: null,
+    });
+    expect(mock.mock.calls[0]?.[0]).toBe("/api/settings/ai/test-analysis");
   });
 });
 

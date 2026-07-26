@@ -723,6 +723,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/ai/test-analysis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Ai Analysis
+         * @description Runs a real analyze() call against a blank sample image - unlike
+         *     test-connection (reachability/auth only), this also proves the model
+         *     name is valid and its response actually parses, at the cost of a real
+         *     (tiny) inference call.
+         */
+        post: operations["test_ai_analysis_api_settings_ai_test_analysis_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/vehicles": {
         parameters: {
             query?: never;
@@ -3457,6 +3480,39 @@ export interface operations {
         };
     };
     test_ai_connection_api_settings_ai_test_connection_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AIConnectionTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIConnectionTestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_ai_analysis_api_settings_ai_test_analysis_post: {
         parameters: {
             query?: never;
             header?: never;
