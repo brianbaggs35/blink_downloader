@@ -1,10 +1,15 @@
 import { flushPromises, mount } from "@vue/test-utils";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { nextTick } from "vue";
 
 import NavSidebar from "@/components/NavSidebar.vue";
 import { useMobileNav } from "@/composables/useMobileNav";
+import { useSidebarCollapse } from "@/composables/useSidebarCollapse";
 import { makePinia, makeRouter, mountGlobal } from "./helpers";
+
+beforeEach(() => {
+  useSidebarCollapse().setCollapsed(false);
+});
 
 async function mountSidebar() {
   const router = makeRouter();
@@ -43,7 +48,7 @@ describe("NavSidebar", () => {
 
     const drawer = document.body.querySelector('[data-testid="mobile-nav-drawer"]');
     expect(drawer).toBeTruthy();
-    expect(drawer!.querySelectorAll(".nav-item").length).toBe(9);
+    expect(drawer!.querySelectorAll(".nav-item").length).toBe(10);
     expect(drawer!.textContent).toContain(`v${__APP_VERSION__}`);
     useMobileNav().close();
   });
@@ -79,5 +84,20 @@ describe("NavSidebar", () => {
     await flushPromises();
     expect(useMobileNav().isOpen.value).toBe(false);
     wrapper.unmount();
+  });
+
+  it("collapses and expands the desktop sidebar, persisting the choice", async () => {
+    const wrapper = await mountSidebar();
+    const toggle = wrapper.find('[data-testid="sidebar-collapse-toggle"]');
+
+    expect(wrapper.find(".sidebar").classes()).not.toContain("collapsed");
+    await toggle.trigger("click");
+    expect(wrapper.find(".sidebar").classes()).toContain("collapsed");
+    expect(localStorage.getItem("blink-sidebar-collapsed")).toBe("true");
+    expect(wrapper.find(".brand-text").isVisible()).toBe(false);
+
+    await toggle.trigger("click");
+    expect(wrapper.find(".sidebar").classes()).not.toContain("collapsed");
+    expect(localStorage.getItem("blink-sidebar-collapsed")).toBe("false");
   });
 });

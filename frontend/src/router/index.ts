@@ -8,6 +8,7 @@ import BiometricsView from "@/views/BiometricsView.vue";
 import LibraryView from "@/views/LibraryView.vue";
 import LiveView from "@/views/LiveView.vue";
 import LoginView from "@/views/LoginView.vue";
+import SecurityFeedView from "@/views/SecurityFeedView.vue";
 import SettingsView from "@/views/SettingsView.vue";
 import SetupView from "@/views/SetupView.vue";
 import StatusView from "@/views/StatusView.vue";
@@ -21,6 +22,12 @@ export const routes = [
     path: "/",
     component: AppShell,
     children: [
+      {
+        path: "security-feed",
+        name: "security-feed",
+        component: SecurityFeedView,
+        meta: { title: "Security Feed" },
+      },
       { path: "", name: "library", component: LibraryView, meta: { title: "Library" } },
       { path: "status", name: "status", component: StatusView, meta: { title: "Status" } },
       { path: "live", name: "live-view", component: LiveView, meta: { title: "Live View" } },
