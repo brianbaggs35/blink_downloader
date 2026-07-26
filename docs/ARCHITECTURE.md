@@ -85,6 +85,47 @@ application owns it directly:
   enough pages up front (`BlinkPyService._MEDIA_PAGE_STOP`) rather than
   silently truncating, which is `blinkpy`'s own out-of-the-box default.
 
+## Live View & Security Feed
+
+Blink's actual live-streaming call (`camera.get_liveview()`) returns a raw
+`rtsps://` (or, for some hardware, `immis://`) URL — not something a browser
+`<video>` element can play without a transcoding relay this project
+deliberately doesn't build yet (see
+[ROADMAP.md](ROADMAP.md#deferred--watching)). Both features below are built
+instead on what `blinkpy` gives cleanly: a still image, and on-demand clip
+recording.
+
+- **Passive preview** (`GET /api/cameras/{id}/preview`): returns whatever
+  Blink last captured — `camera.get_thumbnail()`, cached to local disk
+  (`Camera.preview_path`/`preview_updated_at`) with an 8-second freshness
+  window. A cache hit costs nothing upstream; N browser tabs polling the same
+  camera cost Blink one request, not N. This is what both Live View's
+  auto-refresh and every Security Feed tile poll on their interval.
+- **Forced preview** (`?force=true`): calls `camera.snap_picture()`, which
+  wakes the camera for a fresh capture — real battery cost on a
+  battery-powered camera, so it's gated to `current_superuser` server-side
+  (403 for anyone else) rather than just hidden in the UI. This is Live
+  View's manual refresh button and Security Feed's per-tile "Snap" action.
+- **Record** (`POST /api/cameras/{id}/record`, superuser-only): calls
+  `camera.record()` to trigger an on-demand clip, which then flows through
+  the existing sync/download pipeline into the Library like any
+  motion-triggered clip — no separate storage path.
+- **Camera lookup**: both preview and record resolve the target camera by
+  `camera.camera_id` (the same stable ID `Blink integration` above keys on),
+  never by `blinkpy`'s own name-keyed `self._blink.cameras` dict — avoiding
+  the same class of name-collision risk noted above.
+- **Settings**: `LiveViewSettings` (default camera, auto-refresh on/off and
+  interval) and `SecurityFeedSettings` (chosen cameras and their order,
+  grid column count, refresh interval) are both household singletons, same
+  get-or-create-by-`SINGLETON_ID` pattern as `AlertSettings`. A camera left
+  out of `SecurityFeedSettings.camera_ids` entirely falls back to "every
+  enabled camera" (Settings → Cameras), so the feed is useful with zero
+  configuration.
+- **Default landing page**: `User.default_landing_page` (Settings → General)
+  picks whether a fresh login or a completed setup wizard lands on Library
+  or Security Feed — read once at redirect time via the frontend's
+  `auth.landingRouteName`, not a stored route.
+
 ## Security model
 
 - **Auth**: Argon2id password hashing; HttpOnly/Secure/SameSite=Lax cookie
