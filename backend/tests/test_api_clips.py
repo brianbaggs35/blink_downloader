@@ -150,9 +150,7 @@ async def test_list_filters_by_recognized_person(admin_client: AsyncClient, app:
     await _make_clip(app, camera)
     person = await _recognize(app, recognized_clip, "Alex")
 
-    response = await admin_client.get(
-        "/api/clips", params={"recognized_person_id": str(person.id)}
-    )
+    response = await admin_client.get("/api/clips", params={"recognized_person_id": str(person.id)})
     body = response.json()
     assert body["total"] == 1
     assert body["items"][0]["id"] == str(recognized_clip.id)

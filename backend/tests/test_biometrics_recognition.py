@@ -219,6 +219,75 @@ def test_detect_faces_uses_gpu_ctx_id_when_cuda_selected(monkeypatch: pytest.Mon
     assert engine.prepare_calls[0]["ctx_id"] == 0
 
 
+# ------------------------------------------------------------- ModelLoadError
+
+
+def test_get_engine_wraps_construction_failure_in_model_load_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _boom(*, name: str, root: str, providers: list[str]) -> FakeFaceAnalysis:
+        raise RuntimeError("could not reach github release assets")
+
+    monkeypatch.setattr(recognition, "FaceAnalysis", _boom)
+    with pytest.raises(recognition.ModelLoadError, match="buffalo_sc"):
+        detect_faces(
+            _tiny_jpeg_bytes(),
+            model_pack=ModelPack.BUFFALO_SC,
+            provider_preference=ExecutionProviderPreference.CPU,
+            model_cache_dir=CACHE_DIR,
+        )
+    assert FakeFaceAnalysis.instances == []
+
+
+def test_get_engine_failure_does_not_poison_the_cache_for_a_later_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _boom(*, name: str, root: str, providers: list[str]) -> FakeFaceAnalysis:
+        raise RuntimeError("network blip")
+
+    monkeypatch.setattr(recognition, "FaceAnalysis", _boom)
+    with pytest.raises(recognition.ModelLoadError):
+        detect_faces(
+            _tiny_jpeg_bytes(),
+            model_pack=ModelPack.BUFFALO_SC,
+            provider_preference=ExecutionProviderPreference.CPU,
+            model_cache_dir=CACHE_DIR,
+        )
+
+    monkeypatch.setattr(recognition, "FaceAnalysis", FakeFaceAnalysis)
+    detect_faces(
+        _tiny_jpeg_bytes(),
+        model_pack=ModelPack.BUFFALO_SC,
+        provider_preference=ExecutionProviderPreference.CPU,
+        model_cache_dir=CACHE_DIR,
+    )
+    assert len(FakeFaceAnalysis.instances) == 1
+
+
+# --------------------------------------------------------- ensure_model_ready
+
+
+def test_ensure_model_ready_loads_the_engine_and_returns_providers() -> None:
+    providers = recognition.ensure_model_ready(
+        ModelPack.BUFFALO_L, ExecutionProviderPreference.CPU, CACHE_DIR
+    )
+    assert providers == ["CPUExecutionProvider"]
+    assert len(FakeFaceAnalysis.instances) == 1
+
+
+def test_ensure_model_ready_raises_model_load_error_on_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _boom(*, name: str, root: str, providers: list[str]) -> FakeFaceAnalysis:
+        raise OSError("cache dir not writable")
+
+    monkeypatch.setattr(recognition, "FaceAnalysis", _boom)
+    with pytest.raises(recognition.ModelLoadError):
+        recognition.ensure_model_ready(
+            ModelPack.BUFFALO_L, ExecutionProviderPreference.CPU, CACHE_DIR
+        )
+
+
 # ----------------------------------------------------------- cosine_similarity
 
 
@@ -242,12 +311,12 @@ def test_cosine_similarity_zero_vector_is_zero_not_a_division_error() -> None:
 
 
 def test_best_match_returns_none_when_no_candidates() -> None:
-    assert best_match([1.0, 0.0], [], threshold=0.5) is None
+    assert best_match([1.0, 0.0], [], [], threshold=0.5) is None
 
 
 def test_best_match_returns_none_when_nobody_clears_threshold() -> None:
     candidates = [(uuid.uuid4(), [0.0, 1.0])]
-    assert best_match([1.0, 0.0], candidates, threshold=0.5) is None
+    assert best_match([1.0, 0.0], candidates, [], threshold=0.5) is None
 
 
 def test_best_match_picks_the_highest_scoring_candidate_above_threshold() -> None:
@@ -257,7 +326,7 @@ def test_best_match_picks_the_highest_scoring_candidate_above_threshold() -> Non
         (far_person, [0.6, 0.4]),
         (close_person, [1.0, 0.0]),
     ]
-    match = best_match([1.0, 0.0], candidates, threshold=0.5)
+    match = best_match([1.0, 0.0], candidates, [], threshold=0.5)
     assert match is not None
     assert match.person_id == close_person
     assert match.score == pytest.approx(1.0)
@@ -265,6 +334,56 @@ def test_best_match_picks_the_highest_scoring_candidate_above_threshold() -> Non
 
 def test_best_match_includes_a_candidate_exactly_at_threshold() -> None:
     person = uuid.uuid4()
-    match = best_match([1.0, 0.0], [(person, [1.0, 0.0])], threshold=1.0)
+    match = best_match([1.0, 0.0], [(person, [1.0, 0.0])], [], threshold=1.0)
+    assert match is not None
+
+
+def test_best_match_vetoes_a_person_whose_negative_sample_is_at_least_as_close() -> None:
+    person = uuid.uuid4()
+    query = [1.0, 0.0]
+    positives = [(person, [0.8, 0.6])]  # cosine(query, positive) == 0.8
+    negatives = [(person, [1.0, 0.0])]  # cosine(query, negative) == 1.0 - the exact query face
+    match = best_match(query, positives, negatives, threshold=0.5)
+    assert match is None
+
+
+def test_best_match_still_matches_when_negative_is_for_a_different_person() -> None:
+    target = uuid.uuid4()
+    other = uuid.uuid4()
+    positives = [(target, [1.0, 0.0])]
+    negatives = [(other, [1.0, 0.0])]
+    match = best_match([1.0, 0.0], positives, negatives, threshold=0.5)
+    assert match is not None
+    assert match.person_id == target
+
+
+def test_best_match_allows_a_positive_that_clearly_beats_its_own_negative() -> None:
+    person = uuid.uuid4()
+    positives = [(person, [1.0, 0.0])]
+    negatives = [(person, [0.0, 1.0])]
+    match = best_match([1.0, 0.0], positives, negatives, threshold=0.5)
     assert match is not None
     assert match.person_id == person
+
+
+def test_best_match_keeps_the_higher_of_two_negatives_for_the_same_person() -> None:
+    person = uuid.uuid4()
+    query = [1.0, 0.0]
+    positives = [(person, [1.0, 0.0])]
+    # Two negative samples for the same person, strongest listed first - the
+    # weaker one seen afterward must not overwrite it and weaken the veto.
+    negatives = [(person, [1.0, 0.0]), (person, [0.0, 1.0])]
+    match = best_match(query, positives, negatives, threshold=0.5)
+    assert match is None
+
+
+def test_best_match_keeps_scanning_past_a_positive_that_does_not_beat_the_current_best() -> None:
+    best_person = uuid.uuid4()
+    weaker_person = uuid.uuid4()
+    query = [1.0, 0.0]
+    # weaker_person is listed after best_person but scores lower - the loop
+    # must not let it replace the already-found best match.
+    positives = [(best_person, [1.0, 0.0]), (weaker_person, [0.8, 0.6])]
+    match = best_match(query, positives, [], threshold=0.5)
+    assert match is not None
+    assert match.person_id == best_person

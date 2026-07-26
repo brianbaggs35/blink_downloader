@@ -13,22 +13,30 @@ import uuid
 from collections.abc import Sequence
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.biometrics.models import SINGLETON_ID, BiometricsSettings, FaceEmbedding, Person
+from app.ai.models import Analysis
+from app.biometrics.models import (
+    SINGLETON_ID,
+    BiometricsSettings,
+    FaceEmbedding,
+    Person,
+    RecognizedFace,
+)
 from app.biometrics.recognition import (
     DetectedFace,
     FaceMatch,
     best_match,
     crop_face_thumbnail,
     detect_faces,
+    ensure_model_ready,
 )
 from app.biometrics.schemas import BiometricsSettingsUpdate
 from app.blink.models import Clip
 from app.storage.service import ClipStorage
-from app.video.ffmpeg import extract_biometrics_frame
+from app.video.ffmpeg import extract_biometrics_frame, extract_keyframes
 
 _BBOX_MATCH_TOLERANCE = 0.05
 """Max per-coordinate drift allowed between the bbox a client echoes back
@@ -68,6 +76,20 @@ async def update_biometrics_settings(
     await session.commit()
     await session.refresh(row)
     return row
+
+
+async def verify_model(biometrics_settings: BiometricsSettings, model_cache_dir: Path) -> list[str]:
+    """Downloads (if needed) and loads the configured model pack, so an
+    admin gets a clear pass/fail right after choosing a model in Settings
+    rather than discovering a download problem during the next real clip
+    analysis. Returns the execution providers actually in use. Raises
+    ModelLoadError (see app.biometrics.recognition) on failure."""
+    return await asyncio.to_thread(
+        ensure_model_ready,
+        biometrics_settings.model_pack,
+        biometrics_settings.execution_provider_preference,
+        model_cache_dir,
+    )
 
 
 async def list_people(session: AsyncSession) -> Sequence[Person]:
@@ -213,10 +235,114 @@ async def match_faces(
     session: AsyncSession, detected: Sequence[DetectedFace], threshold: float
 ) -> list[FaceMatch | None]:
     """One result per face in ``detected``, in order. Loads every enrolled
-    (non-negative) sample across every person - cheap at household scale,
-    see app.biometrics.recognition.best_match."""
-    stmt = select(FaceEmbedding.person_id, FaceEmbedding.embedding).where(
-        FaceEmbedding.is_negative.is_(False)
+    sample across every person - cheap at household scale, see
+    app.biometrics.recognition.best_match."""
+    stmt = select(FaceEmbedding.person_id, FaceEmbedding.embedding, FaceEmbedding.is_negative)
+    rows = list(await session.execute(stmt))
+    positives = [(row.person_id, row.embedding) for row in rows if not row.is_negative]
+    negatives = [(row.person_id, row.embedding) for row in rows if row.is_negative]
+    return [best_match(face.embedding, positives, negatives, threshold) for face in detected]
+
+
+REVERTED_LABEL = "Unrecognized person"
+"""What a "person" entity's label reverts to when a false-positive report
+removes a recognition - distinct from whatever free-text the VLM originally
+used (not recoverable - it was overwritten in place), but honest that this
+is now deliberately un-attributed rather than a fresh, never-recognized
+detection."""
+
+
+async def report_false_positive(
+    session: AsyncSession,
+    storage: ClipStorage,
+    clip: Clip,
+    person: Person,
+    biometrics_settings: BiometricsSettings,
+    model_cache_dir: Path,
+    keyframe_count: int,
+) -> bool:
+    """A household member is saying ``person`` was recognized in ``clip`` in
+    error. Re-detects faces across the clip's keyframes (the original
+    per-face match was never persisted - only the aggregate RecognizedFace
+    row survives analysis) to find whichever face matched them closely
+    enough to have caused it, and stores that face as a negative sample so
+    the same face pattern stops matching them in the future (see
+    app.biometrics.recognition.best_match) - a report that didn't change
+    future matching would be worthless, per design intent.
+
+    Either way, the RecognizedFace record is removed and the clip's current
+    analysis has that person's label reverted to generic, since the report
+    should be honored even if the exact face can no longer be pinned down
+    (e.g. settings changed since the original analysis ran). Returns
+    whether a negative sample was actually captured."""
+    if clip.storage_path is None:
+        raise ClipFrameError("No downloaded clip file to re-examine.")
+
+    stmt = select(FaceEmbedding.embedding).where(
+        FaceEmbedding.person_id == person.id, FaceEmbedding.is_negative.is_(False)
     )
-    candidates = [(row.person_id, row.embedding) for row in await session.execute(stmt)]
-    return [best_match(face.embedding, candidates, threshold) for face in detected]
+    positive_samples = [(person.id, row.embedding) for row in await session.execute(stmt)]
+
+    keyframes = await extract_keyframes(Path(clip.storage_path), keyframe_count)
+    best_face: DetectedFace | None = None
+    best_frame: bytes | None = None
+    best_score = -1.0
+    for frame in keyframes:
+        faces = await asyncio.to_thread(
+            detect_faces,
+            frame,
+            model_pack=biometrics_settings.model_pack,
+            provider_preference=biometrics_settings.execution_provider_preference,
+            model_cache_dir=model_cache_dir,
+        )
+        for face in faces:
+            match = best_match(
+                face.embedding, positive_samples, [], biometrics_settings.recognition_threshold
+            )
+            if match is not None and match.score > best_score:
+                best_score, best_face, best_frame = match.score, face, frame
+
+    captured = False
+    if best_face is not None and best_frame is not None:
+        embedding_id = uuid.uuid4()
+        thumbnail = crop_face_thumbnail(best_frame, best_face.bbox)
+        thumbnail_path = storage.face_sample_path(person.id, embedding_id)
+        await storage.write(thumbnail_path, thumbnail)
+        session.add(
+            FaceEmbedding(
+                id=embedding_id,
+                person_id=person.id,
+                embedding=best_face.embedding,
+                is_negative=True,
+                source_clip_id=clip.id,
+                thumbnail_path=str(thumbnail_path),
+            )
+        )
+        captured = True
+
+    await session.execute(
+        delete(RecognizedFace).where(
+            RecognizedFace.clip_id == clip.id, RecognizedFace.person_id == person.id
+        )
+    )
+    await _revert_recognized_label(session, clip.id, person.id)
+    await session.commit()
+    return captured
+
+
+async def _revert_recognized_label(
+    session: AsyncSession, clip_id: uuid.UUID, person_id: uuid.UUID
+) -> None:
+    stmt = select(Analysis).where(Analysis.clip_id == clip_id, Analysis.is_current.is_(True))
+    analysis = (await session.execute(stmt)).scalar_one_or_none()
+    if analysis is None:
+        return
+    person_id_str = str(person_id)
+    reverted = [
+        {**entity, "label": REVERTED_LABEL, "recognized_person_id": None}
+        if entity.get("recognized_person_id") == person_id_str
+        else entity
+        for entity in analysis.detected_entities
+    ]
+    if reverted != analysis.detected_entities:
+        analysis.detected_entities = reverted

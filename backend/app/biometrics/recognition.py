@@ -53,6 +53,15 @@ class RecognitionError(Exception):
     """The image bytes handed in couldn't be decoded."""
 
 
+class ModelLoadError(Exception):
+    """Building a model pack's inference sessions failed - most commonly a
+    first-use model download that couldn't reach insightface's release
+    assets, or a cache directory that isn't writable. Callers on the AI
+    analysis path treat this as an expected, non-retryable reason to skip
+    recognition for this pass rather than losing an already-computed VLM
+    result over it (see app.ai.pipeline._recognize_and_label)."""
+
+
 @dataclass
 class DetectedFace:
     bbox: tuple[float, float, float, float]  # normalized x, y, w, h
@@ -78,7 +87,7 @@ def available_providers() -> list[str]:
 
 
 def resolve_providers(preference: ExecutionProviderPreference) -> list[str]:
-    """"auto" uses CUDA when onnxruntime reports it available in this
+    """ "auto" uses CUDA when onnxruntime reports it available in this
     process, else falls back to CPU. GPU is never assumed - onnxruntime-gpu
     only ships x86_64 wheels at all, so this also keeps arm64 hosts correct
     without any platform-specific branching here."""
@@ -108,13 +117,44 @@ def _get_engine(
         logger.info(
             "biometrics.engine_loading", model_pack=model_pack.value, providers=list(providers)
         )
-        engine = FaceAnalysis(
-            name=model_pack.value, root=str(model_cache_dir), providers=list(providers)
-        )
-        ctx_id = 0 if CUDA_PROVIDER in providers else -1
-        engine.prepare(ctx_id=ctx_id, det_size=DETECTION_SIZE)
+        try:
+            engine = FaceAnalysis(
+                name=model_pack.value, root=str(model_cache_dir), providers=list(providers)
+            )
+            ctx_id = 0 if CUDA_PROVIDER in providers else -1
+            engine.prepare(ctx_id=ctx_id, det_size=DETECTION_SIZE)
+        except Exception as exc:
+            # insightface/onnxruntime raise a mix of untyped exceptions for
+            # "couldn't download the model" and "couldn't build a session
+            # from it" (network errors, corrupt/partial zip, unwritable
+            # cache dir, ...) - there is no single documented type to catch
+            # narrowly, so this boundary converts whatever it was into one
+            # typed error the rest of the app can handle deliberately.
+            logger.warning(
+                "biometrics.engine_load_failed",
+                model_pack=model_pack.value,
+                providers=list(providers),
+                error=str(exc),
+            )
+            raise ModelLoadError(
+                f"Could not load the {model_pack.value} model pack: {exc}"
+            ) from exc
         _engines[key] = engine
         return engine
+
+
+def ensure_model_ready(
+    model_pack: ModelPack, provider_preference: ExecutionProviderPreference, model_cache_dir: Path
+) -> list[str]:
+    """Forces the model pack to be downloaded (if not already cached) and
+    loaded, without needing a real image - what Settings' "verify model"
+    action calls so an admin gets a clear pass/fail the moment they enable
+    biometrics, instead of finding out during the next real clip analysis.
+    Returns the execution providers the loaded engine actually ended up
+    using. Raises ModelLoadError on failure."""
+    providers = resolve_providers(provider_preference)
+    _get_engine(model_pack, providers, model_cache_dir)
+    return providers
 
 
 def detect_faces(
@@ -190,16 +230,34 @@ def cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
 
 def best_match(
     query_embedding: Sequence[float],
-    candidates: Sequence[tuple[uuid.UUID, Sequence[float]]],
+    positive_candidates: Sequence[tuple[uuid.UUID, Sequence[float]]],
+    negative_candidates: Sequence[tuple[uuid.UUID, Sequence[float]]],
     threshold: float,
 ) -> FaceMatch | None:
-    """``candidates`` is (person_id, embedding) pairs - typically every
-    enrolled sample across every person (household scale: at most a few
-    hundred rows, cheap to compare against in plain Python). Returns the
-    closest match at or above ``threshold``, or None if nobody clears it."""
-    best: FaceMatch | None = None
-    for person_id, embedding in candidates:
+    """Both candidate lists are (person_id, embedding) pairs - typically
+    every enrolled sample across every person (household scale: at most a
+    few hundred rows, cheap to compare against in plain Python).
+
+    A person's own negative samples (see FaceEmbedding.is_negative - faces a
+    household member confirmed were NOT them, via the "report" action on a
+    recognized clip) veto a match to them: if the query face is at least as
+    close to one of their negatives as to their best positive, that's the
+    known false-positive face pattern recurring, and reporting it must
+    actually change future behavior rather than just relabel one clip.
+
+    Returns the closest positive match at or above ``threshold`` that isn't
+    vetoed this way, or None if nobody clears it."""
+    negative_best: dict[uuid.UUID, float] = {}
+    for person_id, embedding in negative_candidates:
         score = cosine_similarity(query_embedding, embedding)
-        if score >= threshold and (best is None or score > best.score):
+        if person_id not in negative_best or score > negative_best[person_id]:
+            negative_best[person_id] = score
+
+    best: FaceMatch | None = None
+    for person_id, embedding in positive_candidates:
+        score = cosine_similarity(query_embedding, embedding)
+        if score < threshold or score <= negative_best.get(person_id, -1.0):
+            continue
+        if best is None or score > best.score:
             best = FaceMatch(person_id=person_id, score=score)
     return best

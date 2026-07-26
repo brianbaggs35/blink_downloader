@@ -14,8 +14,8 @@ from fastapi import FastAPI
 from httpx import AsyncClient
 
 import app.biometrics.service as biometrics_service
-from app.biometrics.models import Person
-from app.biometrics.recognition import DetectedFace
+from app.biometrics.models import Person, RecognizedFace
+from app.biometrics.recognition import DetectedFace, ModelLoadError
 from app.blink.models import BlinkAccount, Camera, Clip
 from app.config import get_settings
 from app.security.crypto import SecretBox
@@ -93,6 +93,12 @@ async def _make_person(app: FastAPI, name: str = "Alex") -> Person:
         return person
 
 
+async def _recognize(app: FastAPI, clip: Clip, person: Person, confidence: float = 0.9) -> None:
+    async with app.state.sessionmaker() as session:
+        session.add(RecognizedFace(clip_id=clip.id, person_id=person.id, confidence=confidence))
+        await session.commit()
+
+
 @pytest.fixture(scope="module")
 def sample_clip_bytes(tmp_path_factory: pytest.TempPathFactory) -> bytes:
     path = tmp_path_factory.mktemp("clips") / "sample.mp4"
@@ -156,6 +162,36 @@ async def test_put_settings_updates_and_persists(admin_client: AsyncClient) -> N
 
     reread = await admin_client.get("/api/biometrics/settings")
     assert reread.json()["model_pack"] == "buffalo_sc"
+
+
+async def test_verify_model_requires_admin(viewer_client: AsyncClient) -> None:
+    response = await viewer_client.post("/api/biometrics/settings/verify-model")
+    assert response.status_code == 403
+
+
+async def test_verify_model_returns_providers_on_success(
+    admin_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _fake_ensure_model_ready(*_args: object, **_kwargs: object) -> list[str]:
+        return ["CPUExecutionProvider"]
+
+    monkeypatch.setattr(biometrics_service, "ensure_model_ready", _fake_ensure_model_ready)
+    response = await admin_client.post("/api/biometrics/settings/verify-model")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["providers"] == ["CPUExecutionProvider"]
+    assert body["model_pack"] == "buffalo_l"
+
+
+async def test_verify_model_returns_502_on_failure(
+    admin_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _boom(*_args: object, **_kwargs: object) -> list[str]:
+        raise ModelLoadError("could not download the model")
+
+    monkeypatch.setattr(biometrics_service, "ensure_model_ready", _boom)
+    response = await admin_client.post("/api/biometrics/settings/verify-model")
+    assert response.status_code == 502
 
 
 # -------------------------------------------------------------- people CRUD
@@ -287,9 +323,7 @@ async def test_delete_face_404_for_unknown_face_among_others(
         json={"clip_id": str(clip.id), "frame_seconds": 0.5, "bbox": [0.3, 0.3, 0.2, 0.2]},
     )
 
-    response = await admin_client.delete(
-        f"/api/biometrics/people/{person.id}/faces/{uuid.uuid4()}"
-    )
+    response = await admin_client.delete(f"/api/biometrics/people/{person.id}/faces/{uuid.uuid4()}")
     assert response.status_code == 404
 
 
@@ -439,6 +473,103 @@ async def test_enroll_creates_a_face_sample_and_is_then_listed(
     assert delete_response.status_code == 204
     faces_after = await admin_client.get(f"/api/biometrics/people/{person.id}/faces")
     assert faces_after.json() == []
+
+
+# ------------------------------------------------------- report-false-positive
+
+
+async def test_report_false_positive_requires_admin(
+    viewer_client: AsyncClient, app: FastAPI
+) -> None:
+    person = await _make_person(app)
+    response = await viewer_client.post(
+        f"/api/biometrics/clips/{uuid.uuid4()}/people/{person.id}/report-false-positive"
+    )
+    assert response.status_code == 403
+
+
+async def test_report_false_positive_404_for_unknown_clip(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    person = await _make_person(app)
+    response = await admin_client.post(
+        f"/api/biometrics/clips/{uuid.uuid4()}/people/{person.id}/report-false-positive"
+    )
+    assert response.status_code == 404
+
+
+async def test_report_false_positive_404_for_unknown_person(
+    admin_client: AsyncClient, app: FastAPI, tmp_path: Path, sample_clip_bytes: bytes
+) -> None:
+    camera = await _make_camera(app)
+    clip = await _make_downloaded_clip(app, camera, tmp_path, sample_clip_bytes)
+    response = await admin_client.post(
+        f"/api/biometrics/clips/{clip.id}/people/{uuid.uuid4()}/report-false-positive"
+    )
+    assert response.status_code == 404
+
+
+async def test_report_false_positive_409_when_clip_not_downloaded(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    camera = await _make_camera(app)
+    async with app.state.sessionmaker() as session:
+        clip = Clip(
+            camera_id=camera.id,
+            blink_clip_id="/media/never.mp4",
+            recorded_at=datetime(2026, 7, 20, tzinfo=UTC),
+            raw_metadata={},
+        )
+        session.add(clip)
+        await session.commit()
+        await session.refresh(clip)
+    person = await _make_person(app)
+    response = await admin_client.post(
+        f"/api/biometrics/clips/{clip.id}/people/{person.id}/report-false-positive"
+    )
+    assert response.status_code == 409
+
+
+async def test_report_false_positive_removes_recognition(
+    admin_client: AsyncClient,
+    app: FastAPI,
+    tmp_path: Path,
+    sample_clip_bytes: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    camera = await _make_camera(app)
+    clip = await _make_downloaded_clip(app, camera, tmp_path, sample_clip_bytes)
+    person = await _make_person(app, "Wrongly Recognized")
+    await _recognize(app, clip, person)
+    monkeypatch.setattr(biometrics_service, "detect_faces", _fake_detect_faces([]))
+
+    response = await admin_client.post(
+        f"/api/biometrics/clips/{clip.id}/people/{person.id}/report-false-positive"
+    )
+    assert response.status_code == 200
+    assert response.json() == {"negative_sample_captured": False}
+
+
+async def test_report_false_positive_502_when_model_load_fails(
+    admin_client: AsyncClient,
+    app: FastAPI,
+    tmp_path: Path,
+    sample_clip_bytes: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    camera = await _make_camera(app)
+    clip = await _make_downloaded_clip(app, camera, tmp_path, sample_clip_bytes)
+    person = await _make_person(app)
+    await _recognize(app, clip, person)
+
+    def _boom(*_args: object, **_kwargs: object) -> list[DetectedFace]:
+        raise ModelLoadError("could not download the model")
+
+    monkeypatch.setattr(biometrics_service, "detect_faces", _boom)
+    response = await admin_client.post(
+        f"/api/biometrics/clips/{clip.id}/people/{person.id}/report-false-positive"
+    )
+    assert response.status_code == 502
 
 
 # --------------------------------------------------------- viewer can read only

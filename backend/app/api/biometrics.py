@@ -14,8 +14,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.service import get_ai_settings
 from app.biometrics.models import BiometricsSettings, FaceEmbedding, Person
-from app.biometrics.recognition import available_providers
+from app.biometrics.recognition import ModelLoadError, RecognitionError, available_providers
 from app.biometrics.schemas import (
     BiometricsSettingsRead,
     BiometricsSettingsUpdate,
@@ -25,6 +26,8 @@ from app.biometrics.schemas import (
     PersonCreate,
     PersonRead,
     PersonUpdate,
+    ReportFalsePositiveRead,
+    VerifyModelRead,
 )
 from app.biometrics.service import (
     ClipFrameError,
@@ -38,8 +41,11 @@ from app.biometrics.service import (
     get_person,
     list_people,
     rename_person,
+    report_false_positive,
     update_biometrics_settings,
+    verify_model,
 )
+from app.blink.models import Clip
 from app.config import get_settings
 from app.db import get_session
 from app.settings.service import resolve_storage_dir
@@ -82,6 +88,13 @@ async def _get_person_or_404(session: AsyncSession, person_id: uuid.UUID) -> Per
     return person
 
 
+async def _get_clip_or_404(session: AsyncSession, clip_id: uuid.UUID) -> Clip:
+    clip = await session.get(Clip, clip_id)
+    if clip is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found.")
+    return clip
+
+
 def _get_face_or_404(person: Person, face_id: uuid.UUID) -> FaceEmbedding:
     for face in person.face_embeddings:
         if face.id == face_id:
@@ -113,6 +126,24 @@ async def update_settings_route(
 ) -> BiometricsSettingsRead:
     row = await update_biometrics_settings(session, payload)
     return _settings_read(row)
+
+
+@router.post("/settings/verify-model", response_model=VerifyModelRead)
+async def verify_model_route(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _user: Annotated[object, Depends(current_superuser)],
+) -> VerifyModelRead:
+    """Downloads/loads the currently-configured model pack right now and
+    reports pass/fail, so enabling biometrics in Settings gives an admin
+    immediate feedback instead of a silent first-analysis surprise."""
+    biometrics_settings = await get_biometrics_settings(session)
+    try:
+        providers = await verify_model(
+            biometrics_settings, get_settings().biometrics_model_cache_dir
+        )
+    except ModelLoadError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return VerifyModelRead(model_pack=biometrics_settings.model_pack, providers=providers)
 
 
 @router.get("/people", response_model=list[PersonRead])
@@ -273,3 +304,37 @@ async def enroll_face_route(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except FaceNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.post(
+    "/clips/{clip_id}/people/{person_id}/report-false-positive",
+    response_model=ReportFalsePositiveRead,
+)
+async def report_false_positive_route(
+    clip_id: uuid.UUID,
+    person_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _user: Annotated[object, Depends(current_superuser)],
+) -> ReportFalsePositiveRead:
+    """ "This wasn't {name}" from the clip modal — see
+    app.biometrics.service.report_false_positive for what this actually
+    does to future matching, not just this one clip."""
+    clip = await _get_clip_or_404(session, clip_id)
+    person = await _get_person_or_404(session, person_id)
+    biometrics_settings = await get_biometrics_settings(session)
+    ai_settings = await get_ai_settings(session)
+    try:
+        captured = await report_false_positive(
+            session,
+            await _storage(session),
+            clip,
+            person,
+            biometrics_settings,
+            get_settings().biometrics_model_cache_dir,
+            ai_settings.keyframes_per_clip,
+        )
+    except ClipFrameError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except (ModelLoadError, RecognitionError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return ReportFalsePositiveRead(negative_sample_captured=captured)

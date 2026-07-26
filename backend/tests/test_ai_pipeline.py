@@ -41,7 +41,7 @@ from app.biometrics.models import (
     Person,
     RecognizedFace,
 )
-from app.biometrics.recognition import DetectedFace, FaceMatch
+from app.biometrics.recognition import DetectedFace, FaceMatch, ModelLoadError
 from app.blink.models import BlinkAccount, Camera, Clip
 from app.config import get_settings
 from app.security.crypto import SecretBox
@@ -944,6 +944,44 @@ async def test_biometrics_settings_omitted_skips_detection_entirely(
         app_session, clip, camera, make_settings(tier2_enabled=False), get_settings().encryption_key
     )
     # No AssertionError from _unreachable_detect_faces means it was never called.
+
+
+async def test_model_load_failure_during_recognition_still_saves_the_analysis(
+    app_session: AsyncSession, sample_clip_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A biometrics model-download hiccup must not throw away a VLM result
+    that already succeeded - see run_analysis's try/except around
+    _recognize_and_label."""
+    camera, clip = await _make_camera_and_clip(app_session, sample_clip_path)
+    ScriptedProvider.queued = [
+        make_result(
+            suspicion=0.1,
+            entities=[
+                DetectedEntityResult(
+                    type="person", confidence=0.9, label="a person", bbox=(0.2, 0.2, 0.3, 0.5)
+                )
+            ],
+        )
+    ]
+
+    def _boom(*_args: object, **_kwargs: object) -> list[DetectedFace]:
+        raise ModelLoadError("could not download the model")
+
+    monkeypatch.setattr("app.ai.pipeline.detect_faces", _boom)
+
+    analysis = await run_analysis(
+        app_session,
+        clip,
+        camera,
+        make_settings(tier2_enabled=False),
+        get_settings().encryption_key,
+        biometrics_settings=make_biometrics_settings(),
+        biometrics_model_cache_dir=BIOMETRICS_CACHE_DIR,
+    )
+
+    assert analysis.detected_entities[0]["label"] == "a person"
+    assert analysis.detected_entities[0]["recognized_person_id"] is None
+    assert await _recognized_faces(app_session, clip.id) == []
 
 
 async def test_reanalyze_updates_existing_recognized_face_row(
