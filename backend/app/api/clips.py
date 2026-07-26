@@ -287,6 +287,12 @@ async def reanalyze_clip(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This clip has not been downloaded yet.",
         )
+    camera = await session.get(Camera, clip.camera_id)
+    if camera is not None and not camera.enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This clip's camera is disabled — enable it in Settings to analyze its clips.",
+        )
     await request.app.state.arq_redis.enqueue_job(ANALYZE_JOB_NAME, clip_id=str(clip.id))
     return {"status": "queued"}
 
@@ -299,7 +305,13 @@ async def bulk_analyze_clips(
     _user: Annotated[object, Depends(current_superuser)],
 ) -> BulkActionResponse:
     clips = (
-        (await session.execute(select(Clip).where(Clip.id.in_(payload.clip_ids)))).scalars().all()
+        (
+            await session.execute(
+                select(Clip).join(Camera).where(Clip.id.in_(payload.clip_ids), Camera.enabled)
+            )
+        )
+        .scalars()
+        .all()
     )
     queued = 0
     failed = 0
@@ -309,7 +321,7 @@ async def bulk_analyze_clips(
             queued += 1
         else:
             failed += 1
-    failed += len(payload.clip_ids) - len(clips)  # ids that didn't match any clip
+    failed += len(payload.clip_ids) - len(clips)  # not downloaded, or camera disabled
     return BulkActionResponse(succeeded=queued, failed=failed)
 
 

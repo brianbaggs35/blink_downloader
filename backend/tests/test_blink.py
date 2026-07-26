@@ -82,7 +82,8 @@ class FakeBlink:
         self.last_http_get_address: str | None = None
         FakeBlink.instances.append(self)
 
-    async def get_videos_metadata(self, since: Any = None) -> list[dict[str, Any]]:
+    async def get_videos_metadata(self, since: Any = None, stop: int = 10) -> list[dict[str, Any]]:
+        del stop
         if self.media_error:
             raise self.media_error
         return self.media_items

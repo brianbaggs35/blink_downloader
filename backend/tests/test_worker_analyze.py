@@ -91,7 +91,7 @@ def sample_clip_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 async def _make_camera_and_clip(
-    session: AsyncSession, sample_clip_path: Path, *, downloaded: bool = True
+    session: AsyncSession, sample_clip_path: Path, *, downloaded: bool = True, enabled: bool = True
 ) -> tuple[Camera, Clip]:
     box = SecretBox(get_settings().encryption_key)
     account = BlinkAccount(
@@ -108,6 +108,7 @@ async def _make_camera_and_clip(
         blink_network_id="net-1",
         name="Driveway",
         camera_type="catalina",
+        enabled=enabled,
     )
     session.add(camera)
     await session.flush()
@@ -154,6 +155,27 @@ async def test_ai_disabled_short_circuits(
 
     result = await analyze_clip(worker_ctx, str(clip_id))
     assert result == "ai_disabled"
+
+
+async def test_camera_disabled_short_circuits(
+    worker_ctx: dict[str, Any], sample_clip_path: Path
+) -> None:
+    # Defense in depth: the API layer already refuses to enqueue analysis for
+    # a disabled camera's clips, but a job already sitting in the queue when
+    # the camera gets disabled must still no-op cleanly rather than analyze.
+    async with worker_ctx["sessionmaker"]() as session:
+        _camera, clip = await _make_camera_and_clip(session, sample_clip_path, enabled=False)
+        clip_id = clip.id
+        await update_ai_settings(
+            session,
+            AISettingsUpdate(
+                enabled=True, tier1_provider=AIProviderKind.OPENAI, tier1_model="gpt-5-nano"
+            ),
+            get_settings().encryption_key,
+        )
+
+    result = await analyze_clip(worker_ctx, str(clip_id))
+    assert result == "camera_disabled"
 
 
 async def test_skipped_when_clip_not_downloaded(

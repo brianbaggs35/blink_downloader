@@ -43,6 +43,8 @@ async def analyze_clip(ctx: dict[Any, Any], clip_id: str) -> str:
         camera = await session.get(Camera, clip.camera_id)
         if camera is None:  # pragma: no cover — FK guarantees this can't happen
             return "camera_missing"
+        if not camera.enabled:
+            return "camera_disabled"
 
         baseline_context = await baseline_context_for(session, camera.id, clip.recorded_at.hour)
         feedback_examples = await feedback_examples_for(
