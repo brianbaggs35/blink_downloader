@@ -52,7 +52,13 @@ COPY --from=builder /app/.venv /app/.venv
 COPY backend/alembic.ini /app/alembic.ini
 COPY backend/alembic /app/alembic
 COPY backend/app /app/app
-RUN chown -R nonroot:nonroot /app
+# A brand-new named volume mounted at a path that doesn't exist in the image
+# is created root:root by the container runtime, which nonroot can never
+# write to. Pre-creating the directories here means Docker's volume-seeding
+# (copy the image's dir + ownership onto a fresh, empty volume on first
+# mount) carries nonroot ownership over instead — verified empirically.
+RUN mkdir -p /data/clips /data/insightface \
+    && chown -R nonroot:nonroot /app /data
 USER nonroot
 ENTRYPOINT []
 CMD ["/app/.venv/bin/python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
