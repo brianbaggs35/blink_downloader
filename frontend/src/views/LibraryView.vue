@@ -5,6 +5,7 @@ import DatePicker from "primevue/datepicker";
 import Paginator, { type PageState } from "primevue/paginator";
 import Select from "primevue/select";
 import Skeleton from "primevue/skeleton";
+import ToggleButton from "primevue/togglebutton";
 import { useToast } from "primevue/usetoast";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -62,13 +63,28 @@ const cameraFilter = ref<string | null>(
 const sinceFilter = ref<Date | null>(null);
 const untilFilter = ref<Date | null>(null);
 const recognizedPersonFilter = ref<string | null>(null);
+const recognizedOnly = ref(false);
+const recognizedTotal = ref<number | null>(null);
 const filtersActive = computed(
   () =>
     cameraFilter.value !== null ||
     sinceFilter.value !== null ||
     untilFilter.value !== null ||
-    recognizedPersonFilter.value !== null,
+    recognizedPersonFilter.value !== null ||
+    recognizedOnly.value,
 );
+
+watch(recognizedPersonFilter, (value) => {
+  if (value !== null) {
+    recognizedOnly.value = false;
+  }
+});
+
+watch(recognizedOnly, (value) => {
+  if (value) {
+    recognizedPersonFilter.value = null;
+  }
+});
 
 const selected = ref<Set<string>>(new Set());
 const selectedCount = computed(() => selected.value.size);
@@ -93,6 +109,17 @@ async function loadPeople(): Promise<void> {
   }
 }
 
+// A lightweight, filter-independent count for the "Recognized" stat badge —
+// page_size: 1 keeps the payload trivial, we only read the response's total.
+async function loadRecognizedTotal(): Promise<void> {
+  try {
+    const response = await listClips({ has_recognized_person: true, page_size: 1 });
+    recognizedTotal.value = response.total;
+  } catch {
+    recognizedTotal.value = null;
+  }
+}
+
 async function loadClips(): Promise<void> {
   loading.value = true;
   try {
@@ -101,6 +128,7 @@ async function loadClips(): Promise<void> {
       since: sinceFilter.value?.toISOString(),
       until: untilFilter.value?.toISOString(),
       recognized_person_id: recognizedPersonFilter.value ?? undefined,
+      has_recognized_person: recognizedOnly.value || undefined,
       page: page.value,
       page_size: PAGE_SIZE,
     });
@@ -129,7 +157,7 @@ async function loadInitial(): Promise<void> {
     return;
   }
   if (blink.isLinked) {
-    await Promise.all([loadCameras(), loadPeople(), loadClips()]);
+    await Promise.all([loadCameras(), loadPeople(), loadClips(), loadRecognizedTotal()]);
   } else {
     loading.value = false;
   }
@@ -139,7 +167,7 @@ onMounted(() => {
   void loadInitial();
 });
 
-watch([cameraFilter, sinceFilter, untilFilter, recognizedPersonFilter], () => {
+watch([cameraFilter, sinceFilter, untilFilter, recognizedPersonFilter, recognizedOnly], () => {
   page.value = 1;
   selected.value = new Set();
   void loadClips();
@@ -155,6 +183,7 @@ function clearFilters(): void {
   sinceFilter.value = null;
   untilFilter.value = null;
   recognizedPersonFilter.value = null;
+  recognizedOnly.value = false;
 }
 
 function toggleSelected(clipId: string, value: boolean): void {
@@ -349,6 +378,15 @@ async function performSingleDelete(clip: ClipRead): Promise<void> {
             placeholder="Anyone recognized"
             show-clear
             data-testid="recognized-person-filter"
+          />
+          <ToggleButton
+            v-if="recognizedTotal !== null && recognizedTotal > 0"
+            v-model="recognizedOnly"
+            :on-label="`Recognized (${recognizedTotal})`"
+            :off-label="`Recognized (${recognizedTotal})`"
+            on-icon="pi pi-verified"
+            off-icon="pi pi-verified"
+            data-testid="recognized-only-toggle"
           />
           <Button
             v-if="filtersActive"

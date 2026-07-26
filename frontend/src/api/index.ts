@@ -145,6 +145,7 @@ export type ClipListParams = {
   until?: string;
   downloaded_only?: boolean;
   recognized_person_id?: string;
+  has_recognized_person?: boolean;
   page?: number;
   page_size?: number;
 };

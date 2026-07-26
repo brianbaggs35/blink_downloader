@@ -32,11 +32,12 @@ import {
 import { ApiError } from "@/api/client";
 import ClipCard from "@/components/ClipCard.vue";
 import ClipDetailModal from "@/components/ClipDetailModal.vue";
+import ToggleButton from "primevue/togglebutton";
 import { useAuthStore } from "@/stores/auth";
 import LibraryView from "@/views/LibraryView.vue";
 import { fakeUser, makePinia, makeRouter, mountGlobal } from "./helpers";
 
-import type { BlinkStatusResponse, CameraRead, ClipListResponse, ClipRead } from "@/api";
+import type { BlinkStatusResponse, CameraRead, ClipListParams, ClipListResponse, ClipRead } from "@/api";
 
 const mockedStatus = vi.mocked(getBlinkStatus);
 const mockedCameras = vi.mocked(listCameras);
@@ -597,7 +598,8 @@ describe("LibraryView — bulk delete", () => {
       expect.objectContaining({ severity: "success", summary: "Deleted 1 clip(s)", detail: undefined }),
     );
     expect(wrapper.find('[data-testid="bulk-bar"]').exists()).toBe(false);
-    expect(mockedClips).toHaveBeenCalledTimes(2);
+    // One initial loadClips + one for the recognized-count badge + one reload.
+    expect(mockedClips).toHaveBeenCalledTimes(3);
   });
 
   it("shows a warning toast when some deletes fail", async () => {
@@ -718,7 +720,8 @@ describe("LibraryView — clip detail modal", () => {
     expect(mockedDeleteClip).toHaveBeenCalledWith("clip-1");
     expect(wrapper.findComponent(ClipDetailModal).props("clip")).toBeNull();
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: "Clip deleted" }));
-    expect(mockedClips).toHaveBeenCalledTimes(2);
+    // One initial loadClips + one for the recognized-count badge + one reload.
+    expect(mockedClips).toHaveBeenCalledTimes(3);
   });
 
   it("shows an error toast and keeps the modal open when the single delete fails", async () => {
@@ -770,5 +773,81 @@ describe("LibraryView — viewer account (read-only)", () => {
     await wrapper.findComponent(ClipCard).vm.$emit("open");
     await flushPromises();
     expect(wrapper.findComponent(ClipDetailModal).props("canManage")).toBe(false);
+  });
+});
+
+describe("LibraryView — recognized-only stat and toggle", () => {
+  function withRecognizedTotal(total: number) {
+    mockedClips.mockImplementation(async (params: ClipListParams = {}) => {
+      if (params.has_recognized_person) {
+        return clipsResponse([], total);
+      }
+      return clipsResponse([makeClip()], 1);
+    });
+  }
+
+  it("hides the toggle when there are no recognized clips at all", async () => {
+    withRecognizedTotal(0);
+    const { wrapper } = await mountLibrary();
+    expect(wrapper.find('[data-testid="recognized-only-toggle"]').exists()).toBe(false);
+  });
+
+  it("shows the toggle with the recognized-clip count once it's non-zero", async () => {
+    withRecognizedTotal(7);
+    const { wrapper } = await mountLibrary();
+    expect(wrapper.find('[data-testid="recognized-only-toggle"]').text()).toContain("7");
+  });
+
+  it("filters to has_recognized_person and clears the person-specific filter when toggled on", async () => {
+    withRecognizedTotal(7);
+    mockedPeople.mockResolvedValue([
+      { id: "p-1", name: "Alex", has_thumbnail: false, face_count: 1, created_at: "", updated_at: "" },
+    ]);
+    const { wrapper } = await mountLibrary();
+
+    const personSelect = wrapper.findAllComponents({ name: "Select" })[1]!;
+    await personSelect.vm.$emit("update:modelValue", "p-1");
+    await flushPromises();
+    expect(mockedClips).toHaveBeenLastCalledWith(
+      expect.objectContaining({ recognized_person_id: "p-1" }),
+    );
+
+    await wrapper.findComponent(ToggleButton).vm.$emit("update:modelValue", true);
+    await flushPromises();
+
+    expect(mockedClips).toHaveBeenLastCalledWith(
+      expect.objectContaining({ has_recognized_person: true, recognized_person_id: undefined }),
+    );
+  });
+
+  it("clears the toggle when a specific person is then chosen", async () => {
+    withRecognizedTotal(7);
+    mockedPeople.mockResolvedValue([
+      { id: "p-1", name: "Alex", has_thumbnail: false, face_count: 1, created_at: "", updated_at: "" },
+    ]);
+    const { wrapper } = await mountLibrary();
+
+    await wrapper.findComponent(ToggleButton).vm.$emit("update:modelValue", true);
+    await flushPromises();
+    const personSelect = wrapper.findAllComponents({ name: "Select" })[1]!;
+    await personSelect.vm.$emit("update:modelValue", "p-1");
+    await flushPromises();
+
+    expect(mockedClips).toHaveBeenLastCalledWith(
+      expect.objectContaining({ has_recognized_person: undefined, recognized_person_id: "p-1" }),
+    );
+    expect(wrapper.findComponent(ToggleButton).props("modelValue")).toBe(false);
+  });
+
+  it("resets the toggle via Clear filters", async () => {
+    withRecognizedTotal(7);
+    const { wrapper } = await mountLibrary();
+    await wrapper.findComponent(ToggleButton).vm.$emit("update:modelValue", true);
+    await flushPromises();
+
+    await wrapper.find('[data-testid="clear-filters"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.findComponent(ToggleButton).props("modelValue")).toBe(false);
   });
 });
