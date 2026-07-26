@@ -10,7 +10,7 @@ import ToggleSwitch from "primevue/toggleswitch";
 import { useToast } from "primevue/usetoast";
 import { computed, onMounted, reactive, ref } from "vue";
 
-import { ApiError, getAiSettings, testAiConnection, updateAiSettings } from "@/api";
+import { ApiError, getAiSettings, testAiAnalysis, testAiConnection, updateAiSettings } from "@/api";
 
 import type { AIProviderKind } from "@/api";
 
@@ -148,10 +148,32 @@ const testingTier2 = ref(false);
 const tier1TestResult = ref<{ ok: boolean; detail: string } | null>(null);
 const tier2TestResult = ref<{ ok: boolean; detail: string } | null>(null);
 
-async function testTier(tierName: "tier1" | "tier2"): Promise<void> {
+const testingTier1Analysis = ref(false);
+const testingTier2Analysis = ref(false);
+const tier1AnalysisResult = ref<{ ok: boolean; detail: string } | null>(null);
+const tier2AnalysisResult = ref<{ ok: boolean; detail: string } | null>(null);
+
+async function runTierTest(
+  tierName: "tier1" | "tier2",
+  kind: "connection" | "analysis",
+): Promise<void> {
   const form = tierName === "tier1" ? tier1 : tier2;
-  const testing = tierName === "tier1" ? testingTier1 : testingTier2;
-  const result = tierName === "tier1" ? tier1TestResult : tier2TestResult;
+  const testing =
+    kind === "connection"
+      ? tierName === "tier1"
+        ? testingTier1
+        : testingTier2
+      : tierName === "tier1"
+        ? testingTier1Analysis
+        : testingTier2Analysis;
+  const result =
+    kind === "connection"
+      ? tierName === "tier1"
+        ? tier1TestResult
+        : tier2TestResult
+      : tierName === "tier1"
+        ? tier1AnalysisResult
+        : tier2AnalysisResult;
   if (!form.provider || !form.model) {
     result.value = { ok: false, detail: "Choose a provider and model first." };
     return;
@@ -159,14 +181,16 @@ async function testTier(tierName: "tier1" | "tier2"): Promise<void> {
   testing.value = true;
   result.value = null;
   try {
-    const response = await testAiConnection({
+    const call = kind === "connection" ? testAiConnection : testAiAnalysis;
+    const response = await call({
       tier: tierName,
       provider: form.provider,
       model: form.model,
       api_key: form.apiKeyInput || null,
       base_url: form.baseUrl || null,
     });
-    result.value = { ok: response.ok, detail: response.detail ?? (response.ok ? "Connected." : "Failed.") };
+    const fallback = response.ok ? "Connected." : "Failed.";
+    result.value = { ok: response.ok, detail: response.detail ?? fallback };
   } catch (caught) {
     result.value = {
       ok: false,
@@ -302,17 +326,35 @@ const tier2KeyPlaceholder = computed(() =>
             size="small"
             :loading="testingTier1"
             data-testid="tier1-test"
-            @click="testTier('tier1')"
+            @click="runTierTest('tier1', 'connection')"
           />
-          <span
-            v-if="tier1TestResult"
-            :class="['test-result', tier1TestResult.ok ? 'ok' : 'fail']"
-            data-testid="tier1-test-result"
-          >
-            <i :class="tier1TestResult.ok ? 'pi pi-check-circle' : 'pi pi-times-circle'" />
-            {{ tier1TestResult.detail }}
-          </span>
+          <Button
+            type="button"
+            label="Run test analysis"
+            severity="secondary"
+            outlined
+            size="small"
+            :loading="testingTier1Analysis"
+            data-testid="tier1-test-analysis"
+            @click="runTierTest('tier1', 'analysis')"
+          />
         </div>
+        <span
+          v-if="tier1TestResult"
+          :class="['test-result', tier1TestResult.ok ? 'ok' : 'fail']"
+          data-testid="tier1-test-result"
+        >
+          <i :class="tier1TestResult.ok ? 'pi pi-check-circle' : 'pi pi-times-circle'" />
+          {{ tier1TestResult.detail }}
+        </span>
+        <span
+          v-if="tier1AnalysisResult"
+          :class="['test-result', tier1AnalysisResult.ok ? 'ok' : 'fail']"
+          data-testid="tier1-test-analysis-result"
+        >
+          <i :class="tier1AnalysisResult.ok ? 'pi pi-check-circle' : 'pi pi-times-circle'" />
+          {{ tier1AnalysisResult.detail }}
+        </span>
       </section>
 
       <section class="tier">
@@ -395,17 +437,35 @@ const tier2KeyPlaceholder = computed(() =>
               size="small"
               :loading="testingTier2"
               data-testid="tier2-test"
-              @click="testTier('tier2')"
+              @click="runTierTest('tier2', 'connection')"
             />
-            <span
-              v-if="tier2TestResult"
-              :class="['test-result', tier2TestResult.ok ? 'ok' : 'fail']"
-              data-testid="tier2-test-result"
-            >
-              <i :class="tier2TestResult.ok ? 'pi pi-check-circle' : 'pi pi-times-circle'" />
-              {{ tier2TestResult.detail }}
-            </span>
+            <Button
+              type="button"
+              label="Run test analysis"
+              severity="secondary"
+              outlined
+              size="small"
+              :loading="testingTier2Analysis"
+              data-testid="tier2-test-analysis"
+              @click="runTierTest('tier2', 'analysis')"
+            />
           </div>
+          <span
+            v-if="tier2TestResult"
+            :class="['test-result', tier2TestResult.ok ? 'ok' : 'fail']"
+            data-testid="tier2-test-result"
+          >
+            <i :class="tier2TestResult.ok ? 'pi pi-check-circle' : 'pi pi-times-circle'" />
+            {{ tier2TestResult.detail }}
+          </span>
+          <span
+            v-if="tier2AnalysisResult"
+            :class="['test-result', tier2AnalysisResult.ok ? 'ok' : 'fail']"
+            data-testid="tier2-test-analysis-result"
+          >
+            <i :class="tier2AnalysisResult.ok ? 'pi pi-check-circle' : 'pi pi-times-circle'" />
+            {{ tier2AnalysisResult.detail }}
+          </span>
         </template>
       </section>
 

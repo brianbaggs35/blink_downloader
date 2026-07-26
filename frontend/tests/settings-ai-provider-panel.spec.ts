@@ -13,6 +13,7 @@ vi.mock("@/api", async (importOriginal) => ({
   getAiSettings: vi.fn(),
   updateAiSettings: vi.fn(),
   testAiConnection: vi.fn(),
+  testAiAnalysis: vi.fn(),
 }));
 
 const toastAdd = vi.fn();
@@ -20,11 +21,12 @@ vi.mock("primevue/usetoast", () => ({
   useToast: () => ({ add: toastAdd }),
 }));
 
-import { getAiSettings, testAiConnection, updateAiSettings } from "@/api";
+import { getAiSettings, testAiAnalysis, testAiConnection, updateAiSettings } from "@/api";
 
 const mockedGet = vi.mocked(getAiSettings);
 const mockedUpdate = vi.mocked(updateAiSettings);
 const mockedTest = vi.mocked(testAiConnection);
+const mockedTestAnalysis = vi.mocked(testAiAnalysis);
 
 const baseSettings = {
   enabled: true,
@@ -314,6 +316,75 @@ describe("SettingsAiProviderPanel test connection", () => {
     await wrapper.find('[data-testid="tier1-test"]').trigger("click");
     await flushPromises();
     expect(mockedTest).toHaveBeenCalledWith(expect.objectContaining({ api_key: "sk-fresh" }));
+  });
+});
+
+describe("SettingsAiProviderPanel test analysis", () => {
+  beforeEach(() => {
+    mockedGet.mockResolvedValue(baseSettings);
+  });
+
+  it("requires a provider and model before testing", async () => {
+    mockedGet.mockResolvedValue(emptySettings);
+    const wrapper = mountPanel();
+    await flushPromises();
+    await wrapper.find('[data-testid="tier1-test-analysis"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="tier1-test-analysis-result"]').text()).toContain(
+      "Choose a provider and model first.",
+    );
+    expect(mockedTestAnalysis).not.toHaveBeenCalled();
+  });
+
+  it("reports a real analysis result on success", async () => {
+    mockedTestAnalysis.mockResolvedValue({ ok: true, detail: 'Model responded: "All clear."' });
+    const wrapper = mountPanel();
+    await flushPromises();
+    await wrapper.find('[data-testid="tier1-test-analysis"]').trigger("click");
+    await flushPromises();
+    expect(mockedTestAnalysis).toHaveBeenCalledWith({
+      tier: "tier1",
+      provider: "openai",
+      model: "gpt-4o-mini",
+      api_key: null,
+      base_url: null,
+    });
+    const result = wrapper.find('[data-testid="tier1-test-analysis-result"]');
+    expect(result.text()).toContain("All clear.");
+    expect(result.classes()).toContain("ok");
+  });
+
+  it("reports tier2 analysis success, styled as ok", async () => {
+    mockedTestAnalysis.mockResolvedValue({ ok: true, detail: "Tier 2 responded fine." });
+    const wrapper = mountPanel();
+    await flushPromises();
+    await wrapper.find('[data-testid="tier2-test-analysis"]').trigger("click");
+    await flushPromises();
+    const result = wrapper.find('[data-testid="tier2-test-analysis-result"]');
+    expect(result.text()).toContain("Tier 2 responded fine.");
+    expect(result.classes()).toContain("ok");
+  });
+
+  it("reports tier2 analysis failure, styled as failing", async () => {
+    mockedTestAnalysis.mockResolvedValue({ ok: false, detail: "Model rejected the request." });
+    const wrapper = mountPanel();
+    await flushPromises();
+    await wrapper.find('[data-testid="tier2-test-analysis"]').trigger("click");
+    await flushPromises();
+    const result = wrapper.find('[data-testid="tier2-test-analysis-result"]');
+    expect(result.text()).toContain("Model rejected the request.");
+    expect(result.classes()).toContain("fail");
+  });
+
+  it("shows the API error message when the analysis test call itself throws", async () => {
+    mockedTestAnalysis.mockRejectedValue(new ApiError(401, "Unauthorized."));
+    const wrapper = mountPanel();
+    await flushPromises();
+    await wrapper.find('[data-testid="tier1-test-analysis"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="tier1-test-analysis-result"]').text()).toContain(
+      "Unauthorized.",
+    );
   });
 });
 

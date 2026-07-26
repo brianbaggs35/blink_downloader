@@ -269,6 +269,12 @@ export function testAiConnection(
   return api<AIConnectionTestResponse>("/settings/ai/test-connection", { json: body });
 }
 
+/** Runs a real analyze() call against a blank sample image - proves the
+ * model name and response format actually work, not just reachability. */
+export function testAiAnalysis(body: AIConnectionTestRequest): Promise<AIConnectionTestResponse> {
+  return api<AIConnectionTestResponse>("/settings/ai/test-analysis", { json: body });
+}
+
 // ---------------------------------------------------------------- Vehicles
 
 export function listVehicles(): Promise<VehicleRead[]> {
