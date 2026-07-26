@@ -151,6 +151,13 @@ jobs:
           tags: blink-backend:ci
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
+      - name: Smoke-test the backend image actually boots
+        # Trivy scans for known CVEs but never runs the image - a missing
+        # shared library (e.g. opencv-python's libGL, absent from the
+        # minimal Wolfi runtime) would build and scan clean while still
+        # crashing on the very first import. This needs no DB/Redis: it
+        # only exercises module import, not a live request.
+        run: docker run --rm blink-backend:ci /app/.venv/bin/python -c "import app.main"
       - name: Build frontend image
         uses: docker/build-push-action@v7
         with:

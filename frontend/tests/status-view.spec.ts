@@ -35,7 +35,7 @@ describe("StatusView", () => {
     mockedHealth.mockResolvedValue(healthyReport);
     const wrapper = mountView();
     await flushPromises();
-    expect(wrapper.find('[data-testid="tile-api"]').text()).toContain("Operational · v0.1.0");
+    expect(wrapper.find('[data-testid="tile-api"]').text()).toContain("Operational · v1.0.0");
     expect(wrapper.find('[data-testid="tile-database"]').text()).toContain("Operational");
     expect(wrapper.find('[data-testid="tile-database"] i.pi-check-circle').exists()).toBe(true);
     expect(wrapper.find('[data-testid="tile-worker"]').classes()).toContain("state-ok");

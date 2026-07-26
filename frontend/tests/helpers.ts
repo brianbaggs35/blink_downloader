@@ -37,7 +37,7 @@ export const fakeUser: UserRead = {
 
 export const healthyReport: HealthReport = {
   status: "ok",
-  version: "0.1.0",
+  version: "1.0.0",
   database: "ok",
   redis: "ok",
   worker: "ok",
