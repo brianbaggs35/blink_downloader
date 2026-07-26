@@ -25,6 +25,7 @@ services:
       - dev-venv:/opt/venv
       - dev-uv-cache:/root/.cache/uv
       - dev-clips:/data/clips
+      - dev-insightface:/data/insightface
     environment:
       BLINK_ENVIRONMENT: development
       BLINK_DATABASE_URL: postgresql+asyncpg://blink:blink@postgres:5432/blink
@@ -52,6 +53,7 @@ services:
       - dev-venv:/opt/venv
       - dev-uv-cache:/root/.cache/uv
       - dev-clips:/data/clips
+      - dev-insightface:/data/insightface
     environment:
       BLINK_ENVIRONMENT: development
       BLINK_DATABASE_URL: postgresql+asyncpg://blink:blink@postgres:5432/blink
@@ -63,6 +65,7 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+    stop_grace_period: 45s
 
   migrate:
     build:
@@ -128,3 +131,4 @@ volumes:
   dev-venv:
   dev-uv-cache:
   dev-clips:
+  dev-insightface:

@@ -32,7 +32,13 @@ ENV UV_PROJECT_ENVIRONMENT=/app/.venv \
     UV_COMPILE_BYTECODE=1
 WORKDIR /app
 COPY backend/pyproject.toml backend/uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
+# insightface hard-requires full opencv-python (needs libGL/libGTK), but this
+# image is headless and Wolfi never carries GL — import cv2 would fail at
+# runtime otherwise. uv/pip have no package-identity substitution, so both
+# wheels would install to the same cv2/ path in undefined order; force the
+# headless build (same upstream version, GL-free) to win explicitly instead.
+RUN uv sync --frozen --no-dev --no-install-project \
+    && uv pip install --python /app/.venv/bin/python --force-reinstall opencv-python-headless==5.0.0.93
 
 # --------------------------------------------------------------- prod target
 FROM cgr.dev/chainguard/python:latest-dev AS prod

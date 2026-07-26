@@ -31,9 +31,12 @@ dependencies = [
     # Pulls in full opencv-python (not -headless): its declared dependency,
     # and uv/pip have no package-substitution mechanism to swap it for the
     # smaller headless build without installing both side by side into the
-    # same cv2/ namespace, which is worse. The extra ~100MB is unused Qt/X11
-    # GUI plugins the wheel bundles for portability — not a runtime risk,
-    # just image size. Revisit if that ever matters more than it does today.
+    # same cv2/ namespace, which is worse. Full opencv-python's compiled cv2
+    # extension dynamically links libGL/libGTK at import time — present on
+    # Debian (dev image, and most host/CI environments) but absent from the
+    # minimal Wolfi prod runtime, where it crashes `import cv2` outright. The
+    # prod Dockerfile force-reinstalls opencv-python-headless (same upstream
+    # version, GL-free) over it after `uv sync` to fix this; see there.
     "insightface>=1.0.1",
     "pgvector>=0.5.0",
 ]
