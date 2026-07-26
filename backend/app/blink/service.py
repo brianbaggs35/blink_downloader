@@ -133,11 +133,19 @@ class BlinkPyService:
             )
         return cameras
 
+    # blinkpy's own default (`stop=10`, ~25 items/page) silently truncates at
+    # ~225 items with no error - fine for its CLI use case, not for a sync
+    # that must never silently drop clips on a busy first backfill. There's
+    # no uncapped option, so ask for enough pages that any real backlog fits.
+    _MEDIA_PAGE_STOP = 500
+
     async def list_media(self, since: datetime | None = None) -> list[BlinkMediaItem]:
         await self._ensure_full()
         since_str = since.strftime("%Y/%m/%d %H:%M:%S") if since else None
         try:
-            raw_items = await self._blink.get_videos_metadata(since=since_str)
+            raw_items = await self._blink.get_videos_metadata(
+                since=since_str, stop=self._MEDIA_PAGE_STOP
+            )
         except ClientResponseError as exc:
             raise BlinkAuthError(str(exc)) from exc
 

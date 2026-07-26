@@ -22,7 +22,7 @@ from app.security.crypto import SecretBox
 from app.settings.service import set_storage_dir
 
 
-async def _make_camera(app: FastAPI, name: str = "Front Door") -> Camera:
+async def _make_camera(app: FastAPI, name: str = "Front Door", enabled: bool = True) -> Camera:
     async with app.state.sessionmaker() as session:
         box = SecretBox(get_settings().encryption_key)
         account = BlinkAccount(
@@ -38,6 +38,7 @@ async def _make_camera(app: FastAPI, name: str = "Front Door") -> Camera:
             blink_network_id="net-1",
             name=name,
             camera_type="catalina",
+            enabled=enabled,
         )
         session.add(camera)
         await session.commit()
@@ -671,6 +672,16 @@ async def test_reanalyze_requires_authentication(client: AsyncClient) -> None:
     assert response.status_code == 401
 
 
+async def test_reanalyze_rejected_when_camera_disabled(
+    admin_client: AsyncClient, app: FastAPI, tmp_path: Path
+) -> None:
+    await _use_storage(app, tmp_path)
+    camera = await _make_camera(app, enabled=False)
+    clip = await _make_clip(app, camera, downloaded=True, storage_dir=tmp_path)
+    response = await admin_client.post(f"/api/clips/{clip.id}/reanalyze")
+    assert response.status_code == 409
+
+
 # ------------------------------------------------------------ bulk-analyze
 
 
@@ -694,6 +705,23 @@ async def test_bulk_analyze_queues_downloaded_and_reports_the_rest(
 async def test_bulk_analyze_empty_list_rejected(admin_client: AsyncClient) -> None:
     response = await admin_client.post("/api/clips/bulk-analyze", json={"clip_ids": []})
     assert response.status_code == 422
+
+
+async def test_bulk_analyze_excludes_disabled_camera_clips(
+    admin_client: AsyncClient, app: FastAPI, tmp_path: Path
+) -> None:
+    await _use_storage(app, tmp_path)
+    enabled_camera = await _make_camera(app, name="Front Door")
+    disabled_camera = await _make_camera(app, name="Backyard", enabled=False)
+    from_enabled = await _make_clip(app, enabled_camera, downloaded=True, storage_dir=tmp_path)
+    from_disabled = await _make_clip(app, disabled_camera, downloaded=True, storage_dir=tmp_path)
+
+    response = await admin_client.post(
+        "/api/clips/bulk-analyze",
+        json={"clip_ids": [str(from_enabled.id), str(from_disabled.id)]},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"succeeded": 1, "failed": 1}
 
 
 # ------------------------------------------------------- viewer is read-only
