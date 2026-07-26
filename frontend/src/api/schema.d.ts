@@ -2938,6 +2938,7 @@ export interface operations {
                 until?: string | null;
                 downloaded_only?: boolean;
                 recognized_person_id?: string | null;
+                has_recognized_person?: boolean | null;
                 page?: number;
                 page_size?: number;
             };
