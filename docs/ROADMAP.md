@@ -40,18 +40,36 @@ pipeline and a Settings surface):
   while) only auto-queues the most recent few for analysis — see
   [ARCHITECTURE.md](ARCHITECTURE.md#keeping-a-fresh-connection-from-flooding-the-queue).
 
+**Shipped — Biometrics** (local facial recognition; see
+[docs/BIOMETRICS.md](BIOMETRICS.md) for the full design):
+- insightface (SCRFD + ArcFace) local detection/embeddings, pgvector
+  storage, four selectable model tiers trading speed for accuracy, CPU/GPU
+  auto-selection with a correct arm64 (Raspberry Pi-class) fallback.
+- Enrollment lives inline on the Biometrics tab (camera → time range,
+  capped at 24h/48h/7 days → clip → frame → face → person), not a modal —
+  **not** the originally-planned automatic clustering/time-window mining;
+  a direct manual picker turned out to be the better fit once actually
+  built. Full person CRUD (rename, delete, add/remove individual face
+  samples) alongside it.
+- Recognition is a local, post-hoc label rewrite after the VLM call — never
+  a face, embedding, or name sent to any provider. A model-load failure
+  (e.g. a flaky first-time download) degrades around, never discarding a
+  VLM result that already succeeded.
+- Feedback loop, from the clip modal: "report a missed face" enrolls a
+  positive sample directly; "this wasn't them" on a wrong match stores a
+  *negative* sample that vetoes future matches to that face pattern —
+  **not** built: per-person threshold recalibration (one global threshold
+  today).
+- Library gets a recognized-person badge on clip thumbnails, a per-person
+  filter, an "any recognized" toggle, and a live count stat.
+
 **Up next:**
 
-1. **Biometrics** — local face detection/embeddings (pgvector), enrollment
-   from real frames with clustering + time-window mining, recognition events,
-   embedding-gallery learning from corrections (positive/negative examples,
-   per-person thresholds). Face data never leaves the machine; a recognized
-   person's name never reaches a cloud AI provider.
-2. **Rules engine** — today's alerting is one household-wide config (trigger
+1. **Rules engine** — today's alerting is one household-wide config (trigger
    toggles + thresholds); a real rule engine ("if unknown vehicle AND time
-   between…") is more valuable once biometrics and vehicle recognition give
-   it more to key conditions on.
-3. **Product features** — archives + S3/Google Drive/OneDrive, live view
+   between…") is more valuable now that biometrics and vehicle recognition
+   give it more to key conditions on.
+2. **Product features** — archives + S3/Google Drive/OneDrive, live view
    (snapshot/short-capture MVP, then stream relay), digests/notifications
    polish, search, timeline, backups.
 

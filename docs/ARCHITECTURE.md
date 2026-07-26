@@ -80,15 +80,13 @@ Live today:
 | `vehicles` | one protected vehicle per camera: outline polygon (normalized 0–1 points) over a captured reference frame, real-world length, alert distance, enabled |
 | `proximity_events` | one row per proximity breach: distance + error margin, so the Vehicles tab and alerts don't re-derive history from `analyses` |
 | `alert_settings` | singleton row: Discord/Slack webhook (encrypted) + SMTP (encrypted password) config, trigger toggles/thresholds, quiet hours, dedup window |
+| `people` | an enrolled household member or known visitor: name, profile thumbnail |
+| `face_embeddings` | one enrolled face sample (pgvector, 512-dim ArcFace): source clip/frame provenance, `is_negative` for a confirmed-wrong-match sample that vetoes future matches to that face pattern |
+| `recognized_faces` | one "this person appears in this clip" record per (clip, person), upserted on (re-)analysis |
+| `biometrics_settings` | singleton row: enabled, insightface model pack, CPU/GPU execution preference, match-confidence threshold |
 
-Planned (facial recognition — not yet built; see [docs/ROADMAP.md](ROADMAP.md)):
-
-| Table | Purpose |
-|---|---|
-| `people` / `face_embeddings` | person registry; pgvector embeddings incl. negative examples, per-person threshold |
-
-pgvector ships in the Postgres image from day one so that migration needs no
-image change later.
+pgvector ships in the Postgres image from day one, used by both
+`ai`-side embedding-adjacent features and biometrics.
 
 ## AI analysis pipeline
 
@@ -176,14 +174,22 @@ backlog nobody asked to see analyzed the moment they reconnected:
 Every correction is stored in `feedback` and *must* change future behavior
 through one of these mechanisms:
 
-**Facial recognition** — embedding-gallery learning:
-- "This is X" on a missed face → the face's embedding is enrolled into X's
-  gallery (positives grow to cover angles/lighting).
-- "This is not X" on a false match → stored as a *negative* embedding that
-  vetoes matches near it.
-- Per-person acceptance thresholds are recalibrated from the accumulated
-  positive/negative sets (maximize separation), so every correction tightens
-  that person's decision boundary. This is measurable, real improvement.
+**Facial recognition** — embedding-gallery learning, from the clip modal:
+- "Report a missed face" on a clip → picks a frame, re-detects, and enrolls
+  the chosen face as a new positive sample for the chosen (or newly created)
+  person — the same enrollment path as the Biometrics tab, just entered from
+  a specific clip instead of a camera/time-range search.
+- "This wasn't them" on a wrongly-recognized entity → re-detects the clip's
+  faces, stores whichever one matched as a *negative* sample for that
+  person, deletes the `recognized_faces` row, and reverts that entity's
+  label on the stored analysis. `best_match()` then vetoes that person for
+  any future face at least as close to the negative sample as to their best
+  positive one — a report changes matching behavior immediately, not just
+  this one clip's history.
+- Not built: per-person threshold recalibration. Match confidence is one
+  global `biometrics_settings.recognition_threshold`, not tightened
+  per-person from the accumulated positive/negative sets — revisit if
+  households with many enrolled people find the shared threshold too coarse.
 
 **Suspicion assessment** — two reinforcing loops, live today:
 1. **Per-camera baseline**: every analysis (suspicious or not) bumps an
@@ -255,19 +261,46 @@ porch camera, not a battery unit someone carries around) — the reference
 frame and its calibration are only valid for the position they were captured
 at.
 
-## Biometrics enrollment from real frames
+## Biometrics: local face recognition
+
+See [docs/BIOMETRICS.md](BIOMETRICS.md) for the full design — models, tiers,
+settings, and hardware guidance. Summary:
 
 Enrollment uses *actual camera frames* (matching deployment conditions beats
-studio photos): pick a window (24/48h/custom), the system mines detected faces
-from clips in that window, clusters them by embedding similarity, and the user
-labels whole clusters at once. Feedback keeps refining galleries afterwards.
+studio photos), entirely inline on the Biometrics tab rather than a modal
+wizard — picking a camera and clip is too much to manage in a dialog. The
+flow: pick a camera → a time range capped at 24h/48h/7 days (an active
+household camera can turn up hundreds of clips beyond that, which nobody
+can usefully browse) → a specific downloaded clip → scrub to a frame → click
+a detected face → assign it to a new or existing person. Each enrolled
+person's detail view embeds the same picker so adding more samples (more
+angles, lighting, times of day — every sample improves matching) never
+requires leaving their page. The clip modal offers the same underlying
+picker for two corrections without leaving a clip you're already reviewing:
+enrolling a face the pipeline missed, and reporting one it matched wrongly
+(see Learning from feedback, above).
 
-**Privacy invariants (non-negotiable, carried from the original app):**
+Detection/embedding is [insightface](https://github.com/deepinsight/insightface)
+(SCRFD detector + ArcFace recognition head) via onnxruntime, auto-selecting
+CUDA when `onnxruntime` reports it available and falling back to CPU
+otherwise (`onnxruntime-gpu` has no arm64 wheels at all, so this also keeps
+a Raspberry Pi-class host correct without any platform branching). Settings
+exposes the model pack (buffalo_sc/s/m/l, smallest-fastest to
+largest-most-accurate) and match-confidence threshold.
+
+**Privacy invariants (non-negotiable):**
 - Face embeddings and face crops never leave the machine — never sent to any
-  cloud AI provider.
-- A recognized person's *name* is never included in any provider-facing prompt.
-- The suspicious-flag bypass for recognized people is all-or-nothing: it takes
-  one approved face AND zero unrecognized faces anywhere in the clip.
+  cloud AI provider, never leave the local network.
+- A recognized person's *name* is never included in any provider-facing
+  prompt — the VLM call happens first, on generic keyframes, exactly as it
+  would with biometrics disabled entirely; recognition only rewrites a
+  "person" entity's label to the matched name afterward, locally, by
+  correlating bounding boxes (see `_upgrade_person_labels` /
+  `_bbox_overlap_ratio` in `app/ai/pipeline.py`).
+- Biometrics is strictly additive and optional: disabled, or a model-load
+  failure mid-analysis (e.g. a flaky first-time download), never blocks or
+  degrades the VLM analysis itself — only the recognized-name upgrade is
+  skipped for that pass.
 
 ## Alerting
 
