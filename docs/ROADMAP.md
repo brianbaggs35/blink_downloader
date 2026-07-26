@@ -72,15 +72,27 @@ pipeline and a Settings surface):
 - Library gets a recognized-person badge on clip thumbnails, a per-person
   filter, an "any recognized" toggle, and a live count stat.
 
+**Shipped — Live View and Security Feed** (see
+[ARCHITECTURE.md](ARCHITECTURE.md#live-view--security-feed) for the full
+design):
+- Live View: pick a camera (or two, side-by-side in compare mode), with
+  auto-refresh, on-demand forced refresh, save-clip, and a full-resolution
+  screenshot-to-file. Nav sidebar collapses to give it more width.
+- Security Feed: a dashboard grid of chosen (or every enabled) cameras, each
+  tile polling independently, with admin-only Snap/Record actions per tile —
+  the snapshot MVP called out below, not a stream.
+- Settings → Live View and Settings → Security Feed hold each area's own
+  config; Settings → General picks which of Library or Security Feed a
+  fresh login lands on.
+
 **Up next:**
 
 1. **Rules engine** — today's alerting is one household-wide config (trigger
    toggles + thresholds); a real rule engine ("if unknown vehicle AND time
    between…") is more valuable now that biometrics and vehicle recognition
    give it more to key conditions on.
-2. **Product features** — archives + S3/Google Drive/OneDrive, live view
-   (snapshot/short-capture MVP, then stream relay), digests/notifications
-   polish, search, timeline, backups.
+2. **Product features** — archives + S3/Google Drive/OneDrive,
+   digests/notifications polish, search, timeline, backups.
 
 ## Deferred / watching
 
@@ -90,5 +102,7 @@ pipeline and a Settings surface):
   ecosystem (themes, docs, blocks) settles.
 - **redis-py 6+**: currently capped `<6` by arq; revisit when arq lifts it.
 - **Live view streaming**: Blink's RTSPS liveview is the least stable surface
-  of blinkpy — MVP is snapshot + short recordings saved to the Library, real
-  streaming (WebRTC/HLS relay) afterwards.
+  of blinkpy, and returns a URL no browser can play directly regardless — the
+  snapshot/on-demand-recording MVP (Live View, Security Feed) has shipped; a
+  real streaming relay (WebRTC/HLS) remains a possible later addition, not
+  started.
