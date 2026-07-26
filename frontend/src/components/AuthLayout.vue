@@ -1,15 +1,19 @@
 <script setup lang="ts">
 import AppLogo from "./AppLogo.vue";
 
-defineProps<{
-  heading: string;
-  subheading: string;
-}>();
+withDefaults(
+  defineProps<{
+    heading: string;
+    subheading: string;
+    wide?: boolean;
+  }>(),
+  { wide: false },
+);
 </script>
 
 <template>
   <div class="auth-screen">
-    <div class="auth-card">
+    <div :class="['auth-card', { 'auth-card-wide': wide }]">
       <div class="auth-brand">
         <AppLogo :size="44" />
         <span class="auth-product">Blink AI Security</span>
@@ -57,6 +61,10 @@ defineProps<{
   border: 1px solid var(--p-surface-200);
   background: var(--p-surface-0);
   box-shadow: 0 24px 60px -24px rgb(0 0 0 / 0.35);
+}
+
+.auth-card-wide {
+  max-width: 640px;
 }
 
 .blink-dark .auth-card {
