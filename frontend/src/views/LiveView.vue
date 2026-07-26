@@ -11,7 +11,7 @@ import PageHeader from "@/components/PageHeader.vue";
     />
     <EmptyState
       icon="pi pi-video"
-      title="Live view arrives with the Blink integration"
+      title="Live view is coming in a future release"
       description="You'll be able to open a live stream per camera, capture stills, and record short videos straight into your Library."
     />
   </section>
