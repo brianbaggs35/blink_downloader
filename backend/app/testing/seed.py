@@ -64,6 +64,34 @@ async def _make_demo_clip_bytes() -> bytes:
         await asyncio.to_thread(os.remove, path)
 
 
+async def _make_demo_preview_bytes(seed: int) -> bytes:
+    """A tiny, deterministic, synthetic JPEG - stands in for a camera's
+    latest snapshot so Live View and Security Feed have something real to
+    render without a live Blink connection. `seed` varies the pattern so
+    different cameras' tiles are visibly distinct in a screenshot."""
+    path = f"/tmp/blink-e2e-preview-{uuid.uuid4()}.jpg"  # noqa: S108 # nosec B108
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc=size=640x360:rate=1,format=yuvj420p",
+        "-vf",
+        f"hue=h={seed * 45}",
+        "-vframes",
+        "1",
+        path,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    await proc.communicate()
+    try:
+        return await asyncio.to_thread(Path(path).read_bytes)
+    finally:
+        await asyncio.to_thread(os.remove, path)
+
+
 async def _seed_demo_data(session: AsyncSession) -> None:
     settings = get_settings()
     box = SecretBox(settings.encryption_key)
@@ -103,6 +131,16 @@ async def _seed_demo_data(session: AsyncSession) -> None:
     await session.flush()
 
     now = datetime.now(UTC)
+
+    # A cached preview per camera - without one, Live View and Security Feed
+    # have no live Blink connection to fall back on and every tile would 404.
+    for index, camera in enumerate([front_door, backyard]):
+        preview_bytes = await _make_demo_preview_bytes(index)
+        preview_path = storage.camera_preview_path(camera.id)
+        await storage.write(preview_path, preview_bytes)
+        camera.preview_path = str(preview_path)
+        camera.preview_updated_at = now
+
     # Spread across the Biometrics tab's enrollment time-range options
     # (24h/48h/7d) so seeded data can actually exercise all three, plus one
     # clip older than any of them and one not-yet-downloaded.

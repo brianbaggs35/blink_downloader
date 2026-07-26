@@ -7,7 +7,7 @@ from httpx import AsyncClient
 from sqlalchemy import select, text
 
 from app.biometrics.models import Person
-from app.blink.models import Clip
+from app.blink.models import Camera, Clip
 from app.settings.service import set_storage_dir
 from app.testing.seed import DEMO_PERSON_NAME, E2E_ADMIN_EMAIL, E2E_ADMIN_PASSWORD, seed
 from tests.conftest import login
@@ -39,6 +39,13 @@ async def test_seed_creates_admin_once(client: AsyncClient, app: FastAPI, tmp_pa
         ).scalar_one()
         assert person.thumbnail_path is not None
         assert Path(person.thumbnail_path).exists()
+
+        cameras = (await session.execute(select(Camera))).scalars().all()
+        assert len(cameras) == 2
+        for camera in cameras:
+            assert camera.preview_path is not None
+            assert camera.preview_updated_at is not None
+            assert Path(camera.preview_path).exists()
 
     # Leave a clean slate for other tests (client fixture truncates pre-test too).
     async with app.state.sessionmaker() as session:
