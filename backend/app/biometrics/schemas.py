@@ -77,3 +77,16 @@ class BiometricsSettingsUpdate(BaseModel):
     model_pack: ModelPack = ModelPack.BUFFALO_L
     execution_provider_preference: ExecutionProviderPreference = ExecutionProviderPreference.AUTO
     recognition_threshold: float = Field(default=DEFAULT_RECOGNITION_THRESHOLD, ge=0.0, le=1.0)
+
+
+class VerifyModelRead(BaseModel):
+    """Result of a successful Settings > "verify model" action."""
+
+    model_pack: ModelPack
+    providers: list[str]
+
+
+class ReportFalsePositiveRead(BaseModel):
+    """Result of reporting a recognized person as wrong on a clip."""
+
+    negative_sample_captured: bool

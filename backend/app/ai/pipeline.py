@@ -39,7 +39,13 @@ from app.ai.providers import (
     build_provider,
 )
 from app.biometrics.models import BiometricsSettings, Person, RecognizedFace
-from app.biometrics.recognition import DetectedFace, FaceMatch, detect_faces
+from app.biometrics.recognition import (
+    DetectedFace,
+    FaceMatch,
+    ModelLoadError,
+    RecognitionError,
+    detect_faces,
+)
 from app.biometrics.service import match_faces
 from app.blink.models import Camera, Clip
 from app.logs import get_logger
@@ -151,13 +157,22 @@ async def run_analysis(
         and biometrics_model_cache_dir is not None
         and biometrics_settings.enabled
     ):
-        recognized_scores = await _recognize_and_label(
-            session,
-            keyframes,
-            final_result.entities,
-            biometrics_settings,
-            biometrics_model_cache_dir,
-        )
+        try:
+            recognized_scores = await _recognize_and_label(
+                session,
+                keyframes,
+                final_result.entities,
+                biometrics_settings,
+                biometrics_model_cache_dir,
+            )
+        except (ModelLoadError, RecognitionError) as exc:
+            # Biometrics is strictly additive: a model-download hiccup or a
+            # bad frame must never throw away a VLM analysis that already
+            # succeeded (and was already paid for/rate-limited against).
+            # This clip's Analysis is still saved below, just without a
+            # recognized-person upgrade for this pass — the next analysis
+            # (auto or manual re-analyze) gets another chance.
+            logger.warning("biometrics.recognition_skipped", clip_id=str(clip.id), error=str(exc))
 
     label = suspicion_label_for(final_result.suspicion_score)
     await _supersede_current_analysis(session, clip.id)

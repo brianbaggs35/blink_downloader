@@ -15,13 +15,21 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.biometrics.service as biometrics_service
-from app.biometrics.models import ExecutionProviderPreference, FaceEmbedding, ModelPack
+from app.ai.models import Analysis, AnalysisTier, SuspicionLabel
+from app.biometrics.models import (
+    ExecutionProviderPreference,
+    FaceEmbedding,
+    ModelPack,
+    RecognizedFace,
+)
 from app.biometrics.recognition import DetectedFace
 from app.biometrics.schemas import BiometricsSettingsUpdate
 from app.biometrics.service import (
+    REVERTED_LABEL,
     ClipFrameError,
     FaceNotFoundError,
     create_person,
@@ -34,6 +42,7 @@ from app.biometrics.service import (
     list_people,
     match_faces,
     rename_person,
+    report_false_positive,
     update_biometrics_settings,
 )
 from app.blink.models import BlinkAccount, Camera, Clip
@@ -273,9 +282,7 @@ async def test_detect_faces_in_clip_frame_passes_through_settings(
 
     monkeypatch.setattr(biometrics_service, "detect_faces", fake_detect_faces)
 
-    result = await detect_faces_in_clip_frame(
-        app_session, clip.id, 0.5, settings_row, CACHE_DIR
-    )
+    result = await detect_faces_in_clip_frame(app_session, clip.id, 0.5, settings_row, CACHE_DIR)
 
     assert len(result) == 1
     assert captured["model_pack"] is settings_row.model_pack
@@ -355,9 +362,7 @@ async def test_enroll_face_creates_embedding_and_backfills_person_thumbnail(
     storage = get_clip_storage(tmp_path)
     assert person.thumbnail_path is None
 
-    target_face = DetectedFace(
-        bbox=(0.3, 0.3, 0.2, 0.2), confidence=0.95, embedding=_embedding(3)
-    )
+    target_face = DetectedFace(bbox=(0.3, 0.3, 0.2, 0.2), confidence=0.95, embedding=_embedding(3))
     monkeypatch.setattr(biometrics_service, "detect_faces", _fake_detect_faces([target_face]))
 
     embedding = await enroll_face(
@@ -400,9 +405,7 @@ async def test_enroll_face_does_not_overwrite_existing_person_thumbnail(
     person.thumbnail_path = str(existing_thumb)
     await app_session.commit()
 
-    target_face = DetectedFace(
-        bbox=(0.3, 0.3, 0.2, 0.2), confidence=0.95, embedding=_embedding(4)
-    )
+    target_face = DetectedFace(bbox=(0.3, 0.3, 0.2, 0.2), confidence=0.95, embedding=_embedding(4))
     monkeypatch.setattr(biometrics_service, "detect_faces", _fake_detect_faces([target_face]))
 
     await enroll_face(
@@ -485,3 +488,250 @@ async def test_match_faces_excludes_negative_samples(app_session: AsyncSession) 
 
     query = DetectedFace(bbox=(0.0, 0.0, 0.1, 0.1), confidence=0.9, embedding=_embedding(7))
     assert await match_faces(app_session, [query], threshold=0.5) == [None]
+
+
+# ------------------------------------------------------ report_false_positive
+
+
+async def _make_analysis(
+    session: AsyncSession, clip: Clip, entities: list[dict[str, object]]
+) -> Analysis:
+    analysis = Analysis(
+        clip_id=clip.id,
+        is_current=True,
+        summary="Someone was on the porch.",
+        suspicion_score=0.2,
+        suspicion_label=SuspicionLabel.ROUTINE,
+        tier=AnalysisTier.TIER1,
+        detected_entities=entities,
+    )
+    session.add(analysis)
+    await session.commit()
+    await session.refresh(analysis)
+    return analysis
+
+
+async def test_report_false_positive_captures_negative_sample_and_reverts_label(
+    app_session: AsyncSession,
+    tmp_path: Path,
+    sample_clip_bytes: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    camera = await _make_camera(app_session)
+    clip = await _make_downloaded_clip(app_session, camera, tmp_path, sample_clip_bytes)
+    settings_row = await get_biometrics_settings(app_session)
+    storage = get_clip_storage(tmp_path)
+
+    person = await create_person(app_session, "Wrongly Recognized")
+    app_session.add(
+        FaceEmbedding(person_id=person.id, embedding=_embedding(8), thumbnail_path="p.jpg")
+    )
+    app_session.add(RecognizedFace(clip_id=clip.id, person_id=person.id, confidence=0.91))
+    analysis = await _make_analysis(
+        app_session,
+        clip,
+        [
+            {
+                "type": "person",
+                "label": "Wrongly Recognized",
+                "confidence": 0.91,
+                "bbox": [0.1, 0.1, 0.2, 0.2],
+                "recognized_person_id": str(person.id),
+            }
+        ],
+    )
+    await app_session.commit()
+
+    matching_face = DetectedFace(bbox=(0.1, 0.1, 0.2, 0.2), confidence=0.9, embedding=_embedding(8))
+    monkeypatch.setattr(biometrics_service, "detect_faces", _fake_detect_faces([matching_face]))
+
+    captured = await report_false_positive(
+        app_session, storage, clip, person, settings_row, CACHE_DIR, keyframe_count=4
+    )
+
+    assert captured is True
+    # Queried directly rather than via person.face_embeddings: that
+    # collection was already loaded (empty) earlier in this session by
+    # create_person's own refresh, and SQLAlchemy's identity map won't
+    # re-populate an already-loaded collection just because a later
+    # selectinload query runs - see delete_person's docstring for the same
+    # gotcha.
+    negative_samples = (
+        (
+            await app_session.execute(
+                select(FaceEmbedding).where(
+                    FaceEmbedding.person_id == person.id, FaceEmbedding.is_negative.is_(True)
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(negative_samples) == 1
+    assert negative_samples[0].embedding == pytest.approx(_embedding(8))
+    assert Path(negative_samples[0].thumbnail_path).exists()
+
+    remaining = (
+        await app_session.execute(select(RecognizedFace).where(RecognizedFace.clip_id == clip.id))
+    ).scalar_one_or_none()
+    assert remaining is None
+
+    await app_session.refresh(analysis)
+    assert analysis.detected_entities[0]["label"] == REVERTED_LABEL
+    assert analysis.detected_entities[0]["recognized_person_id"] is None
+
+
+async def test_report_false_positive_still_honored_when_face_not_found_again(
+    app_session: AsyncSession,
+    tmp_path: Path,
+    sample_clip_bytes: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    camera = await _make_camera(app_session)
+    clip = await _make_downloaded_clip(app_session, camera, tmp_path, sample_clip_bytes)
+    settings_row = await get_biometrics_settings(app_session)
+    storage = get_clip_storage(tmp_path)
+
+    person = await create_person(app_session, "No Longer Detected")
+    app_session.add(RecognizedFace(clip_id=clip.id, person_id=person.id, confidence=0.85))
+    await app_session.commit()
+
+    monkeypatch.setattr(biometrics_service, "detect_faces", _fake_detect_faces([]))
+
+    captured = await report_false_positive(
+        app_session, storage, clip, person, settings_row, CACHE_DIR, keyframe_count=4
+    )
+
+    assert captured is False
+    remaining = (
+        await app_session.execute(select(RecognizedFace).where(RecognizedFace.clip_id == clip.id))
+    ).scalar_one_or_none()
+    assert remaining is None
+
+
+async def test_report_false_positive_only_touches_the_reported_persons_entity(
+    app_session: AsyncSession,
+    tmp_path: Path,
+    sample_clip_bytes: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    camera = await _make_camera(app_session)
+    clip = await _make_downloaded_clip(app_session, camera, tmp_path, sample_clip_bytes)
+    settings_row = await get_biometrics_settings(app_session)
+    storage = get_clip_storage(tmp_path)
+
+    reported = await create_person(app_session, "Reported")
+    other = await create_person(app_session, "Still Correct")
+    analysis = await _make_analysis(
+        app_session,
+        clip,
+        [
+            {
+                "type": "person",
+                "label": "Reported",
+                "confidence": 0.9,
+                "bbox": [0.1, 0.1, 0.2, 0.2],
+                "recognized_person_id": str(reported.id),
+            },
+            {
+                "type": "person",
+                "label": "Still Correct",
+                "confidence": 0.9,
+                "bbox": [0.6, 0.6, 0.2, 0.2],
+                "recognized_person_id": str(other.id),
+            },
+        ],
+    )
+    monkeypatch.setattr(biometrics_service, "detect_faces", _fake_detect_faces([]))
+
+    await report_false_positive(
+        app_session, storage, clip, reported, settings_row, CACHE_DIR, keyframe_count=4
+    )
+
+    await app_session.refresh(analysis)
+    assert analysis.detected_entities[0]["recognized_person_id"] is None
+    assert analysis.detected_entities[1]["recognized_person_id"] == str(other.id)
+    assert analysis.detected_entities[1]["label"] == "Still Correct"
+
+
+async def test_report_false_positive_with_analysis_not_mentioning_person_is_a_no_op_edit(
+    app_session: AsyncSession,
+    tmp_path: Path,
+    sample_clip_bytes: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A RecognizedFace can outlive the wording of detected_entities (e.g. a
+    re-analysis ran between the recognition and the report) - the revert
+    must be a safe no-op on the analysis in that case, not an error."""
+    camera = await _make_camera(app_session)
+    clip = await _make_downloaded_clip(app_session, camera, tmp_path, sample_clip_bytes)
+    settings_row = await get_biometrics_settings(app_session)
+    storage = get_clip_storage(tmp_path)
+
+    person = await create_person(app_session, "Not Mentioned")
+    app_session.add(RecognizedFace(clip_id=clip.id, person_id=person.id, confidence=0.9))
+    analysis = await _make_analysis(
+        app_session,
+        clip,
+        [{"type": "animal", "label": "A cat", "confidence": 0.7, "bbox": None}],
+    )
+    monkeypatch.setattr(biometrics_service, "detect_faces", _fake_detect_faces([]))
+
+    await report_false_positive(
+        app_session, storage, clip, person, settings_row, CACHE_DIR, keyframe_count=4
+    )
+
+    await app_session.refresh(analysis)
+    assert analysis.detected_entities == [
+        {"type": "animal", "label": "A cat", "confidence": 0.7, "bbox": None}
+    ]
+
+
+async def test_report_false_positive_raises_when_clip_not_downloaded(
+    app_session: AsyncSession, tmp_path: Path
+) -> None:
+    camera = await _make_camera(app_session)
+    clip = Clip(
+        camera_id=camera.id,
+        blink_clip_id="/media/never-downloaded.mp4",
+        recorded_at=datetime(2026, 7, 20, tzinfo=UTC),
+        raw_metadata={},
+    )
+    app_session.add(clip)
+    await app_session.commit()
+    settings_row = await get_biometrics_settings(app_session)
+    person = await create_person(app_session, "Irrelevant")
+
+    with pytest.raises(ClipFrameError):
+        await report_false_positive(
+            app_session,
+            get_clip_storage(tmp_path),
+            clip,
+            person,
+            settings_row,
+            CACHE_DIR,
+            keyframe_count=4,
+        )
+
+
+async def test_report_false_positive_with_no_current_analysis_only_removes_recognition(
+    app_session: AsyncSession,
+    tmp_path: Path,
+    sample_clip_bytes: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    camera = await _make_camera(app_session)
+    clip = await _make_downloaded_clip(app_session, camera, tmp_path, sample_clip_bytes)
+    settings_row = await get_biometrics_settings(app_session)
+    storage = get_clip_storage(tmp_path)
+    person = await create_person(app_session, "Never Analyzed")
+    app_session.add(RecognizedFace(clip_id=clip.id, person_id=person.id, confidence=0.8))
+    await app_session.commit()
+
+    monkeypatch.setattr(biometrics_service, "detect_faces", _fake_detect_faces([]))
+
+    captured = await report_false_positive(
+        app_session, storage, clip, person, settings_row, CACHE_DIR, keyframe_count=4
+    )
+
+    assert captured is False

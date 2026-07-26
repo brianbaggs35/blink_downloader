@@ -40,7 +40,7 @@ class ModelPack(StrEnum):
 
 
 class ExecutionProviderPreference(StrEnum):
-    """"auto" picks CUDA when onnxruntime reports it's available, else falls
+    """ "auto" picks CUDA when onnxruntime reports it's available, else falls
     back to CPU (see app.biometrics.recognition) — GPU is never assumed."""
 
     AUTO = "auto"
