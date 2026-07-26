@@ -6,12 +6,12 @@ COMPOSE_DEV  := docker compose -f docker-compose.dev.yml
 COMPOSE_TEST := docker compose -f docker-compose.test.yml
 
 .PHONY: help secrets certs prod prod-stop prod-logs prod-down dev dev-stop dev-logs dev-down \
-	test test-db test-stop test-backend test-backend-fast test-frontend e2e e2e-down \
+	test test-db test-stop test-backend test-backend-fast test-frontend e2e e2e-up e2e-test e2e-down \
 	lint lint-backend lint-frontend fmt migrate makemigration api-types \
 	db-shell clean
 
 help: ## Show this help
-	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@grep -hE '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 secrets: ## Generate values for .env (prints them; paste into .env)
 	@echo "# Paste these into .env (see .env.example):"
@@ -76,10 +76,18 @@ test-backend-fast: ## Run backend tests from the local venv (starts test db/redi
 test-frontend: ## Run frontend unit tests with coverage
 	cd frontend && npm run test
 
-e2e: certs ## Run Playwright against a production-like seeded stack
+e2e: certs ## Build, seed, and run Playwright end to end in one shot (tears down after)
 	@$(COMPOSE_TEST) --profile e2e down -v --remove-orphans 2>/dev/null || true
 	$(COMPOSE_TEST) --profile e2e up --build --abort-on-container-exit --exit-code-from playwright; \
 	status=$$?; $(COMPOSE_TEST) --profile e2e down -v; exit $$status
+
+e2e-up: certs ## Bring up the seeded e2e stack and leave it running (for iterative test-writing)
+	@$(COMPOSE_TEST) --profile e2e down -v --remove-orphans 2>/dev/null || true
+	$(COMPOSE_TEST) --profile e2e up --build -d postgres redis backend worker frontend
+	@echo "e2e stack up: https://localhost:8443 - run 'make e2e-test' to run Playwright, 'make e2e-down' when done"
+
+e2e-test: ## Run Playwright against an already-running `make e2e-up` stack
+	$(COMPOSE_TEST) --profile e2e run --rm playwright
 
 e2e-down: ## Tear down the e2e stack
 	$(COMPOSE_TEST) --profile e2e down -v
