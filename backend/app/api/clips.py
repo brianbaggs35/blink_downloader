@@ -82,6 +82,7 @@ async def list_clips(
     until: datetime | None = None,
     downloaded_only: bool = False,
     recognized_person_id: uuid.UUID | None = None,
+    has_recognized_person: bool | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=24, ge=1, le=MAX_PAGE_SIZE),
 ) -> ClipListResponse:
@@ -105,6 +106,13 @@ async def list_clips(
         )
         stmt = stmt.where(Clip.id.in_(recognized_clip_ids))
         count_stmt = count_stmt.where(Clip.id.in_(recognized_clip_ids))
+    if has_recognized_person is not None:
+        any_recognized_clip_ids = select(RecognizedFace.clip_id)
+        condition = Clip.id.in_(any_recognized_clip_ids)
+        if not has_recognized_person:
+            condition = ~condition
+        stmt = stmt.where(condition)
+        count_stmt = count_stmt.where(condition)
 
     total = (await session.execute(count_stmt)).scalar_one()
     stmt = stmt.order_by(Clip.recorded_at.desc()).offset((page - 1) * page_size).limit(page_size)

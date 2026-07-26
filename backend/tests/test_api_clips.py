@@ -156,6 +156,34 @@ async def test_list_filters_by_recognized_person(admin_client: AsyncClient, app:
     assert body["items"][0]["id"] == str(recognized_clip.id)
 
 
+async def test_list_filters_by_has_recognized_person_true(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    camera = await _make_camera(app)
+    recognized_clip = await _make_clip(app, camera)
+    await _make_clip(app, camera)
+    await _recognize(app, recognized_clip, "Alex")
+
+    response = await admin_client.get("/api/clips", params={"has_recognized_person": "true"})
+    body = response.json()
+    assert body["total"] == 1
+    assert body["items"][0]["id"] == str(recognized_clip.id)
+
+
+async def test_list_filters_by_has_recognized_person_false(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    camera = await _make_camera(app)
+    recognized_clip = await _make_clip(app, camera)
+    plain_clip = await _make_clip(app, camera)
+    await _recognize(app, recognized_clip, "Alex")
+
+    response = await admin_client.get("/api/clips", params={"has_recognized_person": "false"})
+    body = response.json()
+    assert body["total"] == 1
+    assert body["items"][0]["id"] == str(plain_clip.id)
+
+
 async def test_list_filters_by_date_range(admin_client: AsyncClient, app: FastAPI) -> None:
     camera = await _make_camera(app)
     await _make_clip(app, camera, recorded_at=datetime(2026, 1, 1, tzinfo=UTC))
