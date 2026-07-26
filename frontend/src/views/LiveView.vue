@@ -1,18 +1,536 @@
 <script setup lang="ts">
+import Button from "primevue/button";
+import Message from "primevue/message";
+import Select from "primevue/select";
+import Skeleton from "primevue/skeleton";
+import ToggleSwitch from "primevue/toggleswitch";
+import { useToast } from "primevue/usetoast";
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+
+import {
+  ApiError,
+  cameraPreviewUrl,
+  getLiveViewSettings,
+  listCameras,
+  recordCameraClip,
+} from "@/api";
 import EmptyState from "@/components/EmptyState.vue";
 import PageHeader from "@/components/PageHeader.vue";
+import { useFormatting } from "@/composables/useFormatting";
+import { useSidebarCollapse } from "@/composables/useSidebarCollapse";
+import { useBlinkStore } from "@/stores/blink";
+
+import type { CameraRead } from "@/api";
+
+interface Slot {
+  cameraId: string | null;
+  version: number;
+  forceNext: boolean;
+  loading: boolean;
+  error: string;
+  updatedAt: Date | null;
+  recording: boolean;
+}
+
+function emptySlot(): Slot {
+  return {
+    cameraId: null,
+    version: 0,
+    forceNext: false,
+    loading: false,
+    error: "",
+    updatedAt: null,
+    recording: false,
+  };
+}
+
+const toast = useToast();
+const blink = useBlinkStore();
+const sidebar = useSidebarCollapse();
+const { formatRelativeTime } = useFormatting();
+
+const loading = ref(true);
+const loadError = ref("");
+const cameras = ref<CameraRead[]>([]);
+
+const primary = reactive<Slot>(emptySlot());
+const secondary = reactive<Slot>(emptySlot());
+const compareMode = ref(false);
+
+const autoRefreshEnabled = ref(false);
+const autoRefreshIntervalSeconds = ref(10);
+let refreshTimer: ReturnType<typeof setInterval> | undefined;
+
+const clock = ref(Date.now());
+let clockTimer: ReturnType<typeof setInterval> | undefined;
+
+const cameraOptions = computed(() =>
+  cameras.value.map((camera) => ({ label: camera.name, value: camera.id })),
+);
+
+function cameraById(id: string | null): CameraRead | undefined {
+  return cameras.value.find((camera) => camera.id === id);
+}
+
+// Only ever bound in the template behind a v-if on slot.cameraId (see
+// tileSrc's own call sites) - cameraId is never null here in practice.
+function tileSrc(slot: Slot): string {
+  const base = cameraPreviewUrl(slot.cameraId!, { force: slot.forceNext });
+  return `${base}${base.includes("?") ? "&" : "?"}t=${slot.version}`;
+}
+
+function onSlotLoad(slot: Slot): void {
+  slot.loading = false;
+  slot.forceNext = false;
+  slot.error = "";
+  slot.updatedAt = new Date();
+}
+
+function onSlotError(slot: Slot): void {
+  slot.loading = false;
+  slot.forceNext = false;
+  slot.error = "Preview unavailable.";
+}
+
+function refreshSlot(slot: Slot, { force = false }: { force?: boolean } = {}): void {
+  if (!slot.cameraId) return;
+  slot.loading = true;
+  slot.forceNext = force;
+  slot.version += 1;
+}
+
+function refreshAll(): void {
+  refreshSlot(primary);
+  if (compareMode.value) {
+    refreshSlot(secondary);
+  }
+}
+
+function startAutoRefresh(): void {
+  // clearInterval(undefined) is a safe no-op - no need to check first.
+  clearInterval(refreshTimer);
+  if (!autoRefreshEnabled.value) return;
+  refreshTimer = setInterval(refreshAll, autoRefreshIntervalSeconds.value * 1000);
+}
+
+// A watcher, not an @update:model-value handler on the toggle, so this
+// always sees the new value - it doesn't depend on firing after (rather
+// than racing) the v-model setter that assigns it.
+watch(autoRefreshEnabled, startAutoRefresh);
+
+function toggleCompare(): void {
+  compareMode.value = !compareMode.value;
+  if (compareMode.value && !secondary.cameraId) {
+    const other = cameras.value.find((camera) => camera.id !== primary.cameraId);
+    secondary.cameraId = other?.id ?? null;
+    refreshSlot(secondary);
+  }
+}
+
+async function saveClip(slot: Slot): Promise<void> {
+  if (!slot.cameraId) return;
+  slot.recording = true;
+  try {
+    await recordCameraClip(slot.cameraId);
+    toast.add({
+      severity: "success",
+      summary: "Recording started",
+      detail: "The clip will appear in your Library shortly.",
+      life: 4000,
+    });
+  } catch (caught) {
+    toast.add({
+      severity: "error",
+      summary: "Could not start recording",
+      detail: caught instanceof ApiError ? caught.message : "Unexpected error.",
+      life: 4000,
+    });
+  } finally {
+    slot.recording = false;
+  }
+}
+
+function screenshot(slot: Slot): void {
+  const image = document.querySelector<HTMLImageElement>(`[data-preview-for="${slot.cameraId}"]`);
+  if (!image || !image.naturalWidth) return;
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.drawImage(image, 0, 0);
+  canvas.toBlob((blob) => {
+    if (!blob) return;
+    const camera = cameraById(slot.cameraId);
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    // cameras.value is only ever populated once, at load(), and every
+    // slot.cameraId always comes from that same list - camera is always
+    // found in practice; the fallback only exists to satisfy the type.
+    /* v8 ignore next */
+    link.download = `${camera?.name ?? "camera"}-${stamp}.jpg`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, "image/jpeg");
+}
+
+async function load(): Promise<void> {
+  loading.value = true;
+  loadError.value = "";
+  try {
+    await blink.refreshStatus();
+    const [cameraList, settings] = await Promise.all([listCameras(), getLiveViewSettings()]);
+    cameras.value = cameraList;
+    autoRefreshEnabled.value = settings.auto_refresh_enabled;
+    autoRefreshIntervalSeconds.value = settings.auto_refresh_interval_seconds;
+    const defaultId = settings.default_camera_id ?? cameraList[0]?.id ?? null;
+    primary.cameraId = defaultId;
+    if (defaultId) {
+      refreshSlot(primary);
+    }
+    startAutoRefresh();
+  } catch (caught) {
+    loadError.value = caught instanceof ApiError ? caught.message : "Could not load Live View.";
+  } finally {
+    loading.value = false;
+  }
+}
+
+onMounted(() => {
+  void load();
+  clockTimer = setInterval(() => {
+    clock.value = Date.now();
+  }, 1000);
+});
+
+onUnmounted(() => {
+  clearInterval(refreshTimer);
+  clearInterval(clockTimer);
+});
+
+function updatedLabel(slot: Slot): string {
+  void clock.value;
+  return slot.updatedAt ? formatRelativeTime(slot.updatedAt) : "Not loaded yet";
+}
 </script>
 
 <template>
   <section>
     <PageHeader
       title="Live View"
-      description="Watch your cameras in real time, snap screenshots, and save recordings."
-    />
+      description="Check in on a camera right now - forced fresh snapshots, not a continuous video stream (Blink's cloud API doesn't expose one a browser can play)."
+    >
+      <template #actions>
+        <Button
+          :label="sidebar.isCollapsed.value ? 'Expand menu' : 'Collapse menu'"
+          :icon="sidebar.isCollapsed.value ? 'pi pi-angle-right' : 'pi pi-angle-left'"
+          severity="secondary"
+          text
+          data-testid="live-view-sidebar-toggle"
+          @click="sidebar.toggle()"
+        />
+        <Button
+          :label="compareMode ? 'Single camera' : 'Compare two cameras'"
+          icon="pi pi-th-large"
+          severity="secondary"
+          outlined
+          data-testid="toggle-compare"
+          @click="toggleCompare"
+        />
+        <div class="auto-refresh">
+          <ToggleSwitch
+            v-model="autoRefreshEnabled"
+            data-testid="auto-refresh-toggle"
+          />
+          <span class="muted">Auto-refresh every {{ autoRefreshIntervalSeconds }}s</span>
+        </div>
+      </template>
+    </PageHeader>
+
+    <div
+      v-if="loading"
+      data-testid="live-view-loading"
+    >
+      <Skeleton
+        height="420px"
+        border-radius="16px"
+      />
+    </div>
+
+    <Message
+      v-else-if="loadError"
+      severity="error"
+      :closable="false"
+      data-testid="live-view-load-error"
+    >
+      {{ loadError }}
+    </Message>
+
     <EmptyState
+      v-else-if="!blink.isLinked || cameras.length === 0"
       icon="pi pi-video"
-      title="Live view is coming in a future release"
-      description="You'll be able to open a live stream per camera, capture stills, and record short videos straight into your Library."
+      title="No cameras available"
+      description="Link your Blink account and sync at least one camera to use Live View."
+      data-testid="live-view-empty"
     />
+
+    <div
+      v-else
+      class="stage"
+      :class="{ compare: compareMode }"
+    >
+      <article class="panel">
+        <div class="panel-toolbar">
+          <Select
+            v-model="primary.cameraId"
+            :options="cameraOptions"
+            option-label="label"
+            option-value="value"
+            placeholder="Choose a camera"
+            data-testid="primary-camera-select"
+            @update:model-value="() => refreshSlot(primary)"
+          />
+        </div>
+        <div class="preview-wrap">
+          <!-- cameraOptions is only reachable once cameras.length > 0, and
+          load() always seeds primary.cameraId from that same list, so it's
+          never actually null once this panel renders - no v-if needed. -->
+          <img
+            :src="tileSrc(primary)"
+            :data-preview-for="primary.cameraId"
+            class="preview-image"
+            alt="Live camera preview"
+            data-testid="primary-preview"
+            @load="onSlotLoad(primary)"
+            @error="onSlotError(primary)"
+          >
+          <div
+            v-if="primary.error"
+            class="preview-overlay"
+          >
+            <i
+              class="pi pi-exclamation-triangle"
+              aria-hidden="true"
+            />
+            <span>{{ primary.error }}</span>
+          </div>
+        </div>
+        <footer class="panel-footer">
+          <span class="muted">Updated {{ updatedLabel(primary) }}</span>
+          <div class="panel-actions">
+            <Button
+              label="Refresh"
+              icon="pi pi-refresh"
+              size="small"
+              severity="secondary"
+              outlined
+              :loading="primary.loading"
+              data-testid="primary-refresh"
+              @click="refreshSlot(primary, { force: true })"
+            />
+            <Button
+              label="Screenshot"
+              icon="pi pi-camera"
+              size="small"
+              severity="secondary"
+              outlined
+              data-testid="primary-screenshot"
+              @click="screenshot(primary)"
+            />
+            <Button
+              label="Save clip"
+              icon="pi pi-video"
+              size="small"
+              :loading="primary.recording"
+              data-testid="primary-save-clip"
+              @click="saveClip(primary)"
+            />
+          </div>
+        </footer>
+      </article>
+
+      <article
+        v-if="compareMode"
+        class="panel"
+      >
+        <div class="panel-toolbar">
+          <Select
+            v-model="secondary.cameraId"
+            :options="cameraOptions"
+            option-label="label"
+            option-value="value"
+            placeholder="Choose a camera"
+            data-testid="secondary-camera-select"
+            @update:model-value="() => refreshSlot(secondary)"
+          />
+        </div>
+        <div class="preview-wrap">
+          <img
+            v-if="secondary.cameraId"
+            :src="tileSrc(secondary)"
+            :data-preview-for="secondary.cameraId"
+            class="preview-image"
+            alt="Second live camera preview"
+            data-testid="secondary-preview"
+            @load="onSlotLoad(secondary)"
+            @error="onSlotError(secondary)"
+          >
+          <div
+            v-else
+            class="preview-overlay"
+            data-testid="secondary-no-camera"
+          >
+            <i
+              class="pi pi-video"
+              aria-hidden="true"
+            />
+            <span>No other camera to compare against yet.</span>
+          </div>
+          <div
+            v-if="secondary.error"
+            class="preview-overlay"
+          >
+            <i
+              class="pi pi-exclamation-triangle"
+              aria-hidden="true"
+            />
+            <span>{{ secondary.error }}</span>
+          </div>
+        </div>
+        <footer class="panel-footer">
+          <span class="muted">Updated {{ updatedLabel(secondary) }}</span>
+          <div class="panel-actions">
+            <Button
+              label="Refresh"
+              icon="pi pi-refresh"
+              size="small"
+              severity="secondary"
+              outlined
+              :loading="secondary.loading"
+              data-testid="secondary-refresh"
+              @click="refreshSlot(secondary, { force: true })"
+            />
+            <Button
+              label="Screenshot"
+              icon="pi pi-camera"
+              size="small"
+              severity="secondary"
+              outlined
+              data-testid="secondary-screenshot"
+              @click="screenshot(secondary)"
+            />
+            <Button
+              label="Save clip"
+              icon="pi pi-video"
+              size="small"
+              :loading="secondary.recording"
+              data-testid="secondary-save-clip"
+              @click="saveClip(secondary)"
+            />
+          </div>
+        </footer>
+      </article>
+    </div>
   </section>
 </template>
+
+<style scoped>
+.auto-refresh {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.muted {
+  font-size: 0.8rem;
+  color: var(--p-surface-500);
+  white-space: nowrap;
+}
+
+.stage {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+
+.stage.compare {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 900px) {
+  .stage.compare {
+    grid-template-columns: 1fr;
+  }
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--p-surface-200);
+  background: var(--p-surface-0);
+}
+
+.blink-dark .panel {
+  border-color: var(--p-surface-800);
+  background: color-mix(in srgb, var(--p-surface-900) 60%, transparent);
+}
+
+.panel-toolbar {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--p-surface-200);
+}
+
+.blink-dark .panel-toolbar {
+  border-bottom-color: var(--p-surface-800);
+}
+
+.preview-wrap {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: #000;
+}
+
+.preview-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  background: #000;
+}
+
+.preview-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--p-surface-300);
+  background: rgb(0 0 0 / 0.55);
+}
+
+.preview-overlay i {
+  font-size: 1.6rem;
+  color: var(--p-orange-400);
+}
+
+.panel-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  flex-wrap: wrap;
+}
+
+.panel-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+</style>

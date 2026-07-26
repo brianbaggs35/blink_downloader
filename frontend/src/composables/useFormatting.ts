@@ -45,6 +45,24 @@ export function useFormatting() {
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   }
 
+  /** For a live/near-live status label ("3s ago") - the caller is
+   * responsible for re-rendering periodically (this does not tick itself). */
+  function formatRelativeTime(date: Date): string {
+    const seconds = Math.max(0, Math.round((Date.now() - date.getTime()) / 1000));
+    if (seconds < 5) {
+      return "just now";
+    }
+    if (seconds < 60) {
+      return `${seconds}s ago`;
+    }
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) {
+      return `${minutes}m ago`;
+    }
+    const hours = Math.round(minutes / 60);
+    return `${hours}h ago`;
+  }
+
   function formatFileSize(bytes: number | null): string {
     if (bytes === null) {
       return "—";
@@ -64,5 +82,5 @@ export function useFormatting() {
     return `${value.toFixed(1)} ${units[unitIndex]}`;
   }
 
-  return { formatDateTime, formatDate, formatDuration, formatFileSize };
+  return { formatDateTime, formatDate, formatDuration, formatFileSize, formatRelativeTime };
 }
