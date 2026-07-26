@@ -78,14 +78,21 @@ make prod           # builds and starts everything: nginx, API, worker,
                      # Postgres/pgvector, Redis — with HTTPS on :443
 ```
 
-First visit walks you through creating the admin account. `:80`/`:443` are
-the real defaults (override via `BLINK_HTTP_PORT`/`BLINK_HTTPS_PORT` in
-`.env` if you need different ones) — internally nginx listens on unprivileged
-8080/8443 as a non-root user, which Docker maps back to the standard ports,
-so dropping in your own certificate needs no port number anywhere. TLS uses
-a generated self-signed certificate in `docker/certs/` until you do; replace
-it any time (`cert.pem` + `key.pem`, kept readable by the container:
-`chmod 644 docker/certs/*.pem`).
+First visit walks you through a short setup wizard: create your own admin
+email/password (12 characters minimum — **there is no default username or
+password to change**, `/api/setup` refuses to run a second time once an
+account exists), optionally link your Blink account, and review the cameras
+it finds before landing in the Library. AI analysis, vehicle protection, and
+facial recognition all stay off until you turn them on in Settings — nothing
+calls out to a third party until you configure a provider yourself.
+
+`:80`/`:443` are the real defaults (override via `BLINK_HTTP_PORT`/
+`BLINK_HTTPS_PORT` in `.env` if you need different ones) — internally nginx
+listens on unprivileged 8080/8443 as a non-root user, which Docker maps back
+to the standard ports, so dropping in your own certificate needs no port
+number anywhere. TLS uses a generated self-signed certificate in
+`docker/certs/` until you do; replace it any time (`cert.pem` + `key.pem`,
+kept readable by the container: `chmod 644 docker/certs/*.pem`).
 
 Production containers run non-root, with a read-only root filesystem,
 `cap_drop: ALL`, and `no-new-privileges` — see

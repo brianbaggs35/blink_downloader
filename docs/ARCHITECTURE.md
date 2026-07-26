@@ -42,6 +42,49 @@ own:
 - **`app/users/`** — fastapi-users (upstream is in maintenance mode) is fully
   contained here: models, manager, cookie/DB-strategy backend.
 
+## Blink integration
+
+Home Assistant's Blink integration used to absorb a lot of this transparently
+via its config-entry/coordinator machinery; without that layer, this
+application owns it directly:
+
+- **Auth/session persistence**: `blinkpy`'s token blob (cookies + auth header,
+  not the account password) is encrypted (`SecretBox`) and stored on the
+  `BlinkAccount` row, refreshed on every successful sync. A worker/container
+  restart reloads it rather than forcing a fresh login. A token that's gone
+  stale (revoked, expired, password changed on Blink's side) surfaces as
+  `BlinkAccount.status = error` with `last_error` set — visible in Settings →
+  Blink Account and on the Status page — rather than failing silently forever.
+- **Camera identity**: cameras are upserted keyed on `(blink_account_id,
+  blink_camera_id)` — the stable numeric ID Blink assigns, not the
+  display name — so renaming a camera in the Blink app updates the existing
+  row (and everything hanging off its id: clips, AI history, enrolled faces)
+  instead of orphaning it under a new one.
+- **Known limitation**: Blink's media-changed feed (what `blinkpy` exposes for
+  clip discovery) identifies each clip's camera by **display name only**, not
+  by the stable camera ID used for camera identity above — a limitation of the
+  upstream feed itself, not something this app can key around. Two cameras
+  sharing an exact (case-insensitive) name *within the same Blink account*
+  (realistic for a multi-property account with the same room names on both)
+  will have their clips attributed to whichever of the two cameras the sync
+  loop resolved last. Give cameras unique names in the Blink app to avoid this.
+- **Per-camera enable/disable** (Settings → Cameras): disabling a camera stops
+  its clips from being downloaded at all, and — independently, in case a job
+  was already queued before the toggle flipped — analysis (`analyze_clip`)
+  refuses to run against a disabled camera's clips even if asked to directly
+  via reanalyze/bulk-analyze. The rest of the app works the same with one
+  camera enabled as with ten.
+- **First-sync backfill cap**: a fresh link backfills the last
+  `BLINK_INITIAL_SYNC_DAYS` (default 1 day), and only the
+  `BLINK_AUTO_ANALYZE_LIMIT` most recent clips from that backfill (default 5)
+  are automatically queued for AI analysis — everything else still downloads
+  and appears in the Library, just not auto-analyzed, so a busy first sync
+  can't flood the analysis queue (and, if a paid provider is configured,
+  run up a surprise bill) the moment an account is linked. Older, undiscovered
+  clips beyond `blinkpy`'s own per-request page cap are fetched by requesting
+  enough pages up front (`BlinkPyService._MEDIA_PAGE_STOP`) rather than
+  silently truncating, which is `blinkpy`'s own out-of-the-box default.
+
 ## Security model
 
 - **Auth**: Argon2id password hashing; HttpOnly/Secure/SameSite=Lax cookie
