@@ -35,8 +35,10 @@ services:
       BLINK_SECRET_KEY: ${BLINK_SECRET_KEY}
       BLINK_ENCRYPTION_KEY: ${BLINK_ENCRYPTION_KEY}
       BLINK_STORAGE_DIR: /data/clips
+      BLINK_BIOMETRICS_MODEL_CACHE_DIR: /data/insightface
     volumes:
       - clips:/data/clips
+      - insightface:/data/insightface
     depends_on:
       postgres:
         condition: service_healthy
@@ -75,8 +77,10 @@ services:
       BLINK_SECRET_KEY: ${BLINK_SECRET_KEY}
       BLINK_ENCRYPTION_KEY: ${BLINK_ENCRYPTION_KEY}
       BLINK_STORAGE_DIR: /data/clips
+      BLINK_BIOMETRICS_MODEL_CACHE_DIR: /data/insightface
     volumes:
       - clips:/data/clips
+      - insightface:/data/insightface
     depends_on:
       postgres:
         condition: service_healthy
@@ -91,6 +95,10 @@ services:
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
+    # arq finishes an in-flight job (an AI provider call, a biometrics model
+    # download, ...) before exiting on SIGTERM rather than abandoning it
+    # mid-request; Compose's 10s default would SIGKILL well before that.
+    stop_grace_period: 45s
 
   migrate:
     build:
@@ -154,3 +162,4 @@ volumes:
   pgdata:
   redisdata:
   clips:
+  insightface:
