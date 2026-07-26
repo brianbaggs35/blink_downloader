@@ -13,10 +13,10 @@ export async function authGuard(to: RouteLocationNormalizedGeneric): Promise<Gua
     return to.name === "setup" ? true : { name: "setup" };
   }
   if (to.name === "setup") {
-    return auth.isAuthenticated ? { name: "library" } : { name: "login" };
+    return auth.isAuthenticated ? { name: auth.landingRouteName } : { name: "login" };
   }
   if (to.name === "login") {
-    return auth.isAuthenticated ? { name: "library" } : true;
+    return auth.isAuthenticated ? { name: auth.landingRouteName } : true;
   }
   if (auth.isAuthenticated) {
     return true;

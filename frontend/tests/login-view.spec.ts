@@ -46,6 +46,14 @@ describe("LoginView", () => {
     expect(router.currentRoute.value.name).toBe("library");
   });
 
+  it("lands on Security Feed when that's the user's preference", async () => {
+    mockedLogin.mockResolvedValue(undefined);
+    mockedMe.mockResolvedValue({ ...fakeUser, default_landing_page: "security_feed" });
+    const { wrapper, router } = await mountLogin();
+    await submit(wrapper);
+    expect(router.currentRoute.value.name).toBe("security-feed");
+  });
+
   it("honors a redirect query", async () => {
     mockedLogin.mockResolvedValue(undefined);
     mockedMe.mockResolvedValue(fakeUser);

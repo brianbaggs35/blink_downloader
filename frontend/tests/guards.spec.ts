@@ -86,4 +86,9 @@ describe("authGuard when signed in", () => {
     expect(mockedStatus).toHaveBeenCalledTimes(1);
     expect(store.isAuthenticated).toBe(true);
   });
+
+  it("lands on Security Feed instead when that's the user's preference", async () => {
+    mockedMe.mockResolvedValue({ ...fakeUser, default_landing_page: "security_feed" });
+    expect(await authGuard(to("login"))).toEqual({ name: "security-feed" });
+  });
 });
