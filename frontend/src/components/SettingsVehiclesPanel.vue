@@ -5,7 +5,6 @@ import InputText from "primevue/inputtext";
 import Message from "primevue/message";
 import Skeleton from "primevue/skeleton";
 import ToggleSwitch from "primevue/toggleswitch";
-import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
 import { onMounted, reactive, ref } from "vue";
 
@@ -18,6 +17,7 @@ import {
   putVehicle,
   vehicleReferenceFrameUrl,
 } from "@/api";
+import { useDeleteConfirm } from "@/composables/useDeleteConfirm";
 
 import type { CameraRead } from "@/api";
 
@@ -65,7 +65,7 @@ function emptyState(): VehicleFormState {
 }
 
 const toast = useToast();
-const confirm = useConfirm();
+const { confirmDelete } = useDeleteConfirm();
 
 const cameras = ref<CameraRead[]>([]);
 const camerasLoading = ref(true);
@@ -206,14 +206,12 @@ async function saveVehicle(camera: CameraRead): Promise<void> {
   }
 }
 
-function confirmDelete(camera: CameraRead): void {
-  confirm.require({
-    message: `Stop protecting a vehicle on ${camera.name}? This removes the saved outline and thresholds.`,
+function confirmRemoveVehicle(camera: CameraRead): void {
+  confirmDelete({
     header: "Remove vehicle protection",
-    icon: "pi pi-exclamation-triangle",
-    acceptProps: { label: "Remove", severity: "danger" },
-    rejectProps: { label: "Cancel", severity: "secondary", outlined: true },
-    accept: () => void performDelete(camera),
+    message: `Stop protecting a vehicle on ${camera.name}? This removes the saved outline and thresholds.`,
+    acceptLabel: "Remove",
+    onAccept: () => void performDelete(camera),
   });
 }
 
@@ -445,7 +443,7 @@ async function performDelete(camera: CameraRead): Promise<void> {
                 text
                 :loading="forms[camera.id].deleting"
                 :data-testid="`delete-vehicle-${camera.id}`"
-                @click="confirmDelete(camera)"
+                @click="confirmRemoveVehicle(camera)"
               />
               <Button
                 label="Save vehicle"

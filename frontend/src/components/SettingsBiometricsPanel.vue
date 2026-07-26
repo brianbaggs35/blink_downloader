@@ -9,7 +9,7 @@ import ToggleSwitch from "primevue/toggleswitch";
 import { useToast } from "primevue/usetoast";
 import { onMounted, ref } from "vue";
 
-import { ApiError, getBiometricsSettings, updateBiometricsSettings } from "@/api";
+import { ApiError, getBiometricsSettings, updateBiometricsSettings, verifyBiometricsModel } from "@/api";
 
 import type { ExecutionProviderPreference, ModelPack } from "@/api";
 
@@ -54,6 +54,10 @@ const providerPreference = ref<ExecutionProviderPreference>("auto");
 const recognitionThreshold = ref(0.4);
 const availableProviders = ref<string[]>([]);
 
+const verifying = ref(false);
+const verifyError = ref("");
+const verifyResult = ref<{ providers: string[] } | null>(null);
+
 async function load(): Promise<void> {
   loading.value = true;
   loadError.value = "";
@@ -94,6 +98,24 @@ async function save(): Promise<void> {
 }
 
 const gpuDetected = () => availableProviders.value.some((p) => p !== "CPUExecutionProvider");
+
+async function verifyModel(): Promise<void> {
+  verifyError.value = "";
+  verifyResult.value = null;
+  verifying.value = true;
+  try {
+    const result = await verifyBiometricsModel();
+    verifyResult.value = { providers: result.providers };
+    toast.add({ severity: "success", summary: "Model ready", life: 3000 });
+  } catch (caught) {
+    verifyError.value =
+      caught instanceof ApiError
+        ? caught.message
+        : "Could not verify the model. Check your connection and try again.";
+  } finally {
+    verifying.value = false;
+  }
+}
 </script>
 
 <template>
@@ -201,6 +223,41 @@ const gpuDetected = () => availableProviders.value.some((p) => p !== "CPUExecuti
         </label>
       </div>
 
+      <div class="verify-row">
+        <Button
+          type="button"
+          label="Verify / download model"
+          icon="pi pi-cloud-download"
+          severity="secondary"
+          outlined
+          :disabled="!enabled"
+          :loading="verifying"
+          data-testid="verify-model"
+          @click="verifyModel"
+        />
+        <span class="muted">
+          Downloads the selected model now (first use otherwise downloads it during your next
+          clip analysis, adding a delay). Requires internet access on this one occasion only —
+          nothing from your cameras is ever sent anywhere.
+        </span>
+      </div>
+      <Message
+        v-if="verifyResult"
+        severity="success"
+        :closable="false"
+        data-testid="verify-model-success"
+      >
+        Model ready — running on {{ verifyResult.providers.join(", ") }}.
+      </Message>
+      <Message
+        v-if="verifyError"
+        severity="error"
+        :closable="false"
+        data-testid="verify-model-error"
+      >
+        {{ verifyError }}
+      </Message>
+
       <Message
         v-if="saveError"
         severity="error"
@@ -296,5 +353,24 @@ const gpuDetected = () => availableProviders.value.some((p) => p !== "CPUExecuti
 .panel-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+.verify-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--p-surface-100);
+}
+
+.blink-dark .verify-row {
+  background: color-mix(in srgb, var(--p-surface-800) 60%, transparent);
+}
+
+.verify-row .muted {
+  flex: 1 1 260px;
+  margin: 0;
 }
 </style>

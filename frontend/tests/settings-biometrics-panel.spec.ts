@@ -12,6 +12,7 @@ vi.mock("@/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api")>()),
   getBiometricsSettings: vi.fn(),
   updateBiometricsSettings: vi.fn(),
+  verifyBiometricsModel: vi.fn(),
 }));
 
 const toastAdd = vi.fn();
@@ -19,10 +20,11 @@ vi.mock("primevue/usetoast", () => ({
   useToast: () => ({ add: toastAdd }),
 }));
 
-import { getBiometricsSettings, updateBiometricsSettings } from "@/api";
+import { getBiometricsSettings, updateBiometricsSettings, verifyBiometricsModel } from "@/api";
 
 const mockedGet = vi.mocked(getBiometricsSettings);
 const mockedUpdate = vi.mocked(updateBiometricsSettings);
+const mockedVerify = vi.mocked(verifyBiometricsModel);
 
 const baseSettings = {
   enabled: true,
@@ -159,5 +161,61 @@ describe("SettingsBiometricsPanel save", () => {
     expect(wrapper.find('[data-testid="biometrics-settings-save-error"]').text()).toBe(
       "Unexpected error.",
     );
+  });
+});
+
+describe("SettingsBiometricsPanel verify model", () => {
+  beforeEach(() => {
+    mockedGet.mockResolvedValue(baseSettings);
+  });
+
+  it("shows the resolved providers on success", async () => {
+    mockedVerify.mockResolvedValue({ model_pack: "buffalo_l", providers: ["CPUExecutionProvider"] });
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    await wrapper.find('[data-testid="verify-model"]').trigger("click");
+    await flushPromises();
+
+    expect(mockedVerify).toHaveBeenCalled();
+    expect(wrapper.find('[data-testid="verify-model-success"]').text()).toContain(
+      "CPUExecutionProvider",
+    );
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: "success" }));
+  });
+
+  it("shows the API error message when verification fails", async () => {
+    mockedVerify.mockRejectedValue(new ApiError(502, "Could not download the model."));
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    await wrapper.find('[data-testid="verify-model"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="verify-model-error"]').text()).toBe(
+      "Could not download the model.",
+    );
+  });
+
+  it("falls back to a generic error for non-API verify failures", async () => {
+    mockedVerify.mockRejectedValue(new TypeError("network down"));
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    await wrapper.find('[data-testid="verify-model"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="verify-model-error"]').text()).toBe(
+      "Could not verify the model. Check your connection and try again.",
+    );
+  });
+
+  it("disables the verify button while biometrics is off", async () => {
+    mockedGet.mockResolvedValue({ ...baseSettings, enabled: false });
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    const button = wrapper.find('[data-testid="verify-model"]');
+    expect(button.attributes("disabled")).toBeDefined();
   });
 });

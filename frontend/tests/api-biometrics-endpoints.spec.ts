@@ -13,8 +13,10 @@ import {
   listPeople,
   listPersonFaces,
   personThumbnailUrl,
+  reportFalsePositive,
   updateBiometricsSettings,
   updatePerson,
+  verifyBiometricsModel,
 } from "@/api";
 import { jsonResponse } from "./helpers";
 
@@ -59,6 +61,13 @@ describe("biometrics settings endpoints", () => {
     });
     expect(mock.mock.calls[0]?.[0]).toBe("/api/biometrics/settings");
     expect((mock.mock.calls[0]?.[1] as RequestInit).method).toBe("PUT");
+  });
+
+  it("verifyBiometricsModel POSTs to settings/verify-model", async () => {
+    const mock = capture(jsonResponse({ model_pack: "buffalo_l", providers: ["CPUExecutionProvider"] }));
+    await verifyBiometricsModel();
+    expect(mock.mock.calls[0]?.[0]).toBe("/api/biometrics/settings/verify-model");
+    expect((mock.mock.calls[0]?.[1] as RequestInit).method).toBe("POST");
   });
 });
 
@@ -157,5 +166,14 @@ describe("clip frame + enrollment endpoints", () => {
       frame_seconds: 2.5,
       bbox: [0.1, 0.2, 0.3, 0.4],
     });
+  });
+
+  it("reportFalsePositive POSTs to the clip+person report endpoint", async () => {
+    const mock = capture(jsonResponse({ negative_sample_captured: true }));
+    await reportFalsePositive("clip-1", "person-1");
+    expect(mock.mock.calls[0]?.[0]).toBe(
+      "/api/biometrics/clips/clip-1/people/person-1/report-false-positive",
+    );
+    expect((mock.mock.calls[0]?.[1] as RequestInit).method).toBe("POST");
   });
 });

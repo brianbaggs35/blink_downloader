@@ -13,8 +13,7 @@ vi.mock("primevue/usetoast", () => ({ useToast: () => ({ add: toastAdd }) }));
 
 import { createPerson, listPeople } from "@/api";
 import { ApiError } from "@/api/client";
-import EnrollFaceDialog from "@/components/EnrollFaceDialog.vue";
-import PersonDetailDialog from "@/components/PersonDetailDialog.vue";
+import PersonDetailPanel from "@/components/PersonDetailPanel.vue";
 import { useAuthStore } from "@/stores/auth";
 import BiometricsView from "@/views/BiometricsView.vue";
 import { fakeUser, makePinia, makeRouter, mountGlobal } from "./helpers";
@@ -36,6 +35,11 @@ function makePerson(overrides: Partial<PersonRead> = {}): PersonRead {
   };
 }
 
+// PersonDetailPanel's own behavior (loading, rename, face grid, delete,
+// embedded enrollment) is exercised in person-detail-panel.spec.ts; here it
+// is stubbed so BiometricsView's own responsibility - switching between the
+// people grid and the detail view, and reacting to what the panel emits -
+// stays the focus.
 async function mountView(isAdmin = true) {
   const router = makeRouter();
   await router.push("/");
@@ -44,7 +48,7 @@ async function mountView(isAdmin = true) {
   const wrapper = mount(BiometricsView, {
     global: {
       ...mountGlobal(pinia, router),
-      stubs: { EnrollFaceDialog: true, PersonDetailDialog: true },
+      stubs: { PersonDetailPanel: true },
     },
     attachTo: document.body,
   });
@@ -67,7 +71,7 @@ describe("BiometricsView loading", () => {
     const wrapper = mount(BiometricsView, {
       global: {
         ...mountGlobal(makePinia(), makeRouter()),
-        stubs: { EnrollFaceDialog: true, PersonDetailDialog: true },
+        stubs: { PersonDetailPanel: true },
       },
     });
     expect(wrapper.find('[data-testid="people-loading"]').exists()).toBe(true);
@@ -132,29 +136,49 @@ describe("BiometricsView people grid", () => {
     expect(wrapper.find('[data-testid="person-card-p-2"] img').exists()).toBe(false);
     expect(wrapper.find('[data-testid="person-card-p-2"] .pi-user').exists()).toBe(true);
   });
+});
 
-  it("opens the detail dialog for a clicked person", async () => {
+describe("BiometricsView list/detail switching", () => {
+  it("switches to the detail view for a clicked person, hiding the grid and Add person button", async () => {
     mockedList.mockResolvedValue([makePerson({ id: "p-1" })]);
     const wrapper = await mountView();
     await wrapper.find('[data-testid="person-card-p-1"]').trigger("click");
-    expect(wrapper.findComponent(PersonDetailDialog).props("personId")).toBe("p-1");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="person-detail-view"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="people-grid"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="open-add-person"]').exists()).toBe(false);
+    expect(wrapper.findComponent(PersonDetailPanel).props("personId")).toBe("p-1");
   });
 
-  it("opens the enroll dialog directly from a card's Enroll button, without opening the detail dialog", async () => {
-    mockedList.mockResolvedValue([makePerson({ id: "p-1", name: "Alex" })]);
+  it("returns to the grid (and re-fetches) via Back to people", async () => {
+    mockedList.mockResolvedValue([makePerson({ id: "p-1", face_count: 0 })]);
     const wrapper = await mountView();
-    await wrapper.find('[data-testid="enroll-for-p-1"]').trigger("click");
+    await wrapper.find('[data-testid="person-card-p-1"]').trigger("click");
+    await flushPromises();
 
-    const enrollDialog = wrapper.findComponent(EnrollFaceDialog);
-    expect(enrollDialog.props("personId")).toBe("p-1");
-    expect(enrollDialog.props("personName")).toBe("Alex");
-    expect(wrapper.findComponent(PersonDetailDialog).props("personId")).toBeNull();
+    mockedList.mockResolvedValue([makePerson({ id: "p-1", face_count: 2 })]);
+    await wrapper.find('[data-testid="back-to-people"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="people-grid"]').exists()).toBe(true);
+    expect(mockedList).toHaveBeenCalledTimes(2);
+    expect(wrapper.text()).toContain("2 face sample(s)");
   });
 
-  it("hides per-card Enroll buttons for non-admins", async () => {
+  it("returns to the grid and toasts when the detail panel reports a deletion", async () => {
     mockedList.mockResolvedValue([makePerson({ id: "p-1" })]);
-    const wrapper = await mountView(false);
-    expect(wrapper.find('[data-testid="enroll-for-p-1"]').exists()).toBe(false);
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="person-card-p-1"]').trigger("click");
+    await flushPromises();
+
+    mockedList.mockResolvedValue([]);
+    await wrapper.findComponent(PersonDetailPanel).vm.$emit("deleted");
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: "success" }));
+    expect(wrapper.find('[data-testid="person-detail-view"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain("No one enrolled yet");
   });
 });
 
@@ -196,8 +220,7 @@ describe("BiometricsView add-person dialog", () => {
     expect(document.body.querySelector('[data-testid="add-person-dialog"]')).toBeNull();
   });
 
-  it("creates the person, inserting them alphabetically, closes the dialog, and opens the enroll dialog for them", async () => {
-    mockedList.mockResolvedValue([makePerson({ id: "p-existing", name: "Sam" })]);
+  it("creates the person, closes the dialog, and jumps straight into their detail view", async () => {
     mockedCreate.mockResolvedValue(makePerson({ id: "p-new", name: "Jordan" }));
     const wrapper = await mountView();
     await openAddPersonDialog(wrapper);
@@ -208,14 +231,8 @@ describe("BiometricsView add-person dialog", () => {
 
     expect(mockedCreate).toHaveBeenCalledWith({ name: "Jordan" });
     expect(document.body.querySelector('[data-testid="add-person-dialog"]')).toBeNull();
-    const cards = wrapper.findAll('[data-testid^="person-card-"]');
-    expect(cards.map((c) => c.text())).toEqual([
-      expect.stringContaining("Jordan"),
-      expect.stringContaining("Sam"),
-    ]);
-    const enrollDialog = wrapper.findComponent(EnrollFaceDialog);
-    expect(enrollDialog.props("personId")).toBe("p-new");
-    expect(enrollDialog.props("personName")).toBe("Jordan");
+    expect(wrapper.find('[data-testid="person-detail-view"]').exists()).toBe(true);
+    expect(wrapper.findComponent(PersonDetailPanel).props("personId")).toBe("p-new");
   });
 
   it("shows the API error message when creation fails", async () => {
@@ -248,80 +265,5 @@ describe("BiometricsView add-person dialog", () => {
       ?.dispatchEvent(new Event("submit", { cancelable: true }));
     await flushPromises();
     expect(mockedCreate).not.toHaveBeenCalled();
-  });
-});
-
-describe("BiometricsView child dialog events", () => {
-  it("reloads and toasts when the enroll dialog reports a successful enrollment", async () => {
-    mockedList.mockResolvedValue([makePerson({ id: "p-1" })]);
-    const wrapper = await mountView();
-    await wrapper.find('[data-testid="enroll-for-p-1"]').trigger("click");
-
-    mockedList.mockResolvedValue([makePerson({ id: "p-1", face_count: 1 })]);
-    await wrapper.findComponent(EnrollFaceDialog).vm.$emit("enrolled");
-    await flushPromises();
-
-    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: "success" }));
-    expect(mockedList).toHaveBeenCalledTimes(2);
-  });
-
-  it("closes the enroll dialog when it emits close", async () => {
-    mockedList.mockResolvedValue([makePerson({ id: "p-1" })]);
-    const wrapper = await mountView();
-    await wrapper.find('[data-testid="enroll-for-p-1"]').trigger("click");
-    await wrapper.findComponent(EnrollFaceDialog).vm.$emit("close");
-    await flushPromises();
-    expect(wrapper.findComponent(EnrollFaceDialog).props("personId")).toBeNull();
-  });
-
-  it("closes the detail dialog when it emits close", async () => {
-    mockedList.mockResolvedValue([makePerson({ id: "p-1" })]);
-    const wrapper = await mountView();
-    await wrapper.find('[data-testid="person-card-p-1"]').trigger("click");
-    await wrapper.findComponent(PersonDetailDialog).vm.$emit("close");
-    await flushPromises();
-    expect(wrapper.findComponent(PersonDetailDialog).props("personId")).toBeNull();
-  });
-
-  it("reloads and toasts when the detail dialog reports a deletion", async () => {
-    mockedList.mockResolvedValue([makePerson({ id: "p-1" })]);
-    const wrapper = await mountView();
-    await wrapper.find('[data-testid="person-card-p-1"]').trigger("click");
-
-    mockedList.mockResolvedValue([]);
-    await wrapper.findComponent(PersonDetailDialog).vm.$emit("deleted");
-    await flushPromises();
-
-    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: "success" }));
-    expect(mockedList).toHaveBeenCalledTimes(2);
-  });
-
-  it("switches from the detail dialog to the enroll dialog for the same person on enroll-more", async () => {
-    mockedList.mockResolvedValue([makePerson({ id: "p-1", name: "Alex" })]);
-    const wrapper = await mountView();
-    await wrapper.find('[data-testid="person-card-p-1"]').trigger("click");
-
-    await wrapper.findComponent(PersonDetailDialog).vm.$emit("enroll-more");
-    await flushPromises();
-
-    expect(wrapper.findComponent(PersonDetailDialog).props("personId")).toBeNull();
-    const enrollDialog = wrapper.findComponent(EnrollFaceDialog);
-    expect(enrollDialog.props("personId")).toBe("p-1");
-    expect(enrollDialog.props("personName")).toBe("Alex");
-  });
-
-  it("does nothing on enroll-more if the previously selected person can no longer be found", async () => {
-    mockedList.mockResolvedValue([makePerson({ id: "p-1", name: "Alex" })]);
-    const wrapper = await mountView();
-    await wrapper.find('[data-testid="person-card-p-1"]').trigger("click");
-
-    // Simulate the person having vanished from the loaded list.
-    mockedList.mockResolvedValue([]);
-    await wrapper.findComponent(PersonDetailDialog).vm.$emit("deleted");
-    await flushPromises();
-    await wrapper.findComponent(PersonDetailDialog).vm.$emit("enroll-more");
-    await flushPromises();
-
-    expect(wrapper.findComponent(EnrollFaceDialog).props("personId")).toBeNull();
   });
 });

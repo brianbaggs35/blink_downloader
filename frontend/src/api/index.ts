@@ -59,6 +59,8 @@ export type FaceEmbeddingRead = components["schemas"]["FaceEmbeddingRead"];
 export type DetectedFaceRead = components["schemas"]["DetectedFaceRead"];
 export type EnrollFaceRequest = components["schemas"]["EnrollFaceRequest"];
 export type RecognizedPersonRead = components["schemas"]["RecognizedPersonRead"];
+export type VerifyModelRead = components["schemas"]["VerifyModelRead"];
+export type ReportFalsePositiveRead = components["schemas"]["ReportFalsePositiveRead"];
 
 export { ApiError } from "./client";
 
@@ -396,4 +398,18 @@ export function enrollFace(
   body: EnrollFaceRequest,
 ): Promise<FaceEmbeddingRead> {
   return api<FaceEmbeddingRead>(`/biometrics/people/${personId}/enroll`, { json: body });
+}
+
+export function verifyBiometricsModel(): Promise<VerifyModelRead> {
+  return api<VerifyModelRead>("/biometrics/settings/verify-model", { method: "POST" });
+}
+
+export function reportFalsePositive(
+  clipId: string,
+  personId: string,
+): Promise<ReportFalsePositiveRead> {
+  return api<ReportFalsePositiveRead>(
+    `/biometrics/clips/${clipId}/people/${personId}/report-false-positive`,
+    { method: "POST" },
+  );
 }

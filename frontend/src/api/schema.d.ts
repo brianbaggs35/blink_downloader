@@ -162,6 +162,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/biometrics/settings/verify-model": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify Model Route
+         * @description Downloads/loads the currently-configured model pack right now and
+         *     reports pass/fail, so enabling biometrics in Settings gives an admin
+         *     immediate feedback instead of a silent first-analysis surprise.
+         */
+        post: operations["verify_model_route_api_biometrics_settings_verify_model_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/biometrics/people": {
         parameters: {
             query?: never;
@@ -312,6 +334,28 @@ export interface paths {
         put?: never;
         /** Enroll Face Route */
         post: operations["enroll_face_route_api_biometrics_people__person_id__enroll_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/biometrics/clips/{clip_id}/people/{person_id}/report-false-positive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report False Positive Route
+         * @description "This wasn't {name}" from the clip modal — see
+         *     app.biometrics.service.report_false_positive for what this actually
+         *     does to future matching, not just this one clip.
+         */
+        post: operations["report_false_positive_route_api_biometrics_clips__clip_id__people__person_id__report_false_positive_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1556,6 +1600,14 @@ export interface components {
             name: string;
         };
         /**
+         * ReportFalsePositiveRead
+         * @description Result of reporting a recognized person as wrong on a clip.
+         */
+        ReportFalsePositiveRead: {
+            /** Negative Sample Captured */
+            negative_sample_captured: boolean;
+        };
+        /**
          * SetupRequest
          * @description First-run bootstrap of the administrator account.
          */
@@ -1748,6 +1800,15 @@ export interface components {
              * @default true
              */
             enabled: boolean;
+        };
+        /**
+         * VerifyModelRead
+         * @description Result of a successful Settings > "verify model" action.
+         */
+        VerifyModelRead: {
+            model_pack: components["schemas"]["ModelPack"];
+            /** Providers */
+            providers: string[];
         };
     };
     responses: never;
@@ -2263,6 +2324,26 @@ export interface operations {
             };
         };
     };
+    verify_model_route_api_biometrics_settings_verify_model_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerifyModelRead"];
+                };
+            };
+        };
+    };
     list_people_route_api_biometrics_people_get: {
         parameters: {
             query?: never;
@@ -2623,6 +2704,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FaceEmbeddingRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    report_false_positive_route_api_biometrics_clips__clip_id__people__person_id__report_false_positive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                clip_id: string;
+                person_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportFalsePositiveRead"];
                 };
             };
             /** @description Validation Error */
