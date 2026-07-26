@@ -9,7 +9,16 @@ increments.
 Blink integration (account linking, 2FA, camera discovery, periodic sync),
 the clip pipeline (download tasks, ffmpeg thumbnails, Library grid with full
 playback and bulk actions), camera health/sync status, and RBAC (admin/viewer
-roles) have shipped.
+roles) have shipped. First run is a 3-step wizard (admin account → link Blink
+→ review discovered cameras, enable/disable any of them, and a nudge to set
+up an AI provider) rather than just an account-creation form — see
+[ARCHITECTURE.md](ARCHITECTURE.md#blink-integration) for the camera-identity
+and auto-analysis-cap details behind it. Settings → Cameras' per-camera
+enable/disable toggle gates AI analysis (and reanalyze/bulk-analyze) as well
+as sync, not just the auto-analysis path. AI Settings has both a "test
+connection" (reachability/auth only) and a "run test analysis" (a real,
+tiny inference call proving the model name and response format actually
+work) button per tier, for every provider including both Ollama variants.
 
 **Shipped — AI analysis, vehicles, and alerts** (items 1, 3, and 5 from the
 original plan below, landed together as one feature since they share a
