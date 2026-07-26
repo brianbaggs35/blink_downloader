@@ -71,6 +71,12 @@ class Camera(Base):
     battery: Mapped[str | None] = mapped_column(Text)
     thumbnail_path: Mapped[str | None] = mapped_column(Text)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Live View / Security Feed's cached last-fetched preview image - a
+    # locally-stored copy of whatever Blink's own thumbnail/snapshot most
+    # recently produced, refreshed at most every preview freshness window
+    # rather than on every dashboard poll. See app/livefeed/service.py.
+    preview_path: Mapped[str | None] = mapped_column(Text)
+    preview_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Free-text context the AI prompt is given verbatim, e.g. "watches the
     # driveway and front walkway" — never guessed, always admin-authored.
     security_context: Mapped[str | None] = mapped_column(Text)

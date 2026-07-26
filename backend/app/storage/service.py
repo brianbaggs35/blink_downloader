@@ -22,6 +22,8 @@ class ClipStorage(Protocol):
 
     def vehicle_reference_path(self, camera_id: uuid.UUID) -> Path: ...
 
+    def camera_preview_path(self, camera_id: uuid.UUID) -> Path: ...
+
     def person_thumbnail_path(self, person_id: uuid.UUID) -> Path: ...
 
     def face_sample_path(self, person_id: uuid.UUID, face_embedding_id: uuid.UUID) -> Path: ...
@@ -49,6 +51,9 @@ class LocalClipStorage:
 
     def vehicle_reference_path(self, camera_id: uuid.UUID) -> Path:
         return self.root / str(camera_id) / "vehicle-reference.jpg"
+
+    def camera_preview_path(self, camera_id: uuid.UUID) -> Path:
+        return self.root / str(camera_id) / "preview.jpg"
 
     def person_thumbnail_path(self, person_id: uuid.UUID) -> Path:
         return self.root / "people" / str(person_id) / "profile.jpg"

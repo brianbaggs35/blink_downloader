@@ -31,6 +31,10 @@ class BlinkAuthError(BlinkError):
     """The stored token is no longer valid; the account must be re-linked."""
 
 
+class CameraNotFoundError(BlinkError):
+    """No camera with this id exists on the linked Blink account."""
+
+
 @dataclass(frozen=True, slots=True)
 class BlinkCameraInfo:
     camera_id: str
@@ -61,6 +65,23 @@ class BlinkService(Protocol):
 
     async def download_media(self, item: BlinkMediaItem) -> bytes:
         """Fetch the raw bytes for a clip returned by :meth:`list_media`."""
+        ...
+
+    async def get_camera_preview(self, camera_id: str) -> bytes:
+        """The camera's current thumbnail, whatever Blink last captured
+        (a real motion event or a prior snapshot/snap_picture call) - never
+        triggers a new capture itself."""
+        ...
+
+    async def snap_camera_picture(self, camera_id: str) -> bytes:
+        """Force the camera to take a fresh picture right now and return
+        it. Wakes a battery-powered camera - use for an explicit user
+        action (Live View's refresh button), not a passive poll loop."""
+        ...
+
+    async def record_clip(self, camera_id: str) -> None:
+        """Trigger an on-demand clip recording. The resulting clip arrives
+        through the normal sync/download pipeline, not returned here."""
         ...
 
     @property
@@ -176,6 +197,44 @@ class BlinkPyService:
         except ClientResponseError as exc:
             raise BlinkAuthError(str(exc)) from exc
         return await response.read()
+
+    async def _find_camera(self, camera_id: str) -> Any:
+        await self._ensure_full()
+        for camera in self._blink.cameras.values():
+            # By stable camera_id, never by dict key/name - blinkpy indexes
+            # self._blink.cameras by display name, which two cameras on one
+            # account can share (see docs/ARCHITECTURE.md#blink-integration).
+            if str(camera.camera_id) == camera_id:
+                return camera
+        raise CameraNotFoundError(f"No camera with id {camera_id} on this Blink account.")
+
+    async def get_camera_preview(self, camera_id: str) -> bytes:
+        camera = await self._find_camera(camera_id)
+        try:
+            response = await camera.get_thumbnail()
+        except ClientResponseError as exc:
+            raise BlinkAuthError(str(exc)) from exc
+        if response is None:
+            raise BlinkError(f"Camera {camera_id} has no thumbnail available yet.")
+        return await response.read()
+
+    async def snap_camera_picture(self, camera_id: str) -> bytes:
+        camera = await self._find_camera(camera_id)
+        try:
+            await camera.snap_picture()
+        except ClientResponseError as exc:
+            raise BlinkAuthError(str(exc)) from exc
+        image = camera.image_from_cache
+        if not image:
+            raise BlinkError(f"Camera {camera_id} did not return an image.")
+        return bytes(image)
+
+    async def record_clip(self, camera_id: str) -> None:
+        camera = await self._find_camera(camera_id)
+        try:
+            await camera.record()
+        except ClientResponseError as exc:
+            raise BlinkAuthError(str(exc)) from exc
 
     @property
     def token_data(self) -> dict[str, Any]:

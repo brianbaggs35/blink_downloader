@@ -9,6 +9,7 @@ from app.api.blink import router as blink_router
 from app.api.cameras import router as cameras_router
 from app.api.clips import router as clips_router
 from app.api.health import router as health_router
+from app.api.livefeed import router as livefeed_router
 from app.api.settings import router as settings_router
 from app.api.setup import router as setup_router
 from app.api.users_admin import router as users_admin_router
@@ -30,6 +31,7 @@ api_router.include_router(biometrics_router)
 api_router.include_router(blink_router)
 api_router.include_router(cameras_router)
 api_router.include_router(clips_router)
+api_router.include_router(livefeed_router)
 api_router.include_router(settings_router)
 api_router.include_router(vehicles_router)
 api_router.include_router(alerts_router)
