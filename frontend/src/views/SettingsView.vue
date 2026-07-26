@@ -21,10 +21,14 @@ import SettingsAiProviderPanel from "@/components/SettingsAiProviderPanel.vue";
 import SettingsAlertsPanel from "@/components/SettingsAlertsPanel.vue";
 import SettingsBiometricsPanel from "@/components/SettingsBiometricsPanel.vue";
 import SettingsCamerasPanel from "@/components/SettingsCamerasPanel.vue";
+import SettingsLiveViewPanel from "@/components/SettingsLiveViewPanel.vue";
+import SettingsSecurityFeedPanel from "@/components/SettingsSecurityFeedPanel.vue";
 import SettingsUsersPanel from "@/components/SettingsUsersPanel.vue";
 import SettingsVehiclesPanel from "@/components/SettingsVehiclesPanel.vue";
 import { useTheme } from "@/composables/useTheme";
 import { useAuthStore } from "@/stores/auth";
+
+import type { LandingPage } from "@/api";
 
 const MIN_PASSWORD_LENGTH = 12;
 
@@ -33,7 +37,16 @@ const toast = useToast();
 const route = useRoute();
 const { isDark, setDark } = useTheme();
 
-const ADMIN_TABS = ["users", "ai", "biometrics", "cameras", "vehicles", "alerts"];
+const ADMIN_TABS = [
+  "users",
+  "ai",
+  "biometrics",
+  "cameras",
+  "vehicles",
+  "alerts",
+  "live-view",
+  "security-feed",
+];
 const requestedTab = typeof route.query.tab === "string" ? route.query.tab : "general";
 const activeTab = ref(
   auth.isAdmin && ADMIN_TABS.includes(requestedTab) ? requestedTab : "general",
@@ -41,7 +54,13 @@ const activeTab = ref(
 
 const displayName = ref("");
 const timezone = ref("UTC");
+const defaultLandingPage = ref<LandingPage>("library");
 const savingProfile = ref(false);
+
+const landingPageOptions: { label: string; value: LandingPage }[] = [
+  { label: "Library", value: "library" },
+  { label: "Security Feed", value: "security_feed" },
+];
 
 const newPassword = ref("");
 const confirmPassword = ref("");
@@ -62,13 +81,18 @@ onMounted(() => {
   if (auth.user) {
     displayName.value = auth.user.display_name;
     timezone.value = auth.user.timezone;
+    defaultLandingPage.value = auth.user.default_landing_page;
   }
 });
 
 async function saveProfile(): Promise<void> {
   savingProfile.value = true;
   try {
-    auth.user = await updateMe({ display_name: displayName.value, timezone: timezone.value });
+    auth.user = await updateMe({
+      display_name: displayName.value,
+      timezone: timezone.value,
+      default_landing_page: defaultLandingPage.value,
+    });
     toast.add({ severity: "success", summary: "Profile saved", life: 2500 });
   } catch (caught) {
     toast.add({
@@ -189,6 +213,18 @@ async function saveStorageDir(): Promise<void> {
         >
           Alerts
         </Tab>
+        <Tab
+          v-if="auth.isAdmin"
+          value="live-view"
+        >
+          Live View
+        </Tab>
+        <Tab
+          v-if="auth.isAdmin"
+          value="security-feed"
+        >
+          Security Feed
+        </Tab>
       </TabList>
       <TabPanels>
         <TabPanel value="general">
@@ -217,6 +253,17 @@ async function saveStorageDir(): Promise<void> {
                     filter
                     fluid
                     data-testid="timezone"
+                  />
+                </label>
+                <label class="field">
+                  <span class="field-label">Default landing page</span>
+                  <Select
+                    v-model="defaultLandingPage"
+                    :options="landingPageOptions"
+                    option-label="label"
+                    option-value="value"
+                    fluid
+                    data-testid="default-landing-page"
                   />
                 </label>
                 <div class="panel-actions">
@@ -410,6 +457,20 @@ async function saveStorageDir(): Promise<void> {
           value="alerts"
         >
           <SettingsAlertsPanel />
+        </TabPanel>
+
+        <TabPanel
+          v-if="auth.isAdmin"
+          value="live-view"
+        >
+          <SettingsLiveViewPanel />
+        </TabPanel>
+
+        <TabPanel
+          v-if="auth.isAdmin"
+          value="security-feed"
+        >
+          <SettingsSecurityFeedPanel />
         </TabPanel>
       </TabPanels>
     </Tabs>

@@ -6,6 +6,7 @@ import type { components } from "./schema";
 
 export type UserRead = components["schemas"]["UserRead"];
 export type UserUpdate = components["schemas"]["UserUpdate"];
+export type LandingPage = components["schemas"]["LandingPage"];
 export type SetupRequest = components["schemas"]["SetupRequest"];
 export type SetupStatus = components["schemas"]["SetupStatus"];
 export type HealthReport = components["schemas"]["HealthReport"];
@@ -14,6 +15,11 @@ export type BlinkLinkResponse = components["schemas"]["BlinkLinkResponse"];
 export type BlinkStatusResponse = components["schemas"]["BlinkStatusResponse"];
 
 export type CameraRead = components["schemas"]["CameraRead"];
+
+export type LiveViewSettingsRead = components["schemas"]["LiveViewSettingsRead"];
+export type LiveViewSettingsUpdate = components["schemas"]["LiveViewSettingsUpdate"];
+export type SecurityFeedSettingsRead = components["schemas"]["SecurityFeedSettingsRead"];
+export type SecurityFeedSettingsUpdate = components["schemas"]["SecurityFeedSettingsUpdate"];
 
 export type ClipRead = components["schemas"]["ClipRead"];
 export type ClipListResponse = components["schemas"]["ClipListResponse"];
@@ -134,6 +140,42 @@ export function updateCamera(
   return api<CameraRead>(`/cameras/${id}`, {
     method: "PATCH",
     json: { enabled, security_context: securityContext },
+  });
+}
+
+/** Same-origin, cookie-authenticated - use directly as an <img src>.
+ * force=true wakes the camera for a fresh capture (admin-only server-side);
+ * omit it for a passive, free fetch of whatever Blink last captured. */
+export function cameraPreviewUrl(cameraId: string, options: { force?: boolean } = {}): string {
+  return options.force
+    ? `/api/cameras/${cameraId}/preview?force=true`
+    : `/api/cameras/${cameraId}/preview`;
+}
+
+export function recordCameraClip(cameraId: string): Promise<{ status: string }> {
+  return api<{ status: string }>(`/cameras/${cameraId}/record`, { method: "POST" });
+}
+
+export function getLiveViewSettings(): Promise<LiveViewSettingsRead> {
+  return api<LiveViewSettingsRead>("/livefeed/settings/live-view");
+}
+
+export function updateLiveViewSettings(
+  body: LiveViewSettingsUpdate,
+): Promise<LiveViewSettingsRead> {
+  return api<LiveViewSettingsRead>("/livefeed/settings/live-view", { method: "PUT", json: body });
+}
+
+export function getSecurityFeedSettings(): Promise<SecurityFeedSettingsRead> {
+  return api<SecurityFeedSettingsRead>("/livefeed/settings/security-feed");
+}
+
+export function updateSecurityFeedSettings(
+  body: SecurityFeedSettingsUpdate,
+): Promise<SecurityFeedSettingsRead> {
+  return api<SecurityFeedSettingsRead>("/livefeed/settings/security-feed", {
+    method: "PUT",
+    json: body,
   });
 }
 

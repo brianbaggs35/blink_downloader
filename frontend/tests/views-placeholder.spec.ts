@@ -1,14 +1,10 @@
 import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 
-import LiveView from "@/views/LiveView.vue";
 import StorageView from "@/views/StorageView.vue";
 import { makePinia, mountGlobal } from "./helpers";
 
-const cases = [
-  { component: LiveView, title: "Live View", icon: "pi-video" },
-  { component: StorageView, title: "Storage", icon: "pi-database" },
-] as const;
+const cases = [{ component: StorageView, title: "Storage", icon: "pi-database" }] as const;
 
 describe("placeholder views", () => {
   it.each(cases)("renders $title with its empty state", ({ component, title, icon }) => {

@@ -481,6 +481,40 @@ export interface paths {
         patch: operations["update_camera_api_cameras__camera_id__patch"];
         trace?: never;
     };
+    "/api/cameras/{camera_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Preview */
+        get: operations["get_preview_api_cameras__camera_id__preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cameras/{camera_id}/record": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record Clip */
+        post: operations["record_clip_api_cameras__camera_id__record_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/clips": {
         parameters: {
             query?: never;
@@ -664,6 +698,42 @@ export interface paths {
         put?: never;
         /** Bulk Download Clips */
         post: operations["bulk_download_clips_api_clips_bulk_download_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/livefeed/settings/live-view": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Live View Settings */
+        get: operations["read_live_view_settings_api_livefeed_settings_live_view_get"];
+        /** Write Live View Settings */
+        put: operations["write_live_view_settings_api_livefeed_settings_live_view_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/livefeed/settings/security-feed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Security Feed Settings */
+        get: operations["read_security_feed_settings_api_livefeed_settings_security_feed_get"];
+        /** Write Security Feed Settings */
+        put: operations["write_security_feed_settings_api_livefeed_settings_security_feed_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1546,6 +1616,35 @@ export interface components {
             worker: "ok" | "error" | "unknown";
         };
         /**
+         * LandingPage
+         * @enum {string}
+         */
+        LandingPage: "library" | "security_feed";
+        /** LiveViewSettingsRead */
+        LiveViewSettingsRead: {
+            /** Default Camera Id */
+            default_camera_id: string | null;
+            /** Auto Refresh Enabled */
+            auto_refresh_enabled: boolean;
+            /** Auto Refresh Interval Seconds */
+            auto_refresh_interval_seconds: number;
+        };
+        /** LiveViewSettingsUpdate */
+        LiveViewSettingsUpdate: {
+            /** Default Camera Id */
+            default_camera_id?: string | null;
+            /**
+             * Auto Refresh Enabled
+             * @default false
+             */
+            auto_refresh_enabled: boolean;
+            /**
+             * Auto Refresh Interval Seconds
+             * @default 10
+             */
+            auto_refresh_interval_seconds: number;
+        };
+        /**
          * ModelPack
          * @description insightface named model packs, smallest/fastest to largest/most
          *     accurate. Chosen in Settings based on available CPU/GPU headroom.
@@ -1629,6 +1728,30 @@ export interface components {
         ReportFalsePositiveRead: {
             /** Negative Sample Captured */
             negative_sample_captured: boolean;
+        };
+        /** SecurityFeedSettingsRead */
+        SecurityFeedSettingsRead: {
+            /** Camera Ids */
+            camera_ids: string[];
+            /** Columns */
+            columns: number;
+            /** Refresh Interval Seconds */
+            refresh_interval_seconds: number;
+        };
+        /** SecurityFeedSettingsUpdate */
+        SecurityFeedSettingsUpdate: {
+            /** Camera Ids */
+            camera_ids?: string[];
+            /**
+             * Columns
+             * @default 2
+             */
+            columns: number;
+            /**
+             * Refresh Interval Seconds
+             * @default 20
+             */
+            refresh_interval_seconds: number;
         };
         /**
          * SetupRequest
@@ -1736,6 +1859,7 @@ export interface components {
             display_name: string;
             /** Timezone */
             timezone: string;
+            default_landing_page: components["schemas"]["LandingPage"];
         };
         /** UserUpdate */
         UserUpdate: {
@@ -1753,6 +1877,7 @@ export interface components {
             display_name?: string | null;
             /** Timezone */
             timezone?: string | null;
+            default_landing_page?: components["schemas"]["LandingPage"] | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -2953,6 +3078,72 @@ export interface operations {
             };
         };
     };
+    get_preview_api_cameras__camera_id__preview_get: {
+        parameters: {
+            query?: {
+                force?: boolean;
+            };
+            header?: never;
+            path: {
+                camera_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_clip_api_cameras__camera_id__record_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                camera_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_clips_api_clips_get: {
         parameters: {
             query?: {
@@ -3360,6 +3551,112 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_live_view_settings_api_livefeed_settings_live_view_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveViewSettingsRead"];
+                };
+            };
+        };
+    };
+    write_live_view_settings_api_livefeed_settings_live_view_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LiveViewSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveViewSettingsRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_security_feed_settings_api_livefeed_settings_security_feed_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecurityFeedSettingsRead"];
+                };
+            };
+        };
+    };
+    write_security_feed_settings_api_livefeed_settings_security_feed_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecurityFeedSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecurityFeedSettingsRead"];
                 };
             };
             /** @description Validation Error */

@@ -56,6 +56,33 @@ describe("useFormatting", () => {
     });
   });
 
+  describe("formatRelativeTime", () => {
+    it("renders 'just now' for anything under 5 seconds old", () => {
+      const { formatRelativeTime } = withTimezone("UTC");
+      expect(formatRelativeTime(new Date(Date.now() - 2000))).toBe("just now");
+    });
+
+    it("renders whole seconds under a minute", () => {
+      const { formatRelativeTime } = withTimezone("UTC");
+      expect(formatRelativeTime(new Date(Date.now() - 30_000))).toBe("30s ago");
+    });
+
+    it("renders whole minutes under an hour", () => {
+      const { formatRelativeTime } = withTimezone("UTC");
+      expect(formatRelativeTime(new Date(Date.now() - 5 * 60_000))).toBe("5m ago");
+    });
+
+    it("renders whole hours beyond that", () => {
+      const { formatRelativeTime } = withTimezone("UTC");
+      expect(formatRelativeTime(new Date(Date.now() - 3 * 3_600_000))).toBe("3h ago");
+    });
+
+    it("never renders a negative age for a clock-skewed future timestamp", () => {
+      const { formatRelativeTime } = withTimezone("UTC");
+      expect(formatRelativeTime(new Date(Date.now() + 5000))).toBe("just now");
+    });
+  });
+
   describe("formatFileSize", () => {
     it("renders bytes under 1KB as-is", () => {
       const { formatFileSize } = withTimezone("UTC");

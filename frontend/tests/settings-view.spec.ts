@@ -61,6 +61,8 @@ const settingsTabStubs = {
   SettingsCamerasPanel: { template: '<div data-testid="stub-cameras" />' },
   SettingsVehiclesPanel: { template: '<div data-testid="stub-vehicles" />' },
   SettingsAlertsPanel: { template: '<div data-testid="stub-alerts" />' },
+  SettingsLiveViewPanel: { template: '<div data-testid="stub-live-view" />' },
+  SettingsSecurityFeedPanel: { template: '<div data-testid="stub-security-feed" />' },
 };
 
 function mountSettings(withUser = true) {
@@ -106,14 +108,16 @@ describe("SettingsView profile", () => {
     mockedUpdate.mockResolvedValue({ ...fakeUser, display_name: "Brian" });
     const wrapper = mountSettings();
     await wrapper.find('[data-testid="display-name"]').setValue("Brian");
-    const timezoneSelect = wrapper.findComponent(Select);
-    timezoneSelect.vm.$emit("update:modelValue", "Europe/London");
+    const selects = wrapper.findAllComponents(Select);
+    selects[0]!.vm.$emit("update:modelValue", "Europe/London");
+    selects[1]!.vm.$emit("update:modelValue", "security_feed");
     await flushPromises();
     await wrapper.find('[data-testid="save-profile"]').trigger("click");
     await flushPromises();
     expect(mockedUpdate).toHaveBeenCalledWith({
       display_name: "Brian",
       timezone: "Europe/London",
+      default_landing_page: "security_feed",
     });
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: "success" }));
   });
@@ -302,6 +306,8 @@ describe("SettingsView tabs", () => {
       "Cameras",
       "Vehicles",
       "Alerts",
+      "Live View",
+      "Security Feed",
     ]);
   });
 
@@ -333,6 +339,30 @@ describe("SettingsView tabs", () => {
     });
     await flushPromises();
     expect(wrapper.find('[data-testid="stub-cameras"]').exists()).toBe(true);
+  });
+
+  it("opens directly on the Live View tab", async () => {
+    const pinia = makePinia();
+    useAuthStore().user = { ...fakeUser, timezone: "UTC" };
+    const router = makeRouter();
+    await router.push({ path: "/settings", query: { tab: "live-view" } });
+    const wrapper = mount(SettingsView, {
+      global: { ...mountGlobal(pinia, router), stubs: settingsTabStubs },
+    });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="stub-live-view"]').exists()).toBe(true);
+  });
+
+  it("opens directly on the Security Feed tab", async () => {
+    const pinia = makePinia();
+    useAuthStore().user = { ...fakeUser, timezone: "UTC" };
+    const router = makeRouter();
+    await router.push({ path: "/settings", query: { tab: "security-feed" } });
+    const wrapper = mount(SettingsView, {
+      global: { ...mountGlobal(pinia, router), stubs: settingsTabStubs },
+    });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="stub-security-feed"]').exists()).toBe(true);
   });
 
   it("ignores an admin-only ?tab= query for a non-admin", async () => {
