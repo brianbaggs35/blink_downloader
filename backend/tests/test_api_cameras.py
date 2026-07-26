@@ -1,13 +1,26 @@
-"""GET /api/cameras, PATCH /api/cameras/{id}."""
+"""GET /api/cameras, PATCH /api/cameras/{id}, preview, record.
+
+BlinkPyService is faked (patched at the name imported into
+app.livefeed.service) for the preview/record endpoints, matching
+test_worker_download.py's convention.
+"""
+
+# pytest calls autouse fixtures implicitly; pyright can't see that usage.
+# pyright: reportUnusedFunction=false
 
 import uuid
+from pathlib import Path
+from typing import Any, ClassVar
 
+import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
 
 from app.blink.models import BlinkAccount, Camera
+from app.blink.service import BlinkAuthError, BlinkError
 from app.config import get_settings
 from app.security.crypto import SecretBox
+from app.settings.service import set_storage_dir
 
 
 async def _make_camera(app: FastAPI, name: str = "Front Door") -> Camera:
@@ -97,3 +110,149 @@ async def test_update_without_security_context_clears_it(
     response = await admin_client.patch(f"/api/cameras/{camera.id}", json={"enabled": True})
     assert response.status_code == 200
     assert response.json()["security_context"] is None
+
+
+# ------------------------------------------------------------------ preview
+
+
+class FakeBlinkService:
+    next_error: ClassVar[Exception | None] = None
+
+    def __init__(self, token_data: dict[str, Any]) -> None:
+        del token_data
+
+    async def get_camera_preview(self, camera_id: str) -> bytes:
+        del camera_id
+        if FakeBlinkService.next_error:
+            raise FakeBlinkService.next_error
+        return b"preview-bytes"
+
+    async def snap_camera_picture(self, camera_id: str) -> bytes:
+        del camera_id
+        if FakeBlinkService.next_error:
+            raise FakeBlinkService.next_error
+        return b"snapshot-bytes"
+
+    async def record_clip(self, camera_id: str) -> None:
+        del camera_id
+        if FakeBlinkService.next_error:
+            raise FakeBlinkService.next_error
+
+    async def close(self) -> None:
+        pass
+
+
+@pytest.fixture(autouse=True)
+def _reset_fake_blink_service(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakeBlinkService.next_error = None
+    monkeypatch.setattr("app.livefeed.service.BlinkPyService", FakeBlinkService)
+
+
+async def _use_storage(app: FastAPI, tmp_path: Path) -> None:
+    async with app.state.sessionmaker() as session:
+        await set_storage_dir(session, str(tmp_path))
+
+
+async def test_preview_requires_authentication(client: AsyncClient, app: FastAPI) -> None:
+    camera = await _make_camera(app)
+    response = await client.get(f"/api/cameras/{camera.id}/preview")
+    assert response.status_code == 401
+
+
+async def test_preview_unknown_camera_is_404(admin_client: AsyncClient) -> None:
+    response = await admin_client.get(f"/api/cameras/{uuid.uuid4()}/preview")
+    assert response.status_code == 404
+
+
+async def test_preview_passive_fetch_available_to_a_viewer(
+    viewer_client: AsyncClient, app: FastAPI, tmp_path: Path
+) -> None:
+    await _use_storage(app, tmp_path)
+    camera = await _make_camera(app)
+    response = await viewer_client.get(f"/api/cameras/{camera.id}/preview")
+    assert response.status_code == 200
+    assert response.content == b"preview-bytes"
+    assert response.headers["cache-control"] == "no-store"
+    assert "x-preview-updated-at" in {k.lower() for k in response.headers}
+
+
+async def test_preview_forced_snap_rejected_for_a_viewer(
+    viewer_client: AsyncClient, app: FastAPI, tmp_path: Path
+) -> None:
+    await _use_storage(app, tmp_path)
+    camera = await _make_camera(app)
+    response = await viewer_client.get(f"/api/cameras/{camera.id}/preview", params={"force": True})
+    assert response.status_code == 403
+
+
+async def test_preview_forced_snap_allowed_for_an_admin(
+    admin_client: AsyncClient, app: FastAPI, tmp_path: Path
+) -> None:
+    await _use_storage(app, tmp_path)
+    camera = await _make_camera(app)
+    response = await admin_client.get(f"/api/cameras/{camera.id}/preview", params={"force": True})
+    assert response.status_code == 200
+    assert response.content == b"snapshot-bytes"
+
+
+async def test_preview_maps_auth_errors_to_401(
+    admin_client: AsyncClient, app: FastAPI, tmp_path: Path
+) -> None:
+    await _use_storage(app, tmp_path)
+    camera = await _make_camera(app)
+    FakeBlinkService.next_error = BlinkAuthError("token expired")
+    response = await admin_client.get(f"/api/cameras/{camera.id}/preview")
+    assert response.status_code == 401
+
+
+async def test_preview_maps_generic_blink_errors_to_502(
+    admin_client: AsyncClient, app: FastAPI, tmp_path: Path
+) -> None:
+    await _use_storage(app, tmp_path)
+    camera = await _make_camera(app)
+    FakeBlinkService.next_error = BlinkError("camera offline")
+    response = await admin_client.get(f"/api/cameras/{camera.id}/preview")
+    assert response.status_code == 502
+
+
+# ------------------------------------------------------------------- record
+
+
+async def test_record_requires_authentication(client: AsyncClient, app: FastAPI) -> None:
+    camera = await _make_camera(app)
+    response = await client.post(f"/api/cameras/{camera.id}/record")
+    assert response.status_code == 401
+
+
+async def test_record_requires_superuser(viewer_client: AsyncClient, app: FastAPI) -> None:
+    camera = await _make_camera(app)
+    response = await viewer_client.post(f"/api/cameras/{camera.id}/record")
+    assert response.status_code == 403
+
+
+async def test_record_unknown_camera_is_404(admin_client: AsyncClient) -> None:
+    response = await admin_client.post(f"/api/cameras/{uuid.uuid4()}/record")
+    assert response.status_code == 404
+
+
+async def test_record_succeeds(admin_client: AsyncClient, app: FastAPI) -> None:
+    camera = await _make_camera(app)
+    response = await admin_client.post(f"/api/cameras/{camera.id}/record")
+    assert response.status_code == 202
+    assert response.json() == {"status": "recording_started"}
+
+
+async def test_record_maps_auth_errors_to_401(admin_client: AsyncClient, app: FastAPI) -> None:
+    camera = await _make_camera(app)
+    FakeBlinkService.next_error = BlinkAuthError("token expired")
+    response = await admin_client.post(f"/api/cameras/{camera.id}/record")
+    assert response.status_code == 401
+
+
+async def test_record_maps_generic_blink_errors_to_502(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    camera = await _make_camera(app)
+    FakeBlinkService.next_error = BlinkError("camera offline")
+    response = await admin_client.post(f"/api/cameras/{camera.id}/record")
+    assert response.status_code == 502

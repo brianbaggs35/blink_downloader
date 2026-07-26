@@ -23,6 +23,7 @@ from app.blink.service import (
     BlinkError,
     BlinkMediaItem,
     BlinkPyService,
+    CameraNotFoundError,
     get_blink_service,
 )
 
@@ -46,6 +47,31 @@ class FakeSession:
 class FakeCamera:
     def __init__(self, attrs: dict[str, Any]) -> None:
         self.attributes = attrs
+        self.camera_id = attrs.get("camera_id")
+        self.thumbnail_response: Any = None
+        self.thumbnail_error: Exception | None = None
+        self.snap_error: Exception | None = None
+        self.record_error: Exception | None = None
+        self.recorded = False
+        self.cached_image: bytes | None = None
+
+    async def get_thumbnail(self) -> Any:
+        if self.thumbnail_error:
+            raise self.thumbnail_error
+        return self.thumbnail_response
+
+    async def snap_picture(self) -> None:
+        if self.snap_error:
+            raise self.snap_error
+
+    @property
+    def image_from_cache(self) -> bytes | None:
+        return self.cached_image
+
+    async def record(self) -> None:
+        if self.record_error:
+            raise self.record_error
+        self.recorded = True
 
 
 class FakeAuth:
@@ -245,6 +271,95 @@ async def test_startup_auth_failures_map_to_blink_auth_error(
     auth.startup_error = exc_cls("boom")
     with pytest.raises(BlinkAuthError):
         await service.get_cameras()
+
+
+# ------------------------------------------------- preview / snapshot / record
+
+
+def _put_camera(blink: FakeBlink, camera_id: str = "1", name: str = "front door") -> FakeCamera:
+    camera = FakeCamera({"camera_id": camera_id, "network_id": "10", "name": name})
+    blink.cameras = {name: camera}
+    return camera
+
+
+async def test_find_camera_raises_when_unknown() -> None:
+    service, _auth, blink = _make_service()
+    blink.cameras = {}
+    with pytest.raises(CameraNotFoundError):
+        await service.get_camera_preview("does-not-exist")
+
+
+async def test_find_camera_looks_past_a_non_matching_camera() -> None:
+    service, _auth, blink = _make_service()
+    other = FakeCamera({"camera_id": "1", "network_id": "10", "name": "Other"})
+    target = FakeCamera({"camera_id": "2", "network_id": "10", "name": "Target"})
+    target.thumbnail_response = AsyncMock()
+    target.thumbnail_response.read = AsyncMock(return_value=b"target-bytes")
+    blink.cameras = {"other": other, "target": target}
+
+    data = await service.get_camera_preview("2")
+    assert data == b"target-bytes"
+
+
+async def test_get_camera_preview_returns_thumbnail_bytes() -> None:
+    service, _auth, blink = _make_service()
+    camera = _put_camera(blink)
+    response = AsyncMock()
+    response.read = AsyncMock(return_value=b"thumbnail-bytes")
+    camera.thumbnail_response = response
+
+    data = await service.get_camera_preview("1")
+    assert data == b"thumbnail-bytes"
+
+
+async def test_get_camera_preview_raises_without_a_thumbnail() -> None:
+    service, _auth, blink = _make_service()
+    _put_camera(blink).thumbnail_response = None
+    with pytest.raises(BlinkError):
+        await service.get_camera_preview("1")
+
+
+async def test_get_camera_preview_maps_auth_errors() -> None:
+    service, _auth, blink = _make_service()
+    _put_camera(blink).thumbnail_error = _client_response_error(401)
+    with pytest.raises(BlinkAuthError):
+        await service.get_camera_preview("1")
+
+
+async def test_snap_camera_picture_returns_the_freshly_cached_image() -> None:
+    service, _auth, blink = _make_service()
+    camera = _put_camera(blink)
+    camera.cached_image = b"fresh-snapshot"
+    data = await service.snap_camera_picture("1")
+    assert data == b"fresh-snapshot"
+
+
+async def test_snap_camera_picture_raises_without_an_image() -> None:
+    service, _auth, blink = _make_service()
+    _put_camera(blink)
+    with pytest.raises(BlinkError):
+        await service.snap_camera_picture("1")
+
+
+async def test_snap_camera_picture_maps_auth_errors() -> None:
+    service, _auth, blink = _make_service()
+    _put_camera(blink).snap_error = _client_response_error(401)
+    with pytest.raises(BlinkAuthError):
+        await service.snap_camera_picture("1")
+
+
+async def test_record_clip_calls_the_camera() -> None:
+    service, _auth, blink = _make_service()
+    camera = _put_camera(blink)
+    await service.record_clip("1")
+    assert camera.recorded is True
+
+
+async def test_record_clip_maps_auth_errors() -> None:
+    service, _auth, blink = _make_service()
+    _put_camera(blink).record_error = _client_response_error(401)
+    with pytest.raises(BlinkAuthError):
+        await service.record_clip("1")
 
 
 async def test_homescreen_failure_maps_to_blink_auth_error() -> None:
