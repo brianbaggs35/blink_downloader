@@ -28,6 +28,9 @@ export type BulkActionResponse = components["schemas"]["BulkActionResponse"];
 export type StorageSettingsRead = components["schemas"]["StorageSettingsRead"];
 export type StorageSettingsUpdate = components["schemas"]["StorageSettingsUpdate"];
 
+export type BlinkSyncSettingsRead = components["schemas"]["BlinkSyncSettingsRead"];
+export type BlinkSyncSettingsUpdate = components["schemas"]["BlinkSyncSettingsUpdate"];
+
 export type AIProviderKind = components["schemas"]["AIProviderKind"];
 export type AISettingsRead = components["schemas"]["AISettingsRead"];
 export type AISettingsUpdate = components["schemas"]["AISettingsUpdate"];
@@ -295,6 +298,16 @@ export function updateStorageSettings(
   body: StorageSettingsUpdate,
 ): Promise<StorageSettingsRead> {
   return api<StorageSettingsRead>("/settings/storage", { method: "PATCH", json: body });
+}
+
+export function getBlinkSyncSettings(): Promise<BlinkSyncSettingsRead> {
+  return api<BlinkSyncSettingsRead>("/settings/blink-sync");
+}
+
+export function updateBlinkSyncSettings(
+  body: BlinkSyncSettingsUpdate,
+): Promise<BlinkSyncSettingsRead> {
+  return api<BlinkSyncSettingsRead>("/settings/blink-sync", { method: "PUT", json: body });
 }
 
 export function getAiSettings(): Promise<AISettingsRead> {

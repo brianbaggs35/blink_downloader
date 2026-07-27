@@ -1,4 +1,5 @@
 import { flushPromises, mount } from "@vue/test-utils";
+import InputNumber from "primevue/inputnumber";
 import Select from "primevue/select";
 import Tab from "primevue/tab";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,6 +15,8 @@ vi.mock("@/api", async (importOriginal) => ({
   getBlinkStatus: vi.fn(),
   getStorageSettings: vi.fn(),
   updateStorageSettings: vi.fn(),
+  getBlinkSyncSettings: vi.fn(),
+  updateBlinkSyncSettings: vi.fn(),
 }));
 
 const toastAdd = vi.fn();
@@ -21,12 +24,21 @@ vi.mock("primevue/usetoast", () => ({
   useToast: () => ({ add: toastAdd }),
 }));
 
-import { getBlinkStatus, getStorageSettings, updateMe, updateStorageSettings } from "@/api";
+import {
+  getBlinkStatus,
+  getBlinkSyncSettings,
+  getStorageSettings,
+  updateBlinkSyncSettings,
+  updateMe,
+  updateStorageSettings,
+} from "@/api";
 
 const mockedUpdate = vi.mocked(updateMe);
 const mockedBlinkStatus = vi.mocked(getBlinkStatus);
 const mockedGetStorage = vi.mocked(getStorageSettings);
 const mockedUpdateStorage = vi.mocked(updateStorageSettings);
+const mockedGetBlinkSync = vi.mocked(getBlinkSyncSettings);
+const mockedUpdateBlinkSync = vi.mocked(updateBlinkSyncSettings);
 
 const unlinkedBlinkStatus = {
   linked: false,
@@ -40,6 +52,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockedBlinkStatus.mockResolvedValue(unlinkedBlinkStatus);
   mockedGetStorage.mockResolvedValue({ storage_dir: "/data/clips", is_default: true });
+  mockedGetBlinkSync.mockResolvedValue({
+    sync_interval_seconds: 60,
+    initial_sync_days: 3,
+    auto_analyze_limit: 5,
+    is_default: true,
+  });
 });
 
 // PrimeVue's TabList schedules a setTimeout(…, 150) on mount to measure and
@@ -280,6 +298,88 @@ describe("SettingsView storage", () => {
     await wrapper.find('[data-testid="save-storage"]').trigger("click");
     await flushPromises();
     expect(wrapper.find('[data-testid="storage-error"]').text()).toBe("Unexpected error.");
+  });
+});
+
+describe("SettingsView blink sync", () => {
+  it("is hidden for a non-superuser", async () => {
+    const pinia = makePinia();
+    useAuthStore().user = { ...fakeUser, is_superuser: false, timezone: "UTC" };
+    const wrapper = mount(SettingsView, { global: mountGlobal(pinia, makeRouter()) });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="blink-sync-interval"]').exists()).toBe(false);
+    expect(mockedGetBlinkSync).not.toHaveBeenCalled();
+  });
+
+  it("loads and displays the current values for a superuser", async () => {
+    mockedGetBlinkSync.mockResolvedValue({
+      sync_interval_seconds: 120,
+      initial_sync_days: 7,
+      auto_analyze_limit: 10,
+      is_default: false,
+    });
+    const wrapper = mountSettings();
+    await flushPromises();
+    const numbers = wrapper.findAllComponents(InputNumber);
+    expect(numbers[0]!.props("modelValue")).toBe(120);
+    expect(numbers[1]!.props("modelValue")).toBe(7);
+    expect(numbers[2]!.props("modelValue")).toBe(10);
+    expect(wrapper.text()).toContain("Custom values.");
+  });
+
+  it("leaves the fields at their defaults when loading fails", async () => {
+    mockedGetBlinkSync.mockRejectedValue(new TypeError("network down"));
+    const wrapper = mountSettings();
+    await flushPromises();
+    const numbers = wrapper.findAllComponents(InputNumber);
+    expect(numbers[0]!.props("modelValue")).toBe(60);
+    expect(numbers[1]!.props("modelValue")).toBe(3);
+    expect(numbers[2]!.props("modelValue")).toBe(5);
+  });
+
+  it("saves the tuning values and toasts success", async () => {
+    mockedUpdateBlinkSync.mockResolvedValue({
+      sync_interval_seconds: 90,
+      initial_sync_days: 5,
+      auto_analyze_limit: 8,
+      is_default: false,
+    });
+    const wrapper = mountSettings();
+    await flushPromises();
+    const numbers = wrapper.findAllComponents(InputNumber);
+    await numbers[0]!.vm.$emit("update:modelValue", 90);
+    await numbers[1]!.vm.$emit("update:modelValue", 5);
+    await numbers[2]!.vm.$emit("update:modelValue", 8);
+    await flushPromises();
+    await wrapper.find('[data-testid="save-blink-sync"]').trigger("click");
+    await flushPromises();
+
+    expect(mockedUpdateBlinkSync).toHaveBeenCalledWith({
+      sync_interval_seconds: 90,
+      initial_sync_days: 5,
+      auto_analyze_limit: 8,
+    });
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: "Blink sync settings saved" }),
+    );
+  });
+
+  it("shows an inline error with the API message when saving fails", async () => {
+    mockedUpdateBlinkSync.mockRejectedValue(new ApiError(400, "Value out of range."));
+    const wrapper = mountSettings();
+    await flushPromises();
+    await wrapper.find('[data-testid="save-blink-sync"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="blink-sync-error"]').text()).toBe("Value out of range.");
+  });
+
+  it("falls back to a generic inline error when saving fails with a non-API error", async () => {
+    mockedUpdateBlinkSync.mockRejectedValue(new TypeError("down"));
+    const wrapper = mountSettings();
+    await flushPromises();
+    await wrapper.find('[data-testid="save-blink-sync"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="blink-sync-error"]').text()).toBe("Unexpected error.");
   });
 });
 

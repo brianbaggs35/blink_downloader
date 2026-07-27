@@ -5,6 +5,7 @@ import {
   deleteClip,
   downloadClipsAsZip,
   getBlinkStatus,
+  getBlinkSyncSettings,
   getClip,
   getStorageSettings,
   linkBlinkAccount,
@@ -12,6 +13,7 @@ import {
   listClips,
   triggerBlinkSync,
   unlinkBlinkAccount,
+  updateBlinkSyncSettings,
   updateCamera,
   updateStorageSettings,
   verifyBlinkAccount,
@@ -237,5 +239,41 @@ describe("settings endpoints", () => {
     const init = mock.mock.calls[0]?.[1] as RequestInit;
     expect(init.method).toBe("PATCH");
     expect(JSON.parse(init.body as string)).toEqual({ storage_dir: "/mnt/clips" });
+  });
+
+  it("getBlinkSyncSettings GETs /settings/blink-sync", async () => {
+    const mock = capture(
+      jsonResponse({
+        sync_interval_seconds: 60,
+        initial_sync_days: 3,
+        auto_analyze_limit: 5,
+        is_default: true,
+      }),
+    );
+    await getBlinkSyncSettings();
+    expect(mock.mock.calls[0]?.[0]).toBe("/api/settings/blink-sync");
+  });
+
+  it("updateBlinkSyncSettings PUTs the new values", async () => {
+    const mock = capture(
+      jsonResponse({
+        sync_interval_seconds: 90,
+        initial_sync_days: 5,
+        auto_analyze_limit: 8,
+        is_default: false,
+      }),
+    );
+    await updateBlinkSyncSettings({
+      sync_interval_seconds: 90,
+      initial_sync_days: 5,
+      auto_analyze_limit: 8,
+    });
+    const init = mock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body as string)).toEqual({
+      sync_interval_seconds: 90,
+      initial_sync_days: 5,
+      auto_analyze_limit: 8,
+    });
   });
 });

@@ -758,6 +758,24 @@ export interface paths {
         patch: operations["update_storage_settings_api_settings_storage_patch"];
         trace?: never;
     };
+    "/api/settings/blink-sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Blink Sync Settings */
+        get: operations["get_blink_sync_settings_api_settings_blink_sync_get"];
+        /** Update Blink Sync Settings */
+        put: operations["update_blink_sync_settings_api_settings_blink_sync_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings/ai": {
         parameters: {
             query?: never;
@@ -1347,6 +1365,26 @@ export interface components {
              * @default 0
              */
             camera_count: number;
+        };
+        /** BlinkSyncSettingsRead */
+        BlinkSyncSettingsRead: {
+            /** Sync Interval Seconds */
+            sync_interval_seconds: number;
+            /** Initial Sync Days */
+            initial_sync_days: number;
+            /** Auto Analyze Limit */
+            auto_analyze_limit: number;
+            /** Is Default */
+            is_default: boolean;
+        };
+        /** BlinkSyncSettingsUpdate */
+        BlinkSyncSettingsUpdate: {
+            /** Sync Interval Seconds */
+            sync_interval_seconds?: number | null;
+            /** Initial Sync Days */
+            initial_sync_days?: number | null;
+            /** Auto Analyze Limit */
+            auto_analyze_limit?: number | null;
         };
         /** BlinkVerifyRequest */
         BlinkVerifyRequest: {
@@ -3710,6 +3748,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StorageSettingsRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_blink_sync_settings_api_settings_blink_sync_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlinkSyncSettingsRead"];
+                };
+            };
+        };
+    };
+    update_blink_sync_settings_api_settings_blink_sync_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BlinkSyncSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlinkSyncSettingsRead"];
                 };
             };
             /** @description Validation Error */
