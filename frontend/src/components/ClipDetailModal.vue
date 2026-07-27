@@ -207,242 +207,250 @@ async function onMissedFaceEnrolled(): Promise<void> {
   <Dialog
     v-model:visible="visible"
     modal
+    maximizable
     :header="cameraName"
-    :style="{ width: '52rem', maxWidth: '96vw' }"
-    :breakpoints="{ '768px': '96vw' }"
+    :style="{ width: '78rem', maxWidth: '96vw' }"
+    :breakpoints="{ '1100px': '92vw', '768px': '100vw' }"
+    class="clip-modal"
     data-testid="clip-modal"
   >
     <template v-if="clip">
-      <VideoPlayer
-        v-if="clip.downloaded_at"
-        :key="clip.id"
-        :src="clipStreamUrl(clip.id)"
-        :poster="clip.thumbnail_generated ? clipThumbnailUrl(clip.id) : undefined"
-        class="player"
-      />
-      <p
-        v-else
-        class="muted"
-      >
-        This clip hasn't finished downloading yet.
-      </p>
-
-      <dl class="meta-grid">
-        <div>
-          <dt>Recorded</dt>
-          <dd>{{ formatDateTime(clip.recorded_at) }}</dd>
-        </div>
-        <div>
-          <dt>Duration</dt>
-          <dd>{{ formatDuration(clip.duration_seconds) }}</dd>
-        </div>
-        <div>
-          <dt>File size</dt>
-          <dd>{{ formatFileSize(clip.file_size_bytes) }}</dd>
-        </div>
-      </dl>
-
-      <div class="ai-section">
-        <div class="ai-header">
-          <p class="ai-label">
-            <i
-              class="pi pi-sparkles"
-              aria-hidden="true"
-            /> AI summary
-          </p>
-          <div
-            v-if="canManage && clip.downloaded_at"
-            class="ai-header-actions"
+      <div class="modal-layout">
+        <div class="modal-main">
+          <VideoPlayer
+            v-if="clip.downloaded_at"
+            :key="clip.id"
+            :src="clipStreamUrl(clip.id)"
+            :poster="clip.thumbnail_generated ? clipThumbnailUrl(clip.id) : undefined"
+            class="player"
+          />
+          <p
+            v-else
+            class="muted"
           >
-            <Button
-              label="Report a missed face"
-              icon="pi pi-user-plus"
-              text
-              size="small"
-              severity="secondary"
-              data-testid="report-missed-face"
-              @click="openMissedFaceDialog"
-            />
-            <Button
-              :label="analysis ? 'Re-analyze' : 'Analyze now'"
-              text
-              size="small"
-              :loading="reanalyzing"
-              data-testid="reanalyze"
-              @click="triggerReanalyze"
-            />
-          </div>
-        </div>
-
-        <div
-          v-if="analysisLoading"
-          data-testid="analysis-loading"
-        >
-          <Skeleton height="52px" />
-        </div>
-
-        <Message
-          v-else-if="analysisError"
-          severity="error"
-          :closable="false"
-          data-testid="analysis-error"
-        >
-          {{ analysisError }}
-        </Message>
-
-        <p
-          v-else-if="notAnalyzed"
-          class="muted"
-          data-testid="analysis-not-yet"
-        >
-          This clip hasn't been analyzed yet.
-        </p>
-
-        <div
-          v-else-if="analysis"
-          class="analysis-body"
-          data-testid="analysis-body"
-        >
-          <div class="analysis-top">
-            <Tag
-              :value="analysis.suspicion_label"
-              :severity="LABEL_SEVERITY[analysis.suspicion_label]"
-              class="label-tag"
-            />
-            <span class="score">{{ Math.round(analysis.suspicion_score * 100) }}% suspicion</span>
-            <Tag
-              v-if="analysis.escalated"
-              value="Escalated to Tier 2"
-              severity="info"
-            />
-          </div>
-
-          <p class="summary-text">
-            {{ analysis.summary }}
+            This clip hasn't finished downloading yet.
           </p>
 
           <div
-            v-if="analysis.detected_entities.length > 0"
-            class="entities"
+            v-if="canManage"
+            class="actions"
           >
-            <span
-              v-for="(entity, index) in analysis.detected_entities"
-              :key="index"
-              class="entity-tag"
-              :class="{ recognized: entity.recognized_person_id }"
-              :data-testid="entity.recognized_person_id ? 'recognized-entity-tag' : undefined"
+            <a
+              v-if="clip.downloaded_at"
+              :href="clipDownloadUrl(clip.id)"
+              class="p-button p-button-secondary p-button-outlined"
+              data-testid="modal-download"
             >
               <i
-                v-if="entity.recognized_person_id"
-                class="pi pi-verified"
+                class="pi pi-download"
                 aria-hidden="true"
+                style="margin-right: 6px"
               />
-              {{ entity.label }} ({{ Math.round(entity.confidence * 100) }}%)
-              <button
-                v-if="entity.recognized_person_id && canManage"
-                type="button"
-                class="report-mismatch"
-                :disabled="reportingPersonId === entity.recognized_person_id"
-                :data-testid="`report-false-positive-${entity.recognized_person_id}`"
-                :aria-label="`Report that ${entity.label} was recognized by mistake`"
-                @click="
-                  entity.recognized_person_id &&
-                    confirmReportFalsePositive(entity.recognized_person_id, entity.label)
-                "
+              Download
+            </a>
+            <Button
+              label="Delete"
+              icon="pi pi-trash"
+              severity="danger"
+              text
+              data-testid="modal-delete"
+              @click="emit('delete')"
+            />
+          </div>
+        </div>
+
+        <div class="modal-sidebar">
+          <dl class="meta-grid">
+            <div>
+              <dt>Recorded</dt>
+              <dd>{{ formatDateTime(clip.recorded_at) }}</dd>
+            </div>
+            <div>
+              <dt>Duration</dt>
+              <dd>{{ formatDuration(clip.duration_seconds) }}</dd>
+            </div>
+            <div>
+              <dt>File size</dt>
+              <dd>{{ formatFileSize(clip.file_size_bytes) }}</dd>
+            </div>
+          </dl>
+
+          <div class="ai-section">
+            <div class="ai-header">
+              <p class="ai-label">
+                <i
+                  class="pi pi-sparkles"
+                  aria-hidden="true"
+                /> AI summary
+              </p>
+              <div
+                v-if="canManage && clip.downloaded_at"
+                class="ai-header-actions"
+              >
+                <Button
+                  label="Report a missed face"
+                  icon="pi pi-user-plus"
+                  text
+                  size="small"
+                  severity="secondary"
+                  data-testid="report-missed-face"
+                  @click="openMissedFaceDialog"
+                />
+                <Button
+                  :label="analysis ? 'Re-analyze' : 'Analyze now'"
+                  text
+                  size="small"
+                  :loading="reanalyzing"
+                  data-testid="reanalyze"
+                  @click="triggerReanalyze"
+                />
+              </div>
+            </div>
+
+            <div
+              v-if="analysisLoading"
+              data-testid="analysis-loading"
+            >
+              <Skeleton height="52px" />
+            </div>
+
+            <Message
+              v-else-if="analysisError"
+              severity="error"
+              :closable="false"
+              data-testid="analysis-error"
+            >
+              {{ analysisError }}
+            </Message>
+
+            <p
+              v-else-if="notAnalyzed"
+              class="muted"
+              data-testid="analysis-not-yet"
+            >
+              This clip hasn't been analyzed yet.
+            </p>
+
+            <div
+              v-else-if="analysis"
+              class="analysis-body"
+              data-testid="analysis-body"
+            >
+              <div class="analysis-top">
+                <Tag
+                  :value="analysis.suspicion_label"
+                  :severity="LABEL_SEVERITY[analysis.suspicion_label]"
+                  class="label-tag"
+                />
+                <span class="score">{{ Math.round(analysis.suspicion_score * 100) }}% suspicion</span>
+                <Tag
+                  v-if="analysis.escalated"
+                  value="Escalated to Tier 2"
+                  severity="info"
+                />
+              </div>
+
+              <p class="summary-text">
+                {{ analysis.summary }}
+              </p>
+
+              <div
+                v-if="analysis.detected_entities.length > 0"
+                class="entities"
+              >
+                <span
+                  v-for="(entity, index) in analysis.detected_entities"
+                  :key="index"
+                  class="entity-tag"
+                  :class="{ recognized: entity.recognized_person_id }"
+                  :data-testid="entity.recognized_person_id ? 'recognized-entity-tag' : undefined"
+                >
+                  <i
+                    v-if="entity.recognized_person_id"
+                    class="pi pi-verified"
+                    aria-hidden="true"
+                  />
+                  {{ entity.label }} ({{ Math.round(entity.confidence * 100) }}%)
+                  <button
+                    v-if="entity.recognized_person_id && canManage"
+                    type="button"
+                    class="report-mismatch"
+                    :disabled="reportingPersonId === entity.recognized_person_id"
+                    :data-testid="`report-false-positive-${entity.recognized_person_id}`"
+                    :aria-label="`Report that ${entity.label} was recognized by mistake`"
+                    @click="
+                      entity.recognized_person_id &&
+                        confirmReportFalsePositive(entity.recognized_person_id, entity.label)
+                    "
+                  >
+                    <i
+                      class="pi pi-times-circle"
+                      aria-hidden="true"
+                    />
+                  </button>
+                </span>
+              </div>
+
+              <p
+                v-if="proximity"
+                class="proximity"
+                :class="{ breach: proximity.breached }"
+                data-testid="proximity-note"
               >
                 <i
-                  class="pi pi-times-circle"
+                  class="pi pi-car"
                   aria-hidden="true"
                 />
-              </button>
-            </span>
-          </div>
+                ~{{ proximity.distanceFeet.toFixed(1) }} ft (±{{ proximity.errorMarginFeet.toFixed(1) }} ft)
+                from the vehicle
+              </p>
 
-          <p
-            v-if="proximity"
-            class="proximity"
-            :class="{ breach: proximity.breached }"
-            data-testid="proximity-note"
-          >
-            <i
-              class="pi pi-car"
-              aria-hidden="true"
-            />
-            ~{{ proximity.distanceFeet.toFixed(1) }} ft (±{{ proximity.errorMarginFeet.toFixed(1) }} ft) from
-            the vehicle
-          </p>
-
-          <div class="feedback-row">
-            <span
-              v-if="feedbackGiven"
-              class="feedback-thanks"
-              data-testid="feedback-thanks"
-            >
-              <i
-                class="pi pi-check"
-                aria-hidden="true"
-              /> Thanks for the feedback
-            </span>
-            <template v-else>
-              <span class="feedback-prompt">Was this right?</span>
-              <Button
-                label="Correct"
-                size="small"
-                text
-                :loading="submittingFeedback"
-                data-testid="feedback-correct"
-                @click="giveFeedback('correct')"
-              />
-              <Button
-                v-if="analysis.suspicion_label === 'routine'"
-                label="Actually suspicious"
-                size="small"
-                text
-                severity="secondary"
-                :loading="submittingFeedback"
-                data-testid="feedback-false-negative"
-                @click="giveFeedback('false_negative')"
-              />
-              <Button
-                v-else
-                label="Not suspicious"
-                size="small"
-                text
-                severity="secondary"
-                :loading="submittingFeedback"
-                data-testid="feedback-false-positive"
-                @click="giveFeedback('false_positive')"
-              />
-            </template>
+              <div class="feedback-row">
+                <span
+                  v-if="feedbackGiven"
+                  class="feedback-thanks"
+                  data-testid="feedback-thanks"
+                >
+                  <i
+                    class="pi pi-check"
+                    aria-hidden="true"
+                  /> Thanks for the feedback
+                </span>
+                <template v-else>
+                  <span class="feedback-prompt">Was this right?</span>
+                  <Button
+                    label="Correct"
+                    size="small"
+                    text
+                    :loading="submittingFeedback"
+                    data-testid="feedback-correct"
+                    @click="giveFeedback('correct')"
+                  />
+                  <Button
+                    v-if="analysis.suspicion_label === 'routine'"
+                    label="Actually suspicious"
+                    size="small"
+                    text
+                    severity="secondary"
+                    :loading="submittingFeedback"
+                    data-testid="feedback-false-negative"
+                    @click="giveFeedback('false_negative')"
+                  />
+                  <Button
+                    v-else
+                    label="Not suspicious"
+                    size="small"
+                    text
+                    severity="secondary"
+                    :loading="submittingFeedback"
+                    data-testid="feedback-false-positive"
+                    @click="giveFeedback('false_positive')"
+                  />
+                </template>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-
-      <div
-        v-if="canManage"
-        class="actions"
-      >
-        <a
-          v-if="clip.downloaded_at"
-          :href="clipDownloadUrl(clip.id)"
-          class="p-button p-button-secondary p-button-outlined"
-          data-testid="modal-download"
-        >
-          <i
-            class="pi pi-download"
-            aria-hidden="true"
-            style="margin-right: 6px"
-          />
-          Download
-        </a>
-        <Button
-          label="Delete"
-          icon="pi pi-trash"
-          severity="danger"
-          text
-          data-testid="modal-delete"
-          @click="emit('delete')"
-        />
       </div>
     </template>
   </Dialog>
@@ -456,8 +464,36 @@ async function onMissedFaceEnrolled(): Promise<void> {
 </template>
 
 <style scoped>
+.modal-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 24px;
+  align-items: start;
+}
+
+.modal-main {
+  min-width: 0;
+}
+
+.modal-sidebar {
+  max-height: 75vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+@media (max-width: 900px) {
+  .modal-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .modal-sidebar {
+    max-height: none;
+    overflow-y: visible;
+  }
+}
+
 .player {
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .meta-grid {
