@@ -55,6 +55,13 @@ class Person(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     thumbnail_path: Mapped[str | None] = mapped_column(Text)
+    # A trusted household member (or frequent, known-safe visitor) never
+    # trips the suspicious label/alert/event just for being recognized - see
+    # app.ai.pipeline._has_bypass_person. Doesn't affect detection/logging,
+    # only the final suspicion_label a clip is persisted with.
+    never_mark_suspicious: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

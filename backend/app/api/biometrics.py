@@ -40,9 +40,9 @@ from app.biometrics.service import (
     get_biometrics_settings,
     get_person,
     list_people,
-    rename_person,
     report_false_positive,
     update_biometrics_settings,
+    update_person,
     verify_model,
 )
 from app.blink.models import Clip
@@ -63,6 +63,7 @@ def _person_read(person: Person) -> PersonRead:
     return PersonRead(
         id=person.id,
         name=person.name,
+        never_mark_suspicious=person.never_mark_suspicious,
         has_thumbnail=bool(person.thumbnail_path and Path(person.thumbnail_path).exists()),
         face_count=len(person.face_embeddings),
         created_at=person.created_at,
@@ -182,7 +183,7 @@ async def update_person_route(
     _user: Annotated[object, Depends(current_superuser)],
 ) -> PersonRead:
     person = await _get_person_or_404(session, person_id)
-    person = await rename_person(session, person, payload.name)
+    person = await update_person(session, person, payload)
     return _person_read(person)
 
 

@@ -834,6 +834,61 @@ async def test_recognized_person_upgrades_matching_entity_label(
     assert recognized[0].confidence == pytest.approx(1.0)
 
 
+async def test_bypass_flagged_person_forces_the_label_to_routine(
+    app_session: AsyncSession, sample_clip_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    camera, clip = await _make_camera_and_clip(app_session, sample_clip_path)
+    trusted = await _enroll_test_person(app_session, "Trusted Neighbor", 0)
+    trusted.never_mark_suspicious = True
+    await app_session.commit()
+
+    ScriptedProvider.queued = [make_result(suspicion=0.95)]
+    face = DetectedFace(bbox=(0.1, 0.1, 0.2, 0.3), confidence=0.95, embedding=_embedding(0))
+    monkeypatch.setattr("app.ai.pipeline.detect_faces", _fake_detect_faces([face]))
+
+    analysis = await run_analysis(
+        app_session,
+        clip,
+        camera,
+        make_settings(tier2_enabled=False),
+        get_settings().encryption_key,
+        biometrics_settings=make_biometrics_settings(),
+        biometrics_model_cache_dir=BIOMETRICS_CACHE_DIR,
+    )
+
+    # The raw score is left untouched (an honest record of what the model
+    # actually saw) - only the label, and anything gated on it, is bypassed.
+    assert analysis.suspicion_score == pytest.approx(0.95)
+    assert analysis.suspicion_label == "routine"
+    events = (
+        (await app_session.execute(select(Event).where(Event.clip_id == clip.id))).scalars().all()
+    )
+    assert all(e.event_type != "suspicious_activity" for e in events)
+
+
+async def test_recognized_person_without_the_flag_still_gets_marked_suspicious(
+    app_session: AsyncSession, sample_clip_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    camera, clip = await _make_camera_and_clip(app_session, sample_clip_path)
+    await _enroll_test_person(app_session, "Unflagged Person", 0)
+
+    ScriptedProvider.queued = [make_result(suspicion=0.95)]
+    face = DetectedFace(bbox=(0.1, 0.1, 0.2, 0.3), confidence=0.95, embedding=_embedding(0))
+    monkeypatch.setattr("app.ai.pipeline.detect_faces", _fake_detect_faces([face]))
+
+    analysis = await run_analysis(
+        app_session,
+        clip,
+        camera,
+        make_settings(tier2_enabled=False),
+        get_settings().encryption_key,
+        biometrics_settings=make_biometrics_settings(),
+        biometrics_model_cache_dir=BIOMETRICS_CACHE_DIR,
+    )
+
+    assert analysis.suspicion_label == "suspicious"
+
+
 async def test_recognized_person_with_no_overlapping_entity_is_not_labeled(
     app_session: AsyncSession, sample_clip_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
