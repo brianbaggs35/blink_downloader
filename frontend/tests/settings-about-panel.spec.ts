@@ -26,4 +26,14 @@ describe("SettingsAboutPanel", () => {
     expect(wrapper.text()).toContain("PrimeVue");
     expect(wrapper.text()).toContain("insightface");
   });
+
+  it("attributes the storage-integration trademarks to their owners", () => {
+    const wrapper = mount(SettingsAboutPanel);
+    expect(wrapper.text()).toContain("Google Drive is a trademark of Google LLC");
+    expect(wrapper.text()).toContain("Microsoft OneDrive is a trademark of Microsoft Corporation");
+    expect(wrapper.text()).toContain(
+      "Amazon S3 is a trademark of Amazon.com, Inc. or its affiliates",
+    );
+    expect(wrapper.text()).toContain("not affiliated with, endorsed by, or sponsored by");
+  });
 });

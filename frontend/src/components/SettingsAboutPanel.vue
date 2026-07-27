@@ -61,6 +61,21 @@ const technologies = [
 
     <article class="panel">
       <h3 class="panel-title">
+        Trademarks
+      </h3>
+      <p class="panel-hint">
+        Third-party names referenced by the Storage integrations feature.
+      </p>
+      <p class="panel-body-text">
+        Google Drive is a trademark of Google LLC. Microsoft OneDrive is a
+        trademark of Microsoft Corporation. Amazon S3 is a trademark of
+        Amazon.com, Inc. or its affiliates. This project is not affiliated
+        with, endorsed by, or sponsored by Google, Microsoft, or Amazon.
+      </p>
+    </article>
+
+    <article class="panel">
+      <h3 class="panel-title">
         Built with
       </h3>
       <p class="panel-hint">
