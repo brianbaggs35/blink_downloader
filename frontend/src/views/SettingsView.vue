@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Button from "primevue/button";
+import InputNumber from "primevue/inputnumber";
 import InputText from "primevue/inputtext";
 import Message from "primevue/message";
 import Password from "primevue/password";
@@ -14,7 +15,14 @@ import { useToast } from "primevue/usetoast";
 import { onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 
-import { ApiError, getStorageSettings, updateMe, updateStorageSettings } from "@/api";
+import {
+  ApiError,
+  getBlinkSyncSettings,
+  getStorageSettings,
+  updateBlinkSyncSettings,
+  updateMe,
+  updateStorageSettings,
+} from "@/api";
 import BlinkAccountPanel from "@/components/BlinkAccountPanel.vue";
 import PageHeader from "@/components/PageHeader.vue";
 import SettingsAboutPanel from "@/components/SettingsAboutPanel.vue";
@@ -163,6 +171,48 @@ async function saveStorageDir(): Promise<void> {
     storageError.value = caught instanceof ApiError ? caught.message : "Unexpected error.";
   } finally {
     savingStorage.value = false;
+  }
+}
+
+const syncIntervalSeconds = ref(60);
+const initialSyncDays = ref(3);
+const autoAnalyzeLimit = ref(5);
+const blinkSyncIsDefault = ref(true);
+const savingBlinkSync = ref(false);
+const blinkSyncError = ref("");
+
+onMounted(async () => {
+  if (auth.user?.is_superuser) {
+    try {
+      const settings = await getBlinkSyncSettings();
+      syncIntervalSeconds.value = settings.sync_interval_seconds;
+      initialSyncDays.value = settings.initial_sync_days;
+      autoAnalyzeLimit.value = settings.auto_analyze_limit;
+      blinkSyncIsDefault.value = settings.is_default;
+    } catch {
+      // Non-fatal — the fields just start at their fallback values above.
+    }
+  }
+});
+
+async function saveBlinkSyncSettings(): Promise<void> {
+  blinkSyncError.value = "";
+  savingBlinkSync.value = true;
+  try {
+    const settings = await updateBlinkSyncSettings({
+      sync_interval_seconds: syncIntervalSeconds.value,
+      initial_sync_days: initialSyncDays.value,
+      auto_analyze_limit: autoAnalyzeLimit.value,
+    });
+    syncIntervalSeconds.value = settings.sync_interval_seconds;
+    initialSyncDays.value = settings.initial_sync_days;
+    autoAnalyzeLimit.value = settings.auto_analyze_limit;
+    blinkSyncIsDefault.value = settings.is_default;
+    toast.add({ severity: "success", summary: "Blink sync settings saved", life: 2500 });
+  } catch (caught) {
+    blinkSyncError.value = caught instanceof ApiError ? caught.message : "Unexpected error.";
+  } finally {
+    savingBlinkSync.value = false;
   }
 }
 </script>
@@ -391,6 +441,72 @@ async function saveStorageDir(): Promise<void> {
                     :loading="savingStorage"
                     data-testid="save-storage"
                     @click="saveStorageDir"
+                  />
+                </div>
+              </div>
+            </article>
+
+            <article
+              v-if="auth.user?.is_superuser"
+              class="panel"
+            >
+              <h3 class="panel-title">
+                Blink sync
+              </h3>
+              <p class="panel-hint">
+                How often and how far back this server syncs with your Blink account.
+              </p>
+              <div class="panel-body">
+                <label class="field">
+                  <span class="field-label">Sync interval (seconds)</span>
+                  <InputNumber
+                    v-model="syncIntervalSeconds"
+                    :min="10"
+                    :max="3600"
+                    show-buttons
+                    fluid
+                    data-testid="blink-sync-interval"
+                  />
+                </label>
+                <label class="field">
+                  <span class="field-label">Initial sync lookback (days)</span>
+                  <InputNumber
+                    v-model="initialSyncDays"
+                    :min="1"
+                    :max="30"
+                    show-buttons
+                    fluid
+                    data-testid="blink-initial-sync-days"
+                  />
+                </label>
+                <label class="field">
+                  <span class="field-label">Auto-analyze limit per sync</span>
+                  <InputNumber
+                    v-model="autoAnalyzeLimit"
+                    :min="1"
+                    :max="20"
+                    show-buttons
+                    fluid
+                    data-testid="blink-auto-analyze-limit"
+                  />
+                </label>
+                <p class="muted">
+                  {{ blinkSyncIsDefault ? "Using the default from server configuration." : "Custom values." }}
+                </p>
+                <Message
+                  v-if="blinkSyncError"
+                  severity="error"
+                  :closable="false"
+                  data-testid="blink-sync-error"
+                >
+                  {{ blinkSyncError }}
+                </Message>
+                <div class="panel-actions">
+                  <Button
+                    label="Save"
+                    :loading="savingBlinkSync"
+                    data-testid="save-blink-sync"
+                    @click="saveBlinkSyncSettings"
                   />
                 </div>
               </div>
