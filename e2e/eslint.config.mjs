@@ -4,7 +4,14 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["playwright-report/**", "test-results/**", "node_modules/**", ".auth/**"],
+    ignores: [
+      "playwright-report/**",
+      "test-results/**",
+      "node_modules/**",
+      "playwright/.auth/**",
+      "coverage/**",
+      ".nyc_output/**",
+    ],
   },
   ...tseslint.configs.recommended,
   pluginSecurity.configs.recommended,
