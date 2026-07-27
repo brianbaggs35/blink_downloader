@@ -36,6 +36,7 @@ class BlinkStatusResponse(BaseModel):
     last_sync: datetime | None = None
     last_error: str | None = None
     camera_count: int = 0
+    network_ids: list[str] = []
     total_clip_count: int = 0
     daily_clip_counts: list[DailyClipCount] = []
     """Always exactly STATUS_DAILY_HISTORY_DAYS entries, oldest first, zero-filled
