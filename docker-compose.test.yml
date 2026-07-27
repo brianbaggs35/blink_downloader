@@ -1,11 +1,13 @@
 # Test environment.
-#   default profile — throwaway Postgres/Redis for pytest (`make test-backend`)
-#   --profile unit  — containerized backend test run (used by CI)
-#   --profile e2e   — production-like stack seeded with fixtures + Playwright
+#   --profile unit — containerized backend test run (used by CI); also what
+#                    `make test-db`/`make test-backend-fast` start directly
+#                    by name for a local (non-containerized) pytest run
+#   --profile e2e  — production-like stack seeded with fixtures + Playwright
 name: blink-test
 
 services:
   postgres-test:
+    profiles: [unit]
     image: pgvector/pgvector:pg17
     environment:
       POSTGRES_USER: blink
@@ -22,6 +24,7 @@ services:
       retries: 15
 
   redis-test:
+    profiles: [unit]
     image: redis:8-alpine
     ports:
       - "127.0.0.1:63790:6379"
