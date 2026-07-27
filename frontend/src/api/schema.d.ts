@@ -1365,6 +1365,16 @@ export interface components {
              * @default 0
              */
             camera_count: number;
+            /**
+             * Total Clip Count
+             * @default 0
+             */
+            total_clip_count: number;
+            /**
+             * Daily Clip Counts
+             * @default []
+             */
+            daily_clip_counts: components["schemas"]["DailyClipCount"][];
         };
         /** BlinkSyncSettingsRead */
         BlinkSyncSettingsRead: {
@@ -1502,6 +1512,13 @@ export interface components {
              * @default []
              */
             recognized_people: components["schemas"]["RecognizedPersonRead"][];
+        };
+        /** DailyClipCount */
+        DailyClipCount: {
+            /** Date */
+            date: string;
+            /** Count */
+            count: number;
         };
         /** DetectedEntityRead */
         DetectedEntityRead: {

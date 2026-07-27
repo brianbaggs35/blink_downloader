@@ -13,6 +13,7 @@ export type HealthReport = components["schemas"]["HealthReport"];
 
 export type BlinkLinkResponse = components["schemas"]["BlinkLinkResponse"];
 export type BlinkStatusResponse = components["schemas"]["BlinkStatusResponse"];
+export type DailyClipCount = components["schemas"]["DailyClipCount"];
 
 export type CameraRead = components["schemas"]["CameraRead"];
 
