@@ -974,6 +974,200 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/storage-integrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Integration Settings */
+        get: operations["get_integration_settings_api_settings_storage_integrations_get"];
+        /** Put Integration Settings */
+        put: operations["put_integration_settings_api_settings_storage_integrations_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/storage-integrations/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Integrations */
+        post: operations["test_integrations_api_settings_storage_integrations_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/storage-integrations/google-drive/oauth/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Start Google Drive Oauth */
+        get: operations["start_google_drive_oauth_api_settings_storage_integrations_google_drive_oauth_start_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/storage-integrations/google-drive/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Callback Google Drive Oauth */
+        get: operations["callback_google_drive_oauth_api_settings_storage_integrations_google_drive_oauth_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/storage-integrations/onedrive/oauth/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Start Onedrive Oauth */
+        get: operations["start_onedrive_oauth_api_settings_storage_integrations_onedrive_oauth_start_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/storage-integrations/onedrive/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Callback Onedrive Oauth */
+        get: operations["callback_onedrive_oauth_api_settings_storage_integrations_onedrive_oauth_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/storage/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Storage Summary */
+        get: operations["get_storage_summary_api_storage_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/storage/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive Clips */
+        post: operations["archive_clips_api_storage_archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/storage/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore Clips */
+        post: operations["restore_clips_api_storage_restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/storage/clips/{clip_id}/link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Get Temporary Link */
+        post: operations["get_temporary_link_api_storage_clips__clip_id__link_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/storage/download/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Archived Clip
+         * @description Proxies a Google Drive/OneDrive clip down using our own stored OAuth
+         *     credentials - the token itself (not a login session) is the bearer
+         *     proof of a time-limited authorization to fetch this one clip, the same
+         *     trust model as an S3 presigned URL.
+         */
+        get: operations["download_archived_clip_api_storage_download__token__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1130,6 +1324,10 @@ export interface components {
             total_calls: number;
             /** Failed Calls */
             failed_calls: number;
+            /** Total Frames Analyzed */
+            total_frames_analyzed: number;
+            /** Frames Analyzed Today */
+            frames_analyzed_today: number;
             /** Daily */
             daily: components["schemas"]["AiUsageDailyPoint"][];
             /** By Provider */
@@ -1296,6 +1494,20 @@ export interface components {
          * @enum {string}
          */
         AnalysisTier: "tier1" | "tier2";
+        /** ArchiveClipsRequest */
+        ArchiveClipsRequest: {
+            /** Clip Ids */
+            clip_ids: string[];
+            backend: components["schemas"]["StorageBackend"];
+        };
+        /** BackendStorageSummary */
+        BackendStorageSummary: {
+            backend: components["schemas"]["StorageBackend"];
+            /** Clip Count */
+            clip_count: number;
+            /** Total Bytes */
+            total_bytes: number;
+        };
         /** BiometricsSettingsRead */
         BiometricsSettingsRead: {
             /** Enabled */
@@ -1507,6 +1719,7 @@ export interface components {
             deleted_on_blink: boolean;
             /** Thumbnail Generated */
             thumbnail_generated: boolean;
+            storage_backend: components["schemas"]["StorageBackend"];
             /**
              * Recognized People
              * @default []
@@ -1788,6 +2001,11 @@ export interface components {
             /** Negative Sample Captured */
             negative_sample_captured: boolean;
         };
+        /** RestoreClipsRequest */
+        RestoreClipsRequest: {
+            /** Clip Ids */
+            clip_ids: string[];
+        };
         /** SecurityFeedSettingsRead */
         SecurityFeedSettingsRead: {
             /** Camera Ids */
@@ -1835,6 +2053,87 @@ export interface components {
             /** Initialized */
             initialized: boolean;
         };
+        /**
+         * StorageBackend
+         * @enum {string}
+         */
+        StorageBackend: "local" | "s3" | "google_drive" | "onedrive";
+        /** StorageIntegrationSettingsRead */
+        StorageIntegrationSettingsRead: {
+            /** S3 Enabled */
+            s3_enabled: boolean;
+            /** S3 Bucket */
+            s3_bucket: string | null;
+            /** S3 Region */
+            s3_region: string | null;
+            /** S3 Prefix */
+            s3_prefix: string | null;
+            /** S3 Credentials Set */
+            s3_credentials_set: boolean;
+            /** Google Drive Enabled */
+            google_drive_enabled: boolean;
+            /** Google Drive Client Id */
+            google_drive_client_id: string | null;
+            /** Google Drive Client Secret Set */
+            google_drive_client_secret_set: boolean;
+            /** Google Drive Connected */
+            google_drive_connected: boolean;
+            /** Google Drive Folder Id */
+            google_drive_folder_id: string | null;
+            /** Onedrive Enabled */
+            onedrive_enabled: boolean;
+            /** Onedrive Client Id */
+            onedrive_client_id: string | null;
+            /** Onedrive Client Secret Set */
+            onedrive_client_secret_set: boolean;
+            /** Onedrive Connected */
+            onedrive_connected: boolean;
+            /** Onedrive Folder Path */
+            onedrive_folder_path: string | null;
+            auto_archive_backend: components["schemas"]["StorageBackend"];
+        };
+        /** StorageIntegrationSettingsUpdate */
+        StorageIntegrationSettingsUpdate: {
+            /**
+             * S3 Enabled
+             * @default false
+             */
+            s3_enabled: boolean;
+            /** S3 Bucket */
+            s3_bucket?: string | null;
+            /** S3 Region */
+            s3_region?: string | null;
+            /** S3 Prefix */
+            s3_prefix?: string | null;
+            /** S3 Access Key Id */
+            s3_access_key_id?: string | null;
+            /** S3 Secret Access Key */
+            s3_secret_access_key?: string | null;
+            /**
+             * Google Drive Enabled
+             * @default false
+             */
+            google_drive_enabled: boolean;
+            /** Google Drive Client Id */
+            google_drive_client_id?: string | null;
+            /** Google Drive Client Secret */
+            google_drive_client_secret?: string | null;
+            /** Google Drive Folder Id */
+            google_drive_folder_id?: string | null;
+            /**
+             * Onedrive Enabled
+             * @default false
+             */
+            onedrive_enabled: boolean;
+            /** Onedrive Client Id */
+            onedrive_client_id?: string | null;
+            /** Onedrive Client Secret */
+            onedrive_client_secret?: string | null;
+            /** Onedrive Folder Path */
+            onedrive_folder_path?: string | null;
+            /** @default local */
+            auto_archive_backend: components["schemas"]["StorageBackend"];
+        };
         /** StorageSettingsRead */
         StorageSettingsRead: {
             /** Storage Dir */
@@ -1847,11 +2146,43 @@ export interface components {
             /** Storage Dir */
             storage_dir?: string | null;
         };
+        /** StorageSummaryResponse */
+        StorageSummaryResponse: {
+            /** By Backend */
+            by_backend: components["schemas"]["BackendStorageSummary"][];
+            /** Total Clips */
+            total_clips: number;
+            /** Total Bytes */
+            total_bytes: number;
+        };
+        /** StorageTestResponse */
+        StorageTestResponse: {
+            s3?: components["schemas"]["StorageTestResult"] | null;
+            google_drive?: components["schemas"]["StorageTestResult"] | null;
+            onedrive?: components["schemas"]["StorageTestResult"] | null;
+        };
+        /** StorageTestResult */
+        StorageTestResult: {
+            /** Ok */
+            ok: boolean;
+            /** Detail */
+            detail: string;
+        };
         /**
          * SuspicionLabel
          * @enum {string}
          */
         SuspicionLabel: "routine" | "uncertain" | "suspicious";
+        /** TemporaryLinkResponse */
+        TemporaryLinkResponse: {
+            /** Url */
+            url: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
         /** UserCreate */
         UserCreate: {
             /**
@@ -3212,6 +3543,7 @@ export interface operations {
                 downloaded_only?: boolean;
                 recognized_person_id?: string | null;
                 has_recognized_person?: boolean | null;
+                storage_backend?: components["schemas"]["StorageBackend"] | null;
                 page?: number;
                 page_size?: number;
             };
@@ -4269,6 +4601,335 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AiUsageResponse"];
+                };
+            };
+        };
+    };
+    get_integration_settings_api_settings_storage_integrations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageIntegrationSettingsRead"];
+                };
+            };
+        };
+    };
+    put_integration_settings_api_settings_storage_integrations_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StorageIntegrationSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageIntegrationSettingsRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_integrations_api_settings_storage_integrations_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageTestResponse"];
+                };
+            };
+        };
+    };
+    start_google_drive_oauth_api_settings_storage_integrations_google_drive_oauth_start_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    callback_google_drive_oauth_api_settings_storage_integrations_google_drive_oauth_callback_get: {
+        parameters: {
+            query?: {
+                code?: string | null;
+                state?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_onedrive_oauth_api_settings_storage_integrations_onedrive_oauth_start_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    callback_onedrive_oauth_api_settings_storage_integrations_onedrive_oauth_callback_get: {
+        parameters: {
+            query?: {
+                code?: string | null;
+                state?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_storage_summary_api_storage_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageSummaryResponse"];
+                };
+            };
+        };
+    };
+    archive_clips_api_storage_archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArchiveClipsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: number;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_clips_api_storage_restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestoreClipsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: number;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_temporary_link_api_storage_clips__clip_id__link_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                clip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemporaryLinkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_archived_clip_api_storage_download__token__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

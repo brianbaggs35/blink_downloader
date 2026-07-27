@@ -2,7 +2,7 @@
 Usage tabs."""
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import FastAPI
 from httpx import AsyncClient
@@ -186,6 +186,8 @@ async def test_usage_all_zero_with_no_data(admin_client: AsyncClient) -> None:
     assert body["total_tokens"] == 0
     assert body["total_cost_usd"] == 0
     assert body["total_calls"] == 0
+    assert body["total_frames_analyzed"] == 0
+    assert body["frames_analyzed_today"] == 0
     assert body["daily"] == []
     assert body["by_provider"] == []
 
@@ -202,6 +204,7 @@ async def test_usage_aggregates_tokens_and_cost(admin_client: AsyncClient, app: 
                 prompt_tokens=100,
                 completion_tokens=20,
                 total_tokens=120,
+                frame_count=4,
                 estimated_cost_usd=0.05,
                 latency_ms=500,
                 success=True,
@@ -213,6 +216,7 @@ async def test_usage_aggregates_tokens_and_cost(admin_client: AsyncClient, app: 
                 tier=AnalysisTier.TIER1,
                 provider=AIProviderKind.OPENAI,
                 model="gpt-5-nano",
+                frame_count=4,
                 success=False,
                 error_message="boom",
             )
@@ -225,12 +229,48 @@ async def test_usage_aggregates_tokens_and_cost(admin_client: AsyncClient, app: 
     assert body["total_calls"] == 2
     assert body["failed_calls"] == 1
     assert body["total_cost_usd"] == 0.05
+    assert body["total_frames_analyzed"] == 8
+    assert body["frames_analyzed_today"] == 8
     assert len(body["daily"]) == 1
     assert body["daily"][0]["tokens"] == 120
     assert len(body["by_provider"]) == 1
     assert body["by_provider"][0]["provider"] == "openai"
     assert body["by_provider"][0]["model"] == "gpt-5-nano"
     assert body["by_provider"][0]["calls"] == 2
+
+
+async def test_frames_analyzed_today_excludes_older_rows(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    _camera, clip = await _make_camera_and_clip(app)
+    async with app.state.sessionmaker() as session:
+        session.add(
+            AIUsage(
+                clip_id=clip.id,
+                tier=AnalysisTier.TIER1,
+                provider=AIProviderKind.OPENAI,
+                model="gpt-5-nano",
+                frame_count=4,
+                success=True,
+                created_at=datetime.now(UTC) - timedelta(days=2),
+            )
+        )
+        session.add(
+            AIUsage(
+                clip_id=clip.id,
+                tier=AnalysisTier.TIER1,
+                provider=AIProviderKind.OPENAI,
+                model="gpt-5-nano",
+                frame_count=6,
+                success=True,
+            )
+        )
+        await session.commit()
+
+    response = await admin_client.get("/api/ai/usage")
+    body = response.json()
+    assert body["total_frames_analyzed"] == 10
+    assert body["frames_analyzed_today"] == 6
 
 
 async def test_usage_separates_by_provider_and_model(

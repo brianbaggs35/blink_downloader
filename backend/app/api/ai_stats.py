@@ -102,6 +102,19 @@ async def get_ai_usage(
         )
     ).scalar_one()
 
+    total_frames_analyzed = (
+        await session.execute(select(func.coalesce(func.sum(AIUsage.frame_count), 0)))
+    ).scalar_one()
+
+    today = datetime.now(UTC).date()
+    frames_analyzed_today = (
+        await session.execute(
+            select(func.coalesce(func.sum(AIUsage.frame_count), 0)).where(
+                func.date(AIUsage.created_at) == today
+            )
+        )
+    ).scalar_one()
+
     since = datetime.now(UTC) - timedelta(days=USAGE_HISTORY_DAYS)
     daily_rows = (
         await session.execute(
@@ -144,6 +157,8 @@ async def get_ai_usage(
         total_cost_usd=float(total_cost_usd),
         total_calls=total_calls,
         failed_calls=failed_calls,
+        total_frames_analyzed=total_frames_analyzed,
+        frames_analyzed_today=frames_analyzed_today,
         daily=daily,
         by_provider=by_provider,
     )

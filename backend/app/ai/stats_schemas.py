@@ -37,5 +37,7 @@ class AiUsageResponse(BaseModel):
     total_cost_usd: float
     total_calls: int
     failed_calls: int
+    total_frames_analyzed: int
+    frames_analyzed_today: int
     daily: list[AiUsageDailyPoint]
     by_provider: list[AiUsageProviderBreakdown]

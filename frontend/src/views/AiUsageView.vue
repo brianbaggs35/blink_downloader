@@ -162,6 +162,14 @@ const hoveredProvider = ref<number | null>(null);
           <span class="tile-label">Total calls</span>
         </article>
         <article class="tile">
+          <span class="tile-value">{{ formatCompact(usage.frames_analyzed_today) }}</span>
+          <span class="tile-label">Frames analyzed today</span>
+        </article>
+        <article class="tile">
+          <span class="tile-value">{{ formatCompact(usage.total_frames_analyzed) }}</span>
+          <span class="tile-label">Frames analyzed (all time)</span>
+        </article>
+        <article class="tile">
           <span
             class="tile-value"
             :class="{ critical: usage.failed_calls > 0 }"

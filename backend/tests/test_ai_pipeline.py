@@ -310,6 +310,7 @@ async def test_persists_tier1_only_result_when_not_suspicious(
     assert usage_rows[0].success is True
     assert usage_rows[0].prompt_tokens == 100
     assert usage_rows[0].total_tokens == 120
+    assert usage_rows[0].frame_count == 2
 
     events = (
         (await app_session.execute(select(Event).where(Event.clip_id == clip.id))).scalars().all()
@@ -415,6 +416,9 @@ async def test_tier1_failure_raises_and_still_logs_ai_usage(
     assert usage_rows[0].success is False
     assert usage_rows[0].error_message == "bad api key"
     assert usage_rows[0].analysis_id is None  # no Analysis exists to link to
+    assert (
+        usage_rows[0].frame_count == 2
+    )  # keyframes were extracted and sent before the call failed
 
     analyses = (
         (await app_session.execute(select(Analysis).where(Analysis.clip_id == clip.id)))

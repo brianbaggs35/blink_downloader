@@ -103,6 +103,7 @@ function makeClip(overrides: Partial<ClipRead> = {}): ClipRead {
     downloaded_at: "2026-07-20T18:31:00Z",
     deleted_on_blink: false,
     thumbnail_generated: true,
+    storage_backend: "local",
     recognized_people: [],
     ...overrides,
   };
