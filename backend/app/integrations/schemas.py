@@ -31,6 +31,11 @@ class StorageIntegrationSettingsRead(BaseModel):
     onedrive_connected: bool
     onedrive_folder_path: str | None
 
+    auto_archive_backend: StorageBackend
+    """Where a newly-downloaded clip ends up living. LOCAL (the default)
+    keeps today's behavior; any other value uploads-then-deletes-local
+    right after the clip finishes analysis."""
+
 
 class StorageIntegrationSettingsUpdate(BaseModel):
     s3_enabled: bool = False
@@ -50,6 +55,8 @@ class StorageIntegrationSettingsUpdate(BaseModel):
     onedrive_client_id: str | None = None
     onedrive_client_secret: str | None = None
     onedrive_folder_path: str | None = None
+
+    auto_archive_backend: StorageBackend = StorageBackend.LOCAL
 
 
 class StorageTestResult(BaseModel):
