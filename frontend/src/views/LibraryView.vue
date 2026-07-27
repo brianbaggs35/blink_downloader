@@ -12,13 +12,16 @@ import { useRoute, useRouter } from "vue-router";
 
 import {
   ApiError,
+  archiveClips,
   bulkAnalyzeClips,
   bulkDeleteClips,
   deleteClip,
   downloadClipsAsZip,
+  getStorageIntegrationSettings,
   listCameras,
   listClips,
   listPeople,
+  restoreClips,
 } from "@/api";
 import ClipCard from "@/components/ClipCard.vue";
 import ClipDetailModal from "@/components/ClipDetailModal.vue";
@@ -28,7 +31,13 @@ import { useDeleteConfirm } from "@/composables/useDeleteConfirm";
 import { useAuthStore } from "@/stores/auth";
 import { useBlinkStore } from "@/stores/blink";
 
-import type { CameraRead, ClipRead, PersonRead } from "@/api";
+import type { CameraRead, ClipRead, PersonRead, StorageBackend } from "@/api";
+
+const CLOUD_BACKEND_LABELS: Record<Exclude<StorageBackend, "local">, string> = {
+  s3: "Amazon S3",
+  google_drive: "Google Drive",
+  onedrive: "Microsoft OneDrive",
+};
 
 const PAGE_SIZE = 24;
 
@@ -89,6 +98,32 @@ watch(recognizedOnly, (value) => {
 const selected = ref<Set<string>>(new Set());
 const selectedCount = computed(() => selected.value.size);
 const bulkWorking = ref(false);
+
+const configuredCloudBackends = ref<{ label: string; value: StorageBackend }[]>([]);
+const archiveDestination = ref<StorageBackend | null>(null);
+
+async function loadConfiguredCloudBackends(): Promise<void> {
+  if (!auth.isAdmin) {
+    return;
+  }
+  try {
+    const row = await getStorageIntegrationSettings();
+    const options: { label: string; value: StorageBackend }[] = [];
+    if (row.s3_enabled && row.s3_credentials_set) {
+      options.push({ label: CLOUD_BACKEND_LABELS.s3, value: "s3" });
+    }
+    if (row.google_drive_enabled && row.google_drive_connected) {
+      options.push({ label: CLOUD_BACKEND_LABELS.google_drive, value: "google_drive" });
+    }
+    if (row.onedrive_enabled && row.onedrive_connected) {
+      options.push({ label: CLOUD_BACKEND_LABELS.onedrive, value: "onedrive" });
+    }
+    configuredCloudBackends.value = options;
+    archiveDestination.value = options[0]?.value ?? null;
+  } catch {
+    configuredCloudBackends.value = [];
+  }
+}
 
 const openClip = ref<ClipRead | null>(null);
 const statusError = ref(false);
@@ -157,7 +192,13 @@ async function loadInitial(): Promise<void> {
     return;
   }
   if (blink.isLinked) {
-    await Promise.all([loadCameras(), loadPeople(), loadClips(), loadRecognizedTotal()]);
+    await Promise.all([
+      loadCameras(),
+      loadPeople(),
+      loadClips(),
+      loadRecognizedTotal(),
+      loadConfiguredCloudBackends(),
+    ]);
   } else {
     loading.value = false;
   }
@@ -235,6 +276,57 @@ async function performBulkAnalyze(): Promise<void> {
     toast.add({
       severity: "error",
       summary: "Bulk analyze failed",
+      detail: caught instanceof ApiError ? caught.message : "Unexpected error.",
+      life: 4000,
+    });
+  } finally {
+    bulkWorking.value = false;
+  }
+}
+
+async function performBulkArchive(): Promise<void> {
+  // The Archive button only renders once a destination is available -
+  // kept as a guard against the call below, not a reachable path from a
+  // real click.
+  /* v8 ignore next */
+  if (!archiveDestination.value) return;
+  bulkWorking.value = true;
+  try {
+    const result = await archiveClips([...selected.value], archiveDestination.value);
+    toast.add({
+      severity: result.failed > 0 ? "warn" : "success",
+      summary: `Queued ${result.succeeded} clip(s) to archive`,
+      detail: result.failed > 0 ? `${result.failed} could not be queued.` : undefined,
+      life: 3500,
+    });
+    clearSelection();
+  } catch (caught) {
+    toast.add({
+      severity: "error",
+      summary: "Archive failed",
+      detail: caught instanceof ApiError ? caught.message : "Unexpected error.",
+      life: 4000,
+    });
+  } finally {
+    bulkWorking.value = false;
+  }
+}
+
+async function performBulkRestore(): Promise<void> {
+  bulkWorking.value = true;
+  try {
+    const result = await restoreClips([...selected.value]);
+    toast.add({
+      severity: result.failed > 0 ? "warn" : "success",
+      summary: `Queued ${result.succeeded} clip(s) to restore`,
+      detail: result.failed > 0 ? `${result.failed} were already local.` : undefined,
+      life: 3500,
+    });
+    clearSelection();
+  } catch (caught) {
+    toast.add({
+      severity: "error",
+      summary: "Restore failed",
       detail: caught instanceof ApiError ? caught.message : "Unexpected error.",
       life: 4000,
     });
@@ -423,6 +515,34 @@ async function performSingleDelete(clip: ClipRead): Promise<void> {
             :loading="bulkWorking"
             data-testid="bulk-analyze"
             @click="performBulkAnalyze"
+          />
+          <Select
+            v-if="configuredCloudBackends.length > 0"
+            v-model="archiveDestination"
+            :options="configuredCloudBackends"
+            option-label="label"
+            option-value="value"
+            data-testid="bulk-archive-destination"
+          />
+          <Button
+            v-if="configuredCloudBackends.length > 0"
+            label="Archive"
+            icon="pi pi-cloud-upload"
+            severity="secondary"
+            outlined
+            :loading="bulkWorking"
+            :disabled="!archiveDestination"
+            data-testid="bulk-archive"
+            @click="performBulkArchive"
+          />
+          <Button
+            label="Restore"
+            icon="pi pi-cloud-download"
+            severity="secondary"
+            outlined
+            :loading="bulkWorking"
+            data-testid="bulk-restore"
+            @click="performBulkRestore"
           />
           <Button
             label="Delete"

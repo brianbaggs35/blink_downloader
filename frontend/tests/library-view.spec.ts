@@ -1,4 +1,4 @@
-import { flushPromises, mount } from "@vue/test-utils";
+import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/api", async (importOriginal) => ({
@@ -11,6 +11,9 @@ vi.mock("@/api", async (importOriginal) => ({
   bulkDeleteClips: vi.fn(),
   bulkAnalyzeClips: vi.fn(),
   downloadClipsAsZip: vi.fn(),
+  getStorageIntegrationSettings: vi.fn(),
+  archiveClips: vi.fn(),
+  restoreClips: vi.fn(),
 }));
 
 const toastAdd = vi.fn();
@@ -20,14 +23,17 @@ const confirmRequire = vi.fn();
 vi.mock("primevue/useconfirm", () => ({ useConfirm: () => ({ require: confirmRequire }) }));
 
 import {
+  archiveClips,
   bulkAnalyzeClips,
   bulkDeleteClips,
   deleteClip,
   downloadClipsAsZip,
   getBlinkStatus,
+  getStorageIntegrationSettings,
   listCameras,
   listClips,
   listPeople,
+  restoreClips,
 } from "@/api";
 import { ApiError } from "@/api/client";
 import ClipCard from "@/components/ClipCard.vue";
@@ -35,7 +41,7 @@ import ClipDetailModal from "@/components/ClipDetailModal.vue";
 import ToggleButton from "primevue/togglebutton";
 import { useAuthStore } from "@/stores/auth";
 import LibraryView from "@/views/LibraryView.vue";
-import { fakeUser, makePinia, makeRouter, mountGlobal } from "./helpers";
+import { fakeStorageIntegrationSettings, fakeUser, makePinia, makeRouter, mountGlobal } from "./helpers";
 
 import type { BlinkStatusResponse, CameraRead, ClipListParams, ClipListResponse, ClipRead } from "@/api";
 
@@ -47,6 +53,9 @@ const mockedDeleteClip = vi.mocked(deleteClip);
 const mockedBulkDelete = vi.mocked(bulkDeleteClips);
 const mockedBulkAnalyze = vi.mocked(bulkAnalyzeClips);
 const mockedDownloadZip = vi.mocked(downloadClipsAsZip);
+const mockedIntegrationSettings = vi.mocked(getStorageIntegrationSettings);
+const mockedArchiveClips = vi.mocked(archiveClips);
+const mockedRestoreClips = vi.mocked(restoreClips);
 
 function linkedStatus(overrides: Partial<BlinkStatusResponse> = {}): BlinkStatusResponse {
   return {
@@ -125,6 +134,19 @@ async function mountLibrary(isAdmin = true) {
   return { wrapper, router };
 }
 
+/** Two Select components can be on screen at once (the camera filter, and
+ * the archive-destination picker) - find the right one by its data-testid,
+ * since findComponent(selector) alone returns an untyped WrapperLike. */
+function selectByTestId(wrapper: VueWrapper, testId: string) {
+  const match = wrapper
+    .findAllComponents({ name: "Select" })
+    .find((s) => s.attributes("data-testid") === testId);
+  if (!match) {
+    throw new Error(`No Select found with data-testid="${testId}"`);
+  }
+  return match;
+}
+
 /** Grabs the options object passed to the most recent confirm.require() call
  * and invokes its accept callback, simulating the user confirming the dialog
  * (LibraryView never registers a reject callback, so there's nothing to
@@ -139,6 +161,7 @@ beforeEach(() => {
   mockedCameras.mockResolvedValue([cameraA, cameraB]);
   mockedClips.mockResolvedValue(clipsResponse([]));
   mockedPeople.mockResolvedValue([]);
+  mockedIntegrationSettings.mockResolvedValue(fakeStorageIntegrationSettings());
 });
 
 describe("LibraryView — unlinked", () => {
@@ -591,6 +614,219 @@ describe("LibraryView — bulk analyze", () => {
     await flushPromises();
 
     await wrapper.find('[data-testid="bulk-analyze"]').trigger("click");
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: "Unexpected error." }));
+  });
+});
+
+describe("LibraryView — bulk archive", () => {
+  beforeEach(async () => {
+    mockedStatus.mockResolvedValue(linkedStatus());
+    mockedClips.mockResolvedValue(clipsResponse([makeClip({ id: "clip-1" })], 1));
+  });
+
+  it("hides the archive picker and button when no cloud backend is connected", async () => {
+    const { wrapper } = await mountLibrary();
+    await wrapper.findComponent(ClipCard).vm.$emit("update:selected", true);
+    await flushPromises();
+    expect(wrapper.find('[data-testid="bulk-archive-destination"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="bulk-archive"]').exists()).toBe(false);
+  });
+
+  it("also hides the archive picker if the integration settings fetch fails", async () => {
+    mockedIntegrationSettings.mockRejectedValue(new ApiError(500, "boom"));
+    const { wrapper } = await mountLibrary();
+    await wrapper.findComponent(ClipCard).vm.$emit("update:selected", true);
+    await flushPromises();
+    expect(wrapper.find('[data-testid="bulk-archive-destination"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="bulk-archive"]').exists()).toBe(false);
+  });
+
+  it("offers only connected backends in the archive destination picker", async () => {
+    mockedIntegrationSettings.mockResolvedValue(
+      fakeStorageIntegrationSettings({
+        s3_enabled: true,
+        s3_credentials_set: true,
+        onedrive_enabled: true,
+        onedrive_connected: true,
+      }),
+    );
+    const { wrapper } = await mountLibrary();
+    await wrapper.findComponent(ClipCard).vm.$emit("update:selected", true);
+    await flushPromises();
+    const select = selectByTestId(wrapper, "bulk-archive-destination");
+    expect(select.props("options")).toEqual([
+      { label: "Amazon S3", value: "s3" },
+      { label: "Microsoft OneDrive", value: "onedrive" },
+    ]);
+  });
+
+  it("archives the selected clips to the default (first connected) backend and clears selection", async () => {
+    mockedIntegrationSettings.mockResolvedValue(
+      fakeStorageIntegrationSettings({ s3_enabled: true, s3_credentials_set: true }),
+    );
+    mockedArchiveClips.mockResolvedValue({ succeeded: 1, failed: 0 });
+    const { wrapper } = await mountLibrary();
+    await wrapper.findComponent(ClipCard).vm.$emit("update:selected", true);
+    await flushPromises();
+
+    await wrapper.find('[data-testid="bulk-archive"]').trigger("click");
+    await flushPromises();
+
+    expect(mockedArchiveClips).toHaveBeenCalledWith(["clip-1"], "s3");
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: "success", summary: "Queued 1 clip(s) to archive" }),
+    );
+    expect(wrapper.find('[data-testid="bulk-bar"]').exists()).toBe(false);
+  });
+
+  it("archives to whichever backend is chosen in the picker", async () => {
+    mockedIntegrationSettings.mockResolvedValue(
+      fakeStorageIntegrationSettings({
+        s3_enabled: true,
+        s3_credentials_set: true,
+        google_drive_enabled: true,
+        google_drive_connected: true,
+      }),
+    );
+    mockedArchiveClips.mockResolvedValue({ succeeded: 1, failed: 0 });
+    const { wrapper } = await mountLibrary();
+    await wrapper.findComponent(ClipCard).vm.$emit("update:selected", true);
+    await flushPromises();
+
+    await selectByTestId(wrapper, "bulk-archive-destination").vm.$emit(
+      "update:modelValue",
+      "google_drive",
+    );
+    await wrapper.find('[data-testid="bulk-archive"]').trigger("click");
+    await flushPromises();
+
+    expect(mockedArchiveClips).toHaveBeenCalledWith(["clip-1"], "google_drive");
+  });
+
+  it("shows a warning toast when some clips can't be archived", async () => {
+    mockedIntegrationSettings.mockResolvedValue(
+      fakeStorageIntegrationSettings({ s3_enabled: true, s3_credentials_set: true }),
+    );
+    mockedArchiveClips.mockResolvedValue({ succeeded: 0, failed: 1 });
+    const { wrapper } = await mountLibrary();
+    await wrapper.findComponent(ClipCard).vm.$emit("update:selected", true);
+    await flushPromises();
+
+    await wrapper.find('[data-testid="bulk-archive"]').trigger("click");
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: "warn", detail: "1 could not be queued." }),
+    );
+  });
+
+  it("shows an error toast with the API message when the archive request fails", async () => {
+    mockedIntegrationSettings.mockResolvedValue(
+      fakeStorageIntegrationSettings({ s3_enabled: true, s3_credentials_set: true }),
+    );
+    mockedArchiveClips.mockRejectedValue(new ApiError(400, "s3 is not configured."));
+    const { wrapper } = await mountLibrary();
+    await wrapper.findComponent(ClipCard).vm.$emit("update:selected", true);
+    await flushPromises();
+
+    await wrapper.find('[data-testid="bulk-archive"]').trigger("click");
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: "error",
+        summary: "Archive failed",
+        detail: "s3 is not configured.",
+      }),
+    );
+  });
+
+  it("shows a generic error detail when the archive request fails with a non-API error", async () => {
+    mockedIntegrationSettings.mockResolvedValue(
+      fakeStorageIntegrationSettings({ s3_enabled: true, s3_credentials_set: true }),
+    );
+    mockedArchiveClips.mockRejectedValue(new TypeError("boom"));
+    const { wrapper } = await mountLibrary();
+    await wrapper.findComponent(ClipCard).vm.$emit("update:selected", true);
+    await flushPromises();
+
+    await wrapper.find('[data-testid="bulk-archive"]').trigger("click");
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: "Unexpected error." }));
+  });
+});
+
+describe("LibraryView — bulk restore", () => {
+  beforeEach(async () => {
+    mockedStatus.mockResolvedValue(linkedStatus());
+    mockedClips.mockResolvedValue(clipsResponse([makeClip({ id: "clip-1" })], 1));
+  });
+
+  it("is always available, even with no cloud backend connected", async () => {
+    const { wrapper } = await mountLibrary();
+    await wrapper.findComponent(ClipCard).vm.$emit("update:selected", true);
+    await flushPromises();
+    expect(wrapper.find('[data-testid="bulk-restore"]').exists()).toBe(true);
+  });
+
+  it("restores the selected clips, toasts success, and clears selection", async () => {
+    mockedRestoreClips.mockResolvedValue({ succeeded: 1, failed: 0 });
+    const { wrapper } = await mountLibrary();
+    await wrapper.findComponent(ClipCard).vm.$emit("update:selected", true);
+    await flushPromises();
+
+    await wrapper.find('[data-testid="bulk-restore"]').trigger("click");
+    await flushPromises();
+
+    expect(mockedRestoreClips).toHaveBeenCalledWith(["clip-1"]);
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: "success", summary: "Queued 1 clip(s) to restore" }),
+    );
+    expect(wrapper.find('[data-testid="bulk-bar"]').exists()).toBe(false);
+  });
+
+  it("shows a warning toast when some clips were already local", async () => {
+    mockedRestoreClips.mockResolvedValue({ succeeded: 0, failed: 1 });
+    const { wrapper } = await mountLibrary();
+    await wrapper.findComponent(ClipCard).vm.$emit("update:selected", true);
+    await flushPromises();
+
+    await wrapper.find('[data-testid="bulk-restore"]').trigger("click");
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: "warn", detail: "1 were already local." }),
+    );
+  });
+
+  it("shows an error toast with the API message when the restore request fails", async () => {
+    mockedRestoreClips.mockRejectedValue(new ApiError(500, "Server exploded."));
+    const { wrapper } = await mountLibrary();
+    await wrapper.findComponent(ClipCard).vm.$emit("update:selected", true);
+    await flushPromises();
+
+    await wrapper.find('[data-testid="bulk-restore"]').trigger("click");
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: "error",
+        summary: "Restore failed",
+        detail: "Server exploded.",
+      }),
+    );
+  });
+
+  it("shows a generic error detail when the restore request fails with a non-API error", async () => {
+    mockedRestoreClips.mockRejectedValue(new TypeError("boom"));
+    const { wrapper } = await mountLibrary();
+    await wrapper.findComponent(ClipCard).vm.$emit("update:selected", true);
+    await flushPromises();
+
+    await wrapper.find('[data-testid="bulk-restore"]').trigger("click");
     await flushPromises();
 
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: "Unexpected error." }));
