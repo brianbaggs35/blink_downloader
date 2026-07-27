@@ -1,7 +1,9 @@
-"""/api/biometrics/*: settings and people are admin-write/any-read (matching
-/api/vehicles); face detection is faked at app.biometrics.service's
-imported name (real insightface would trigger a model download) while
-frame extraction runs real ffmpeg against a synthetic clip."""
+"""/api/biometrics/*: settings, renaming, and deletion are admin-only;
+creating a person and enrolling a face are open to any signed-in user
+(viewers can grow the household's face library, just not prune it); face
+detection is faked at app.biometrics.service's imported name (real
+insightface would trigger a model download) while frame extraction runs
+real ffmpeg against a synthetic clip."""
 
 import asyncio
 import uuid
@@ -207,9 +209,9 @@ async def test_list_people_empty(admin_client: AsyncClient) -> None:
     assert response.json() == []
 
 
-async def test_create_person_requires_admin(viewer_client: AsyncClient) -> None:
+async def test_viewer_can_create_person(viewer_client: AsyncClient) -> None:
     response = await viewer_client.post("/api/biometrics/people", json={"name": "Alex"})
-    assert response.status_code == 403
+    assert response.status_code == 201
 
 
 async def test_create_person_then_list_and_get(admin_client: AsyncClient) -> None:
@@ -416,13 +418,25 @@ async def test_detect_faces_returns_detected_boxes(
 # ---------------------------------------------------------------- enrollment
 
 
-async def test_enroll_requires_admin(viewer_client: AsyncClient, app: FastAPI) -> None:
+async def test_viewer_can_enroll_face(
+    viewer_client: AsyncClient,
+    app: FastAPI,
+    tmp_path: Path,
+    sample_clip_bytes: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    camera = await _make_camera(app)
+    clip = await _make_downloaded_clip(app, camera, tmp_path, sample_clip_bytes)
     person = await _make_person(app)
+    bbox = (0.3, 0.3, 0.2, 0.2)
+    face = DetectedFace(bbox=bbox, confidence=0.9, embedding=_embedding(0))
+    monkeypatch.setattr(biometrics_service, "detect_faces", _fake_detect_faces([face]))
+
     response = await viewer_client.post(
         f"/api/biometrics/people/{person.id}/enroll",
-        json={"clip_id": str(uuid.uuid4()), "frame_seconds": 0.5, "bbox": [0.1, 0.1, 0.2, 0.2]},
+        json={"clip_id": str(clip.id), "frame_seconds": 0.5, "bbox": list(bbox)},
     )
-    assert response.status_code == 403
+    assert response.status_code == 200
 
 
 async def test_enroll_404_for_unknown_person(admin_client: AsyncClient) -> None:
@@ -606,10 +620,10 @@ async def test_report_false_positive_502_when_model_load_fails(
     assert response.status_code == 502
 
 
-# --------------------------------------------------------- viewer can read only
+# ----------------------------------------------------- viewer read/write split
 
 
-async def test_viewer_can_read_people_and_settings_but_not_write(
+async def test_viewer_can_read_people_but_not_settings(
     viewer_client: AsyncClient, app: FastAPI
 ) -> None:
     person = await _make_person(app)

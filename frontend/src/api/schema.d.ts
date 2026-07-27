@@ -1578,6 +1578,11 @@ export interface components {
              */
             camera_count: number;
             /**
+             * Network Ids
+             * @default []
+             */
+            network_ids: string[];
+            /**
              * Total Clip Count
              * @default 0
              */

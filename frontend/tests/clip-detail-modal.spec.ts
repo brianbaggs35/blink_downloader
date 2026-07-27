@@ -618,10 +618,10 @@ describe("ClipDetailModal — report a false positive", () => {
 });
 
 describe("ClipDetailModal — report a missed face", () => {
-  it("is hidden for a viewer account", async () => {
+  it("is shown for a viewer account too (enrollment isn't admin-only)", async () => {
     mockedGetAnalysis.mockResolvedValue(routineAnalysis);
     await mountModal(clip, false);
-    expect(document.body.querySelector('[data-testid="report-missed-face"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="report-missed-face"]')).toBeTruthy();
   });
 
   it("is hidden when the clip hasn't downloaded yet", async () => {

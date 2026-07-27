@@ -1,9 +1,14 @@
 """Local facial recognition: settings, enrolled people, and clip-frame
 enrollment.
 
-Viewing people/thumbnails and previewing detected faces is available to any
-signed-in household member (matching the rest of the AI/clips surface);
-everything that creates, renames, deletes, or enrolls is admin-only.
+Viewing people/thumbnails and previewing detected faces, creating a new
+person, and enrolling a face sample (on a new or existing person) are all
+available to any signed-in household member — enrollment is additive and
+reversible-by-an-admin, so a viewer building out the household's face
+library doesn't need elevated access. Renaming a person, the
+never-mark-suspicious toggle, the "this wasn't them" false-positive report,
+and anything destructive (deleting a person or a face sample) stay
+admin-only, along with the biometrics settings themselves.
 """
 
 import uuid
@@ -160,7 +165,7 @@ async def list_people_route(
 async def create_person_route(
     payload: PersonCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
-    _user: Annotated[object, Depends(current_superuser)],
+    _user: Annotated[object, Depends(current_active_user)],
 ) -> PersonRead:
     person = await create_person(session, payload.name)
     return _person_read(person)
@@ -286,7 +291,7 @@ async def enroll_face_route(
     person_id: uuid.UUID,
     payload: EnrollFaceRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
-    _user: Annotated[object, Depends(current_superuser)],
+    _user: Annotated[object, Depends(current_active_user)],
 ) -> FaceEmbedding:
     person = await _get_person_or_404(session, person_id)
     biometrics_settings = await get_biometrics_settings(session)

@@ -327,10 +327,7 @@ async function onEnrolled(): Promise<void> {
       </div>
     </section>
 
-    <section
-      v-if="auth.isAdmin"
-      class="section"
-    >
+    <section class="section">
       <h4 class="section-title">
         Add a face from a clip
       </h4>

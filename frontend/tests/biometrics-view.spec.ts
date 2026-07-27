@@ -107,11 +107,10 @@ describe("BiometricsView empty state", () => {
     expect(wrapper.find('[data-testid="open-add-person-empty"]').exists()).toBe(true);
   });
 
-  it("hides the add-person action from non-admins", async () => {
+  it("also shows the add-person action for non-admins (enrollment isn't admin-only)", async () => {
     mockedList.mockResolvedValue([]);
     const wrapper = await mountView(false);
-    expect(wrapper.find('[data-testid="open-add-person-empty"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="open-add-person"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="open-add-person-empty"]').exists()).toBe(true);
   });
 });
 
