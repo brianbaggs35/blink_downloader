@@ -92,7 +92,7 @@ e2e-test: ## Run Playwright against an already-running `make e2e-up` stack
 e2e-down: ## Tear down the e2e stack
 	$(COMPOSE_TEST) --profile e2e down -v
 
-lint: lint-backend lint-frontend ## Run every linter
+lint: lint-backend lint-frontend lint-e2e ## Run every linter
 
 lint-backend: ## ruff + pyright + bandit
 	cd backend && uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run bandit -c pyproject.toml -r app -q
@@ -100,9 +100,13 @@ lint-backend: ## ruff + pyright + bandit
 lint-frontend: ## eslint + vue-tsc
 	cd frontend && npm run lint && npm run typecheck
 
+lint-e2e: ## eslint + tsc for the Playwright suite
+	cd e2e && npm run lint && npm run typecheck
+
 fmt: ## Auto-format backend and frontend
 	cd backend && uv run ruff check --fix . && uv run ruff format .
 	cd frontend && npm run lint:fix
+	cd e2e && npm run lint:fix
 
 migrate: ## Apply database migrations (local dev database on :5432)
 	cd backend && uv run alembic upgrade head

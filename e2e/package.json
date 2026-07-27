@@ -6,11 +6,18 @@
   "scripts": {
     "test": "playwright test",
     "test:ui": "playwright test --ui",
-    "report": "playwright show-report"
+    "report": "playwright show-report",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@playwright/test": "~1.61.1",
     "@types/node": "^26.1.1",
-    "typescript": "~5.9.3"
+    "eslint": "^10.8.0",
+    "eslint-plugin-playwright": "^2.10.5",
+    "eslint-plugin-security": "^4.0.1",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.65.0"
   }
 }

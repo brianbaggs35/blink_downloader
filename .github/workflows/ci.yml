@@ -228,6 +228,23 @@ jobs:
           sarif_file: trivy-frontend.sarif
           category: trivy-frontend
 
+  e2e-lint:
+    name: E2E · eslint + tsc
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: e2e
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+
   e2e:
     name: E2E · Playwright against seeded stack
     runs-on: ubuntu-latest
