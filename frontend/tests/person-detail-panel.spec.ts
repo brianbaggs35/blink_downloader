@@ -1,4 +1,5 @@
 import { flushPromises, mount } from "@vue/test-utils";
+import ToggleSwitch from "primevue/toggleswitch";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/api", async (importOriginal) => ({
@@ -48,6 +49,7 @@ function makePerson(overrides: Partial<PersonRead> = {}): PersonRead {
   return {
     id: "p-1",
     name: "Alex",
+    never_mark_suspicious: false,
     has_thumbnail: false,
     face_count: 1,
     created_at: "2026-07-20T00:00:00Z",
@@ -195,7 +197,10 @@ describe("PersonDetailPanel rename", () => {
     input.dispatchEvent(new Event("input"));
     document.body.querySelector<HTMLElement>('[data-testid="person-name-save"]')?.click();
     await flushPromises();
-    expect(mockedUpdatePerson).toHaveBeenCalledWith("p-1", { name: "Alexandra" });
+    expect(mockedUpdatePerson).toHaveBeenCalledWith("p-1", {
+      name: "Alexandra",
+      never_mark_suspicious: false,
+    });
     expect(document.body.textContent).toContain("Alexandra");
   });
 
@@ -235,6 +240,52 @@ describe("PersonDetailPanel rename", () => {
     document.body.querySelector<HTMLElement>('[data-testid="person-name-save"]')?.click();
     await flushPromises();
     expect(document.body.textContent).toContain("Could not rename.");
+  });
+});
+
+describe("PersonDetailPanel never-mark-suspicious toggle", () => {
+  it("reflects the person's current value", async () => {
+    mockedGetPerson.mockResolvedValue(makePerson({ never_mark_suspicious: true }));
+    const wrapper = await mountPanel();
+    expect(wrapper.findComponent(ToggleSwitch).props("modelValue")).toBe(true);
+  });
+
+  it("is hidden for a viewer", async () => {
+    await mountPanel("p-1", false);
+    expect(document.body.querySelector('[data-testid="never-mark-suspicious-toggle"]')).toBeNull();
+  });
+
+  it("saves the new value along with the current name", async () => {
+    mockedGetPerson.mockResolvedValue(makePerson({ name: "Alex", never_mark_suspicious: false }));
+    mockedUpdatePerson.mockResolvedValue(makePerson({ name: "Alex", never_mark_suspicious: true }));
+    const wrapper = await mountPanel();
+    await wrapper.findComponent(ToggleSwitch).vm.$emit("update:modelValue", true);
+    await flushPromises();
+    expect(mockedUpdatePerson).toHaveBeenCalledWith("p-1", {
+      name: "Alex",
+      never_mark_suspicious: true,
+    });
+    expect(wrapper.findComponent(ToggleSwitch).props("modelValue")).toBe(true);
+  });
+
+  it("toasts the API error message when saving fails", async () => {
+    mockedUpdatePerson.mockRejectedValue(new ApiError(400, "Could not save."));
+    const wrapper = await mountPanel();
+    await wrapper.findComponent(ToggleSwitch).vm.$emit("update:modelValue", true);
+    await flushPromises();
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: "error", detail: "Could not save." }),
+    );
+  });
+
+  it("toasts a generic error for a non-API failure", async () => {
+    mockedUpdatePerson.mockRejectedValue(new TypeError("down"));
+    const wrapper = await mountPanel();
+    await wrapper.findComponent(ToggleSwitch).vm.$emit("update:modelValue", true);
+    await flushPromises();
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: "error", detail: "Unexpected error." }),
+    );
   });
 });
 

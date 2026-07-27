@@ -1720,6 +1720,8 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+            /** Never Mark Suspicious */
+            never_mark_suspicious: boolean;
             /** Has Thumbnail */
             has_thumbnail: boolean;
             /** Face Count */
@@ -1739,6 +1741,8 @@ export interface components {
         PersonUpdate: {
             /** Name */
             name: string;
+            /** Never Mark Suspicious */
+            never_mark_suspicious: boolean;
         };
         /** ProximityEventRead */
         ProximityEventRead: {
