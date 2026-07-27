@@ -19,6 +19,8 @@ const usage = {
   total_cost_usd: 42.5,
   total_calls: 120,
   failed_calls: 3,
+  total_frames_analyzed: 480,
+  frames_analyzed_today: 24,
   daily: [
     { date: "2026-07-01", tokens: 1000, cost_usd: 1.1, calls: 5 },
     { date: "2026-07-02", tokens: 4000, cost_usd: 4.4, calls: 8 },
@@ -34,6 +36,8 @@ const emptyUsage = {
   total_cost_usd: 0,
   total_calls: 0,
   failed_calls: 0,
+  total_frames_analyzed: 0,
+  frames_analyzed_today: 0,
   daily: [],
   by_provider: [],
 };
@@ -128,6 +132,10 @@ describe("AiUsageView KPI tiles", () => {
     expect(text).toContain("$42.50");
     expect(text).toContain("120");
     expect(text).toContain("Total calls");
+    expect(text).toContain("24");
+    expect(text).toContain("Frames analyzed today");
+    expect(text).toContain("480");
+    expect(text).toContain("Frames analyzed (all time)");
     expect(text).toContain("3");
     expect(text).toContain("Failed calls");
     const failedTile = wrapper.findAll(".tile-value").find((el) => el.text() === "3");
