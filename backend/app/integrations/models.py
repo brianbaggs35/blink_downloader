@@ -12,7 +12,9 @@ from sqlalchemy import Boolean, DateTime, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.blink.models import StorageBackend
 from app.db import Base
+from app.db import str_enum as _str_enum
 
 SINGLETON_ID = uuid.UUID("00000000-0000-0000-0000-000000000003")
 
@@ -50,6 +52,17 @@ class StorageIntegrationSettings(Base):
     encrypted_onedrive_client_secret: Mapped[str | None] = mapped_column(Text)
     encrypted_onedrive_refresh_token: Mapped[str | None] = mapped_column(Text)
     onedrive_folder_path: Mapped[str | None] = mapped_column(Text)
+
+    # Where a newly-downloaded clip should end up living. LOCAL (the
+    # default) preserves today's behavior; any other value makes
+    # app.worker.tasks.analyze upload-then-delete-local right after a
+    # clip finishes analysis (or, if auto-analysis is off, right after
+    # download) - see app.integrations.archive.archive_clip.
+    auto_archive_backend: Mapped[StorageBackend] = mapped_column(
+        _str_enum(StorageBackend, "storage_auto_archive_backend", length=20),
+        default=StorageBackend.LOCAL,
+        server_default=StorageBackend.LOCAL.name,
+    )
 
     # CSRF state for whichever OAuth flow (if any) is currently in progress -
     # a single household admin only ever has one flow in flight at a time,

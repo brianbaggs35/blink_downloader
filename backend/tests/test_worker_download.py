@@ -19,12 +19,15 @@ from typing import Any, ClassVar
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.blink.models import BlinkAccount, BlinkAccountStatus, Camera, Clip
+from app.blink.models import BlinkAccount, BlinkAccountStatus, Camera, Clip, StorageBackend
 from app.blink.service import BlinkAuthError, BlinkError
 from app.config import get_settings
+from app.integrations.schemas import StorageIntegrationSettingsUpdate
+from app.integrations.service import update_storage_integration_settings
 from app.security.crypto import SecretBox
 from app.settings.service import set_storage_dir
 from app.worker.tasks.analyze import ANALYZE_JOB_NAME
+from app.worker.tasks.archive import ARCHIVE_CLIP_JOB_NAME
 from app.worker.tasks.download import download_clip
 
 
@@ -189,6 +192,28 @@ async def test_auto_analyze_false_skips_queueing_analysis(
         assert clip.downloaded_at is not None  # still downloaded
 
     worker_ctx["redis"].enqueue_job.assert_not_awaited()
+
+
+async def test_auto_analyze_false_still_auto_archives_when_configured(
+    worker_ctx: dict[str, Any], tmp_path: Path, synthetic_clip_bytes: bytes
+) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        await set_storage_dir(session, str(tmp_path))
+        _account, _camera, clip = await _make_account_camera_clip(session)
+        clip_id = clip.id
+        await update_storage_integration_settings(
+            session,
+            StorageIntegrationSettingsUpdate(auto_archive_backend=StorageBackend.GOOGLE_DRIVE),
+            get_settings().encryption_key,
+        )
+
+    FakeBlinkService.next_bytes = synthetic_clip_bytes
+    result = await download_clip(worker_ctx, str(clip_id), auto_analyze=False)
+    assert result == "ok"
+
+    worker_ctx["redis"].enqueue_job.assert_awaited_once_with(
+        ARCHIVE_CLIP_JOB_NAME, clip_id=str(clip_id), backend="google_drive"
+    )
 
 
 async def test_download_auth_error_marks_account_errored(worker_ctx: dict[str, Any]) -> None:

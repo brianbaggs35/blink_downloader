@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.blink.models import Clip, StorageBackend
 from app.config import get_settings
 from app.integrations.archive import ArchiveError, archive_clip, restore_clip
+from app.integrations.service import get_storage_integration_settings
 from app.logs import get_logger
 from app.settings.service import resolve_storage_dir
 from app.storage.service import get_clip_storage
@@ -19,6 +20,24 @@ logger = get_logger(__name__)
 
 ARCHIVE_CLIP_JOB_NAME = "archive_clip"
 RESTORE_CLIP_JOB_NAME = "restore_clip"
+
+
+async def maybe_enqueue_auto_archive(
+    ctx: dict[Any, Any], session: AsyncSession, clip: Clip
+) -> None:
+    """After a clip finishes downloading (and, if auto-analysis is on,
+    being analyzed), moves it off local disk when Settings > Archived's
+    "auto-archive new downloads" is set to a cloud provider - the same
+    archive_clip the Storage tab's manual archive action uses, just
+    triggered automatically instead of by an admin's click."""
+    if clip.storage_backend != StorageBackend.LOCAL or clip.downloaded_at is None:
+        return
+    row = await get_storage_integration_settings(session)
+    if row.auto_archive_backend == StorageBackend.LOCAL:
+        return
+    await ctx["redis"].enqueue_job(
+        ARCHIVE_CLIP_JOB_NAME, clip_id=str(clip.id), backend=row.auto_archive_backend.value
+    )
 
 
 async def archive_clip_job(ctx: dict[Any, Any], clip_id: str, backend: str) -> str:

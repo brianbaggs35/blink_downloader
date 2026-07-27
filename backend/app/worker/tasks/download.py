@@ -20,6 +20,7 @@ from app.settings.service import resolve_storage_dir
 from app.storage.service import StorageError, get_clip_storage
 from app.video.ffmpeg import FfmpegError, generate_thumbnail, probe_duration_seconds
 from app.worker.tasks.analyze import ANALYZE_JOB_NAME
+from app.worker.tasks.archive import maybe_enqueue_auto_archive
 
 logger = get_logger(__name__)
 
@@ -99,6 +100,10 @@ async def download_clip(ctx: dict[Any, Any], clip_id: str, auto_analyze: bool = 
 
         if auto_analyze:
             await ctx["redis"].enqueue_job(ANALYZE_JOB_NAME, clip_id=clip_id)
+        else:
+            # No analysis job will run to trigger this afterward - do it
+            # directly, since the clip is otherwise done with local disk.
+            await maybe_enqueue_auto_archive(ctx, session, clip)
         logger.info(
             "blink.download_completed", clip_id=clip_id, bytes=size, auto_analyze=auto_analyze
         )

@@ -70,6 +70,7 @@ def _read(row: StorageIntegrationSettings) -> StorageIntegrationSettingsRead:
         onedrive_client_secret_set=bool(row.encrypted_onedrive_client_secret),
         onedrive_connected=bool(row.encrypted_onedrive_refresh_token),
         onedrive_folder_path=row.onedrive_folder_path,
+        auto_archive_backend=row.auto_archive_backend,
     )
 
 

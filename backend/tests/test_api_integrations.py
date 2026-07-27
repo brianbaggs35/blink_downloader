@@ -42,11 +42,20 @@ async def test_get_defaults(admin_client: AsyncClient) -> None:
     assert body["s3_credentials_set"] is False
     assert body["google_drive_connected"] is False
     assert body["onedrive_connected"] is False
+    assert body["auto_archive_backend"] == "local"
 
 
 async def test_put_requires_admin(viewer_client: AsyncClient) -> None:
     response = await viewer_client.put("/api/settings/storage-integrations", json={})
     assert response.status_code == 403
+
+
+async def test_put_sets_the_auto_archive_backend(admin_client: AsyncClient) -> None:
+    response = await admin_client.put(
+        "/api/settings/storage-integrations", json={"auto_archive_backend": "onedrive"}
+    )
+    assert response.status_code == 200
+    assert response.json()["auto_archive_backend"] == "onedrive"
 
 
 async def test_put_updates_and_never_echoes_secrets(admin_client: AsyncClient) -> None:

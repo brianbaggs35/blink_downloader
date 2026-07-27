@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.blink.models import StorageBackend
 from app.config import get_settings
 from app.integrations.cloud import GoogleDriveClient, OneDriveClient, S3Client
 from app.integrations.models import SINGLETON_ID, StorageIntegrationSettings
@@ -29,6 +30,15 @@ async def test_get_creates_the_row_on_first_read(app_session: AsyncSession) -> N
     assert row.s3_enabled is False
     assert row.google_drive_enabled is False
     assert row.onedrive_enabled is False
+    assert row.auto_archive_backend == StorageBackend.LOCAL
+
+
+async def test_update_sets_the_auto_archive_backend(app_session: AsyncSession) -> None:
+    payload = StorageIntegrationSettingsUpdate(auto_archive_backend=StorageBackend.S3)
+    row = await update_storage_integration_settings(
+        app_session, payload, get_settings().encryption_key
+    )
+    assert row.auto_archive_backend == StorageBackend.S3
 
 
 async def test_update_sets_fields_and_encrypts_secrets(app_session: AsyncSession) -> None:

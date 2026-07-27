@@ -60,6 +60,8 @@ async def update_storage_integration_settings(
     _apply_secret(row, "encrypted_onedrive_client_secret", box, payload.onedrive_client_secret)
     row.onedrive_folder_path = payload.onedrive_folder_path
 
+    row.auto_archive_backend = payload.auto_archive_backend
+
     await session.commit()
     await session.refresh(row)
     return row

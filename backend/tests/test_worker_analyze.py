@@ -24,12 +24,15 @@ from app.ai.schemas import AISettingsUpdate
 from app.ai.service import get_ai_settings, update_ai_settings
 from app.alerts.schemas import AlertSettingsUpdate
 from app.alerts.service import update_alert_settings
-from app.blink.models import BlinkAccount, Camera, Clip
+from app.blink.models import BlinkAccount, Camera, Clip, StorageBackend
 from app.config import get_settings
+from app.integrations.schemas import StorageIntegrationSettingsUpdate
+from app.integrations.service import update_storage_integration_settings
 from app.security.crypto import SecretBox
 from app.vehicles.models import Vehicle
 from app.worker.tasks.alerts import SEND_ALERT_JOB_NAME
 from app.worker.tasks.analyze import analyze_clip
+from app.worker.tasks.archive import ARCHIVE_CLIP_JOB_NAME
 
 VEHICLE_OUTLINE = [[0.3, 0.4], [0.7, 0.4], [0.7, 0.7], [0.3, 0.7]]
 # Same 64x64-frame geometry as test_ai_pipeline.py: outline max span
@@ -155,6 +158,36 @@ async def test_ai_disabled_short_circuits(
 
     result = await analyze_clip(worker_ctx, str(clip_id))
     assert result == "ai_disabled"
+
+
+async def test_auto_archive_is_enqueued_regardless_of_analysis_outcome(
+    worker_ctx: dict[str, Any], sample_clip_path: Path
+) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        _camera, clip = await _make_camera_and_clip(session, sample_clip_path)
+        clip_id = clip.id
+        await update_storage_integration_settings(
+            session,
+            StorageIntegrationSettingsUpdate(auto_archive_backend=StorageBackend.S3),
+            get_settings().encryption_key,
+        )
+
+    result = await analyze_clip(worker_ctx, str(clip_id))
+    assert result == "ai_disabled"
+    worker_ctx["redis"].enqueue_job.assert_awaited_once_with(
+        ARCHIVE_CLIP_JOB_NAME, clip_id=str(clip_id), backend="s3"
+    )
+
+
+async def test_auto_archive_is_not_enqueued_when_left_local(
+    worker_ctx: dict[str, Any], sample_clip_path: Path
+) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        _camera, clip = await _make_camera_and_clip(session, sample_clip_path)
+        clip_id = clip.id
+
+    await analyze_clip(worker_ctx, str(clip_id))
+    worker_ctx["redis"].enqueue_job.assert_not_awaited()
 
 
 async def test_camera_disabled_short_circuits(
