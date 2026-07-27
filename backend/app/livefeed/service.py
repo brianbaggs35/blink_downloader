@@ -81,6 +81,15 @@ def _is_fresh(camera: Camera) -> bool:
     return age < timedelta(seconds=PREVIEW_FRESHNESS_SECONDS)
 
 
+def _stale_cache(camera: Camera, *, force: bool) -> Path | None:
+    """A cached file that's past PREVIEW_FRESHNESS_SECONDS but still real -
+    usable as a last resort when a live refetch fails, for a passive request."""
+    if force or not camera.preview_path:
+        return None
+    path = Path(camera.preview_path)
+    return path if path.exists() else None
+
+
 async def get_camera_preview(
     session: AsyncSession,
     settings: Settings,
@@ -91,8 +100,11 @@ async def get_camera_preview(
 ) -> Path:
     """Returns the local path to a preview image for ``camera``, fetching a
     fresh one from Blink first unless a recent passive fetch is still
-    fresh. Raises BlinkError/BlinkAuthError on failure - the caller (the
-    API layer) maps those to an HTTP response."""
+    fresh. A passive request (force=False) that fails to refetch falls back
+    to a stale cached file rather than erroring, if one exists; a forced
+    request always surfaces the real failure. Raises BlinkError/BlinkAuthError
+    when there's truly nothing to show - the caller (the API layer) maps
+    those to an HTTP response."""
     if not force and _is_fresh(camera):
         return Path(camera.preview_path)  # type: ignore[arg-type]  — guarded by _is_fresh
 
@@ -113,6 +125,18 @@ async def get_camera_preview(
         account.status = BlinkAccountStatus.ERROR
         account.last_error = str(exc)
         await session.commit()
+        stale = _stale_cache(camera, force=force)
+        if stale is not None:
+            return stale
+        raise
+    except BlinkError:
+        # A passive poll degrades to "whatever we last had" rather than a
+        # broken image the moment Blink is briefly unreachable - force=True
+        # is an explicit "capture right now" ask, so it still surfaces the
+        # real failure instead of silently handing back a stale frame.
+        stale = _stale_cache(camera, force=force)
+        if stale is not None:
+            return stale
         raise
     finally:
         await service.close()
