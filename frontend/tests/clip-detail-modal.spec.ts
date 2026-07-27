@@ -141,6 +141,23 @@ describe("ClipDetailModal — base rendering", () => {
     expect(document.body.textContent).toContain("2.0 KB");
   });
 
+  it("lets the dialog be maximized so the player gets full-viewport room", async () => {
+    mockedGetAnalysis.mockRejectedValue(notFound());
+    const wrapper = await mountModal(clip);
+    expect(wrapper.findComponent({ name: "Dialog" }).props("maximizable")).toBe(true);
+  });
+
+  it("keeps the video and primary actions in the main column, metadata and AI in the sidebar", async () => {
+    mockedGetAnalysis.mockRejectedValue(notFound());
+    await mountModal(clip);
+    const main = document.body.querySelector(".modal-main");
+    const sidebar = document.body.querySelector(".modal-sidebar");
+    expect(main?.querySelector('[data-testid="modal-download"]')).toBeTruthy();
+    expect(sidebar?.querySelector(".meta-grid")).toBeTruthy();
+    expect(sidebar?.querySelector(".ai-section")).toBeTruthy();
+    expect(main?.querySelector(".ai-section")).toBeNull();
+  });
+
   it("omits the poster when no thumbnail has been generated", async () => {
     mockedGetAnalysis.mockRejectedValue(notFound());
     const wrapper = await mountModal({ ...clip, thumbnail_generated: false });
