@@ -85,14 +85,31 @@ design):
   config; Settings → General picks which of Library or Security Feed a
   fresh login lands on.
 
+**Shipped — Cloud storage archiving & Integrations** (see
+[docs/STORAGE.md](STORAGE.md) for the full design):
+- Archive/restore a clip's video to Amazon S3, Google Drive, or Microsoft
+  OneDrive — one canonical location at a time, never a cached second copy.
+  S3 via `boto3` (SigV4-signed presigned download links); Google Drive and
+  OneDrive via their official OAuth SDKs, with a self-issued encrypted
+  bearer-token link standing in for a presigned URL (neither provider
+  offers one without making the file public).
+- A new top-level **Integrations** page: a searchable, category-filterable
+  directory to connect each provider, with inline (never modal) per-provider
+  config and a combined test-connection action.
+- **Settings → Archived**: a single "where do new downloads end up"
+  setting — left on local disk by default, or auto-archived to a connected
+  provider right after a clip finishes analysis.
+- **Not yet built**: browsing a connected provider's folder tree or
+  creating folders from within the app (upload/download/delete only today).
+
 **Up next:**
 
 1. **Rules engine** — today's alerting is one household-wide config (trigger
    toggles + thresholds); a real rule engine ("if unknown vehicle AND time
    between…") is more valuable now that biometrics and vehicle recognition
    give it more to key conditions on.
-2. **Product features** — archives + S3/Google Drive/OneDrive,
-   digests/notifications polish, search, timeline, backups.
+2. **Product features** — a cloud-provider file browser/folder creation for
+   the Storage tab, digests/notifications polish, search, timeline, backups.
 
 ## Deferred / watching
 

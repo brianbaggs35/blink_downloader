@@ -432,10 +432,14 @@ step once facial/vehicle recognition gives more to key rules on):
 
 ## Storage
 
-`clips` rows carry `storage_backend` + `storage_path` behind a storage
-interface: local disk now; S3, Google Drive, and OneDrive adapters later for
-archives. Archival moves bytes and flips the backend field — the Library and
-Storage tabs read the same rows throughout.
+`clips` rows carry `storage_backend` + `storage_path`. Local disk is where
+every clip lands on download; archiving to S3, Google Drive, or OneDrive
+moves the video bytes to that provider and flips `storage_backend` — a clip
+lives in exactly one place at a time, never both. The Library and Storage
+tabs read the same rows throughout. Provider connections live on the
+Integrations page; see [STORAGE.md](STORAGE.md) for the full design
+(archive/restore semantics, the download-link trust model, and per-provider
+setup).
 
 ## Environments
 
