@@ -100,7 +100,11 @@ recording.
   (`Camera.preview_path`/`preview_updated_at`) with an 8-second freshness
   window. A cache hit costs nothing upstream; N browser tabs polling the same
   camera cost Blink one request, not N. This is what both Live View's
-  auto-refresh and every Security Feed tile poll on their interval.
+  auto-refresh and every Security Feed tile poll on their interval. If the
+  cache is stale and the live refetch itself fails (Blink briefly
+  unreachable, a rate limit, ...), a passive request falls back to the stale
+  file rather than erroring — a forced request never does, since it's an
+  explicit "capture right now" ask that should surface a real failure.
 - **Forced preview** (`?force=true`): calls `camera.snap_picture()`, which
   wakes the camera for a fresh capture — real battery cost on a
   battery-powered camera, so it's gated to `current_superuser` server-side

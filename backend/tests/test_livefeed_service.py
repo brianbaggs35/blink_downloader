@@ -241,6 +241,57 @@ async def test_get_camera_preview_propagates_generic_blink_errors(
         await get_camera_preview(app_session, get_settings(), camera, storage, force=False)
 
 
+async def _stale_the_cache(app_session: AsyncSession, camera: Camera) -> None:
+    camera.preview_updated_at = datetime.now(UTC) - timedelta(minutes=5)
+    await app_session.commit()
+
+
+async def test_get_camera_preview_falls_back_to_stale_cache_on_auth_failure(
+    app_session: AsyncSession, tmp_path: Path
+) -> None:
+    account, camera = await _make_account_and_camera(app_session)
+    storage = get_clip_storage(tmp_path)
+    good_path = await get_camera_preview(app_session, get_settings(), camera, storage, force=False)
+    await _stale_the_cache(app_session, camera)
+
+    FakeBlinkService.next_error = BlinkAuthError("token expired")
+    path = await get_camera_preview(app_session, get_settings(), camera, storage, force=False)
+
+    assert path == good_path
+    assert path.read_bytes() == b"preview-bytes"
+    await app_session.refresh(account)
+    assert account.status == BlinkAccountStatus.ERROR  # still recorded, even though we degraded
+
+
+async def test_get_camera_preview_falls_back_to_stale_cache_on_generic_error(
+    app_session: AsyncSession, tmp_path: Path
+) -> None:
+    _account, camera = await _make_account_and_camera(app_session)
+    storage = get_clip_storage(tmp_path)
+    good_path = await get_camera_preview(app_session, get_settings(), camera, storage, force=False)
+    await _stale_the_cache(app_session, camera)
+
+    FakeBlinkService.next_error = BlinkError("camera offline")
+    path = await get_camera_preview(app_session, get_settings(), camera, storage, force=False)
+
+    assert path == good_path
+
+
+async def test_get_camera_preview_force_ignores_stale_cache_and_raises(
+    app_session: AsyncSession, tmp_path: Path
+) -> None:
+    """A forced ("Snap now") request is an explicit ask for a live capture -
+    it should surface the real failure, not quietly hand back an old frame."""
+    _account, camera = await _make_account_and_camera(app_session)
+    storage = get_clip_storage(tmp_path)
+    await get_camera_preview(app_session, get_settings(), camera, storage, force=False)
+    await _stale_the_cache(app_session, camera)
+
+    FakeBlinkService.next_error = BlinkError("camera offline")
+    with pytest.raises(BlinkError):
+        await get_camera_preview(app_session, get_settings(), camera, storage, force=True)
+
+
 # ------------------------------------------------------------------ record
 
 
