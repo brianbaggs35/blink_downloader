@@ -23,7 +23,7 @@ import {
 } from "@/api";
 import { ApiError } from "@/api/client";
 import BlinkAccountPanel from "@/components/BlinkAccountPanel.vue";
-import { makePinia, mountGlobal } from "./helpers";
+import { fakeBlinkStatus, makePinia, mountGlobal } from "./helpers";
 
 const mockedStatus = vi.mocked(getBlinkStatus);
 const mockedLink = vi.mocked(linkBlinkAccount);
@@ -31,16 +31,15 @@ const mockedVerify = vi.mocked(verifyBlinkAccount);
 const mockedSync = vi.mocked(triggerBlinkSync);
 const mockedUnlink = vi.mocked(unlinkBlinkAccount);
 
-const linkedStatus = {
+const linkedStatus = fakeBlinkStatus({
   linked: true,
-  status: "active" as const,
+  status: "active",
   last_sync: "2026-07-20T12:00:00Z",
-  last_error: null,
   camera_count: 3,
-};
+});
 
 function unlinkedStatus() {
-  return { linked: false, status: null, last_sync: null, last_error: null, camera_count: 0 };
+  return fakeBlinkStatus();
 }
 
 async function mountPanel() {

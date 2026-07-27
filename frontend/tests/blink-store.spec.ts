@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { makePinia } from "./helpers";
+import { fakeBlinkStatus, makePinia } from "./helpers";
 
 vi.mock("@/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api")>()),
@@ -26,21 +26,14 @@ const mockedVerify = vi.mocked(verifyBlinkAccount);
 const mockedSync = vi.mocked(triggerBlinkSync);
 const mockedUnlink = vi.mocked(unlinkBlinkAccount);
 
-const unlinkedStatus = {
-  linked: false,
-  status: null,
-  last_sync: null,
-  last_error: null,
-  camera_count: 0,
-};
+const unlinkedStatus = fakeBlinkStatus();
 
-const linkedStatus = {
+const linkedStatus = fakeBlinkStatus({
   linked: true,
-  status: "active" as const,
+  status: "active",
   last_sync: "2026-07-20T00:00:00Z",
-  last_error: null,
   camera_count: 2,
-};
+});
 
 beforeEach(() => {
   makePinia();

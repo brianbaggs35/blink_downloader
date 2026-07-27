@@ -26,6 +26,7 @@ function makePerson(overrides: Partial<PersonRead> = {}): PersonRead {
   return {
     id: "p-1",
     name: "Alex",
+    never_mark_suspicious: false,
     has_thumbnail: false,
     face_count: 1,
     created_at: "2026-07-20T00:00:00Z",

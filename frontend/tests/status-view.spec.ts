@@ -2,7 +2,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import StatusView from "@/views/StatusView.vue";
-import { healthyReport, makePinia, makeRouter, mountGlobal } from "./helpers";
+import { fakeBlinkStatus, healthyReport, makePinia, makeRouter, mountGlobal } from "./helpers";
 
 vi.mock("@/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api")>()),
@@ -15,21 +15,12 @@ import { getBlinkStatus, getHealth } from "@/api";
 const mockedHealth = vi.mocked(getHealth);
 const mockedBlinkStatus = vi.mocked(getBlinkStatus);
 
-const unlinkedStatus = {
-  linked: false,
-  status: null,
-  last_sync: null,
-  last_error: null,
-  camera_count: 0,
-  total_clip_count: 0,
-  daily_clip_counts: [],
-} as const;
+const unlinkedStatus = fakeBlinkStatus();
 
-const linkedStatus = {
+const linkedStatus = fakeBlinkStatus({
   linked: true,
   status: "active",
   last_sync: "2026-07-26T12:00:00Z",
-  last_error: null,
   camera_count: 3,
   total_clip_count: 42,
   daily_clip_counts: [
@@ -41,7 +32,7 @@ const linkedStatus = {
     { date: "2026-07-25", count: 1 },
     { date: "2026-07-26", count: 5 },
   ],
-} as const;
+});
 
 beforeEach(() => {
   vi.clearAllMocks();

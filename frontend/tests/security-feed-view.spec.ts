@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/api/client";
 import SecurityFeedView from "@/views/SecurityFeedView.vue";
 import { useAuthStore } from "@/stores/auth";
-import { fakeUser, makePinia, makeRouter, mountGlobal } from "./helpers";
+import { fakeBlinkStatus, fakeUser, makePinia, makeRouter, mountGlobal } from "./helpers";
 
 vi.mock("@/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api")>()),
@@ -27,10 +27,10 @@ const mockedSettings = vi.mocked(getSecurityFeedSettings);
 const mockedRecord = vi.mocked(recordCameraClip);
 
 function linkedStatus() {
-  return { linked: true, status: "active" as const, last_sync: null, last_error: null, camera_count: 2 };
+  return fakeBlinkStatus({ linked: true, status: "active", camera_count: 2 });
 }
 function unlinkedStatus() {
-  return { linked: false, status: null, last_sync: null, last_error: null, camera_count: 0 };
+  return fakeBlinkStatus();
 }
 
 const cameraA = {
