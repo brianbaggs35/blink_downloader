@@ -27,6 +27,7 @@ function makePerson(overrides: Partial<PersonRead> = {}): PersonRead {
   return {
     id: "person-1",
     name: "Alex",
+    never_mark_suspicious: false,
     has_thumbnail: false,
     face_count: 0,
     created_at: "2026-07-25T00:00:00Z",
@@ -135,6 +136,20 @@ describe("BiometricsView people grid", () => {
     expect(wrapper.find('[data-testid="person-card-p-1"] img').exists()).toBe(true);
     expect(wrapper.find('[data-testid="person-card-p-2"] img').exists()).toBe(false);
     expect(wrapper.find('[data-testid="person-card-p-2"] .pi-user').exists()).toBe(true);
+  });
+
+  it("shows the trusted icon only for people flagged never_mark_suspicious", async () => {
+    mockedList.mockResolvedValue([
+      makePerson({ id: "p-1", never_mark_suspicious: true }),
+      makePerson({ id: "p-2", never_mark_suspicious: false }),
+    ]);
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="person-card-p-1"] [data-testid="trusted-icon"]').exists()).toBe(
+      true,
+    );
+    expect(wrapper.find('[data-testid="person-card-p-2"] [data-testid="trusted-icon"]').exists()).toBe(
+      false,
+    );
   });
 });
 

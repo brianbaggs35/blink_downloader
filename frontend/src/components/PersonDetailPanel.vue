@@ -3,6 +3,7 @@ import Button from "primevue/button";
 import InputText from "primevue/inputtext";
 import Message from "primevue/message";
 import Skeleton from "primevue/skeleton";
+import ToggleSwitch from "primevue/toggleswitch";
 import { useToast } from "primevue/usetoast";
 import { ref, watch } from "vue";
 
@@ -81,12 +82,37 @@ async function saveName(): Promise<void> {
   savingName.value = true;
   renameError.value = "";
   try {
-    person.value = await updatePerson(props.personId, { name: nameDraft.value.trim() });
+    person.value = await updatePerson(props.personId, {
+      name: nameDraft.value.trim(),
+      never_mark_suspicious: person.value!.never_mark_suspicious,
+    });
     editingName.value = false;
   } catch (caught) {
     renameError.value = caught instanceof ApiError ? caught.message : "Could not rename.";
   } finally {
     savingName.value = false;
+  }
+}
+
+const savingNeverMarkSuspicious = ref(false);
+
+async function toggleNeverMarkSuspicious(value: boolean): Promise<void> {
+  // Only reachable via the toggle inside the v-else-if="person" block.
+  savingNeverMarkSuspicious.value = true;
+  try {
+    person.value = await updatePerson(props.personId, {
+      name: person.value!.name,
+      never_mark_suspicious: value,
+    });
+  } catch (caught) {
+    toast.add({
+      severity: "error",
+      summary: "Could not update this person",
+      detail: caught instanceof ApiError ? caught.message : "Unexpected error.",
+      life: 4000,
+    });
+  } finally {
+    savingNeverMarkSuspicious.value = false;
   }
 }
 
@@ -237,6 +263,27 @@ async function onEnrolled(): Promise<void> {
       {{ renameError }}
     </Message>
 
+    <div
+      v-if="auth.isAdmin"
+      class="toggle-row"
+    >
+      <ToggleSwitch
+        :model-value="person.never_mark_suspicious"
+        :disabled="savingNeverMarkSuspicious"
+        data-testid="never-mark-suspicious-toggle"
+        @update:model-value="toggleNeverMarkSuspicious"
+      />
+      <div>
+        <p class="toggle-label">
+          Never mark suspicious
+        </p>
+        <p class="muted">
+          Clips where {{ person.name }} is recognized are always labeled routine, even if the AI
+          flags them.
+        </p>
+      </div>
+    </div>
+
     <section class="section">
       <h4 class="section-title">
         {{ faces.length }} enrolled face sample(s)
@@ -322,6 +369,24 @@ async function onEnrolled(): Promise<void> {
 
 .delete-person-button {
   margin-left: auto;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.toggle-label {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.muted {
+  margin: 2px 0 0;
+  font-size: 0.8rem;
+  color: var(--p-surface-500);
 }
 
 .section {

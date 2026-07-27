@@ -173,7 +173,16 @@ function onPersonDeleted(): void {
             </div>
           </div>
           <div class="person-meta">
-            <span class="person-name">{{ person.name }}</span>
+            <span class="person-name">
+              {{ person.name }}
+              <i
+                v-if="person.never_mark_suspicious"
+                class="pi pi-shield trusted-icon"
+                data-testid="trusted-icon"
+                title="Never marked suspicious"
+                aria-label="Never marked suspicious"
+              />
+            </span>
             <span class="muted">{{ person.face_count }} face sample(s)</span>
           </div>
         </article>
@@ -314,6 +323,16 @@ function onPersonDeleted(): void {
 .person-name {
   font-size: 0.95rem;
   font-weight: 700;
+}
+
+.trusted-icon {
+  margin-left: 4px;
+  font-size: 0.82em;
+  color: var(--p-green-600);
+}
+
+.blink-dark .trusted-icon {
+  color: var(--p-green-400);
 }
 
 .muted {
