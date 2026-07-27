@@ -7,7 +7,7 @@ import Password from "primevue/password";
 import Select from "primevue/select";
 import SelectButton from "primevue/selectbutton";
 import { useToast } from "primevue/usetoast";
-import { computed, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 
 import {
@@ -79,6 +79,35 @@ const activeTab = ref(
 
 function selectSection(value: string): void {
   activeTab.value = value;
+}
+
+// WAI-ARIA tablist pattern, automatic activation: arrow keys both move focus
+// and switch the active section, matching the roving tabindex below. Both
+// axes are handled since the layout itself switches between a vertical
+// sidebar (desktop) and a horizontal scrollable row (mobile).
+function onNavKeydown(event: KeyboardEvent, currentValue: string): void {
+  const sections = visibleSections.value;
+  const index = sections.findIndex((section) => section.value === currentValue);
+  let nextIndex: number | null = null;
+  if (event.key === "ArrowDown" || event.key === "ArrowRight") {
+    nextIndex = (index + 1) % sections.length;
+  } else if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
+    nextIndex = (index - 1 + sections.length) % sections.length;
+  } else if (event.key === "Home") {
+    nextIndex = 0;
+  } else if (event.key === "End") {
+    nextIndex = sections.length - 1;
+  }
+  if (nextIndex === null) return;
+  event.preventDefault();
+  // nextIndex is always a bounded array index computed just above, never
+  // external input.
+  // eslint-disable-next-line security/detect-object-injection
+  const nextValue = sections[nextIndex]!.value;
+  activeTab.value = nextValue;
+  void nextTick(() => {
+    document.querySelector<HTMLElement>(`[data-testid="settings-nav-${nextValue}"]`)?.focus();
+  });
 }
 
 const displayName = ref("");
@@ -243,6 +272,8 @@ async function saveBlinkSyncSettings(): Promise<void> {
     <div class="settings-layout">
       <nav
         class="settings-nav"
+        role="tablist"
+        aria-orientation="vertical"
         aria-label="Settings sections"
         data-testid="settings-nav"
       >
@@ -250,10 +281,14 @@ async function saveBlinkSyncSettings(): Promise<void> {
           v-for="section in visibleSections"
           :key="section.value"
           type="button"
+          role="tab"
           class="settings-nav-item"
           :class="{ active: activeTab === section.value }"
+          :aria-selected="activeTab === section.value"
+          :tabindex="activeTab === section.value ? 0 : -1"
           :data-testid="`settings-nav-${section.value}`"
           @click="selectSection(section.value)"
+          @keydown="onNavKeydown($event, section.value)"
         >
           <i
             :class="section.icon"
@@ -263,7 +298,10 @@ async function saveBlinkSyncSettings(): Promise<void> {
         </button>
       </nav>
 
-      <div class="settings-content">
+      <div
+        class="settings-content"
+        role="tabpanel"
+      >
         <div
           v-if="activeTab === 'general'"
           class="panels"

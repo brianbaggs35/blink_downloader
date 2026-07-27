@@ -431,6 +431,62 @@ describe("SettingsView tabs", () => {
     expect(wrapper.find('[data-testid="settings-nav-users"]').classes()).toContain("active");
   });
 
+  it("exposes a proper ARIA tablist/tab pattern", async () => {
+    const wrapper = mountSettings();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="settings-nav"]').attributes("role")).toBe("tablist");
+    const general = wrapper.find('[data-testid="settings-nav-general"]');
+    expect(general.attributes("role")).toBe("tab");
+    expect(general.attributes("aria-selected")).toBe("true");
+    expect(general.attributes("tabindex")).toBe("0");
+    const users = wrapper.find('[data-testid="settings-nav-users"]');
+    expect(users.attributes("aria-selected")).toBe("false");
+    expect(users.attributes("tabindex")).toBe("-1");
+  });
+
+  it.each([
+    ["ArrowDown", "users"],
+    ["ArrowRight", "users"],
+    ["Home", "general"],
+    ["End", "about"],
+  ])("moves to the %s section on %s from General", async (key, expectedValue) => {
+    const wrapper = mountSettings();
+    await flushPromises();
+    await wrapper.find('[data-testid="settings-nav-general"]').trigger("keydown", { key });
+    await flushPromises();
+    expect(wrapper.find(`[data-testid="settings-nav-${expectedValue}"]`).classes()).toContain(
+      "active",
+    );
+  });
+
+  it("wraps from the last section back to the first on ArrowDown", async () => {
+    const wrapper = mountSettings();
+    await flushPromises();
+    await wrapper.find('[data-testid="settings-nav-about"]').trigger("keydown", {
+      key: "ArrowDown",
+    });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="settings-nav-general"]').classes()).toContain("active");
+  });
+
+  it("moves to the previous section on ArrowUp/ArrowLeft", async () => {
+    const wrapper = mountSettings();
+    await flushPromises();
+    await wrapper.find('[data-testid="settings-nav-users"]').trigger("keydown", {
+      key: "ArrowUp",
+    });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="settings-nav-general"]').classes()).toContain("active");
+  });
+
+  it("ignores keys that aren't part of the tab pattern", async () => {
+    const wrapper = mountSettings();
+    await flushPromises();
+    await wrapper.find('[data-testid="settings-nav-general"]').trigger("keydown", { key: "a" });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="settings-nav-general"]').classes()).toContain("active");
+  });
+
   it("opens directly on the tab named in the ?tab= query for an admin", async () => {
     const pinia = makePinia();
     useAuthStore().user = { ...fakeUser, timezone: "UTC" };
