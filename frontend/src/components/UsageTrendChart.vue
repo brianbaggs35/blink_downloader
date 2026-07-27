@@ -10,12 +10,17 @@ export interface TrendPoint {
   calls: number;
 }
 
-const props = defineProps<{
-  title: string;
-  points: TrendPoint[];
-  seriesColor: "blue" | "orange";
-  formatValue: (value: number) => string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    title: string;
+    points: TrendPoint[];
+    seriesColor: "blue" | "orange";
+    formatValue: (value: number) => string;
+    /** Unit for the secondary tooltip line, e.g. "call(s)" or "clip(s)". */
+    unitLabel?: string;
+  }>(),
+  { unitLabel: "call(s)" },
+);
 
 const CHART_W = 100;
 const CHART_H = 32;
@@ -162,7 +167,7 @@ function clearHover(): void {
         >
           <span class="tooltip-date">{{ dayLabel(hoveredPoint.date) }}</span>
           <span class="tooltip-value">{{ formatValue(hoveredPoint.value) }}</span>
-          <span class="tooltip-calls">{{ hoveredPoint.calls }} call(s)</span>
+          <span class="tooltip-calls">{{ hoveredPoint.calls }} {{ unitLabel }}</span>
         </div>
       </div>
     </div>

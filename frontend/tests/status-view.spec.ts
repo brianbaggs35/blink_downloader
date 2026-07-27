@@ -1,29 +1,58 @@
 import { flushPromises, mount } from "@vue/test-utils";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import StatusView from "@/views/StatusView.vue";
-import { healthyReport, makePinia, mountGlobal } from "./helpers";
+import { healthyReport, makePinia, makeRouter, mountGlobal } from "./helpers";
 
 vi.mock("@/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api")>()),
   getHealth: vi.fn(),
+  getBlinkStatus: vi.fn(),
 }));
 
-import { beforeEach } from "vitest";
-
-import { getHealth } from "@/api";
+import { getBlinkStatus, getHealth } from "@/api";
 
 const mockedHealth = vi.mocked(getHealth);
+const mockedBlinkStatus = vi.mocked(getBlinkStatus);
+
+const unlinkedStatus = {
+  linked: false,
+  status: null,
+  last_sync: null,
+  last_error: null,
+  camera_count: 0,
+  total_clip_count: 0,
+  daily_clip_counts: [],
+} as const;
+
+const linkedStatus = {
+  linked: true,
+  status: "active",
+  last_sync: "2026-07-26T12:00:00Z",
+  last_error: null,
+  camera_count: 3,
+  total_clip_count: 42,
+  daily_clip_counts: [
+    { date: "2026-07-20", count: 1 },
+    { date: "2026-07-21", count: 0 },
+    { date: "2026-07-22", count: 2 },
+    { date: "2026-07-23", count: 0 },
+    { date: "2026-07-24", count: 3 },
+    { date: "2026-07-25", count: 1 },
+    { date: "2026-07-26", count: 5 },
+  ],
+} as const;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockedBlinkStatus.mockResolvedValue(unlinkedStatus);
 });
 
 function mountView() {
-  return mount(StatusView, { global: mountGlobal(makePinia()) });
+  return mount(StatusView, { global: mountGlobal(makePinia(), makeRouter()) });
 }
 
-describe("StatusView", () => {
+describe("StatusView platform health", () => {
   it("shows skeletons while loading", async () => {
     mockedHealth.mockReturnValue(new Promise(() => undefined));
     const wrapper = mountView();
@@ -76,5 +105,89 @@ describe("StatusView", () => {
     await wrapper.find('[data-testid="refresh"]').trigger("click");
     await flushPromises();
     expect(mockedHealth).toHaveBeenCalledTimes(2);
+    expect(mockedBlinkStatus).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("StatusView Blink connection", () => {
+  it("shows a skeleton while the first status check is in flight", async () => {
+    mockedBlinkStatus.mockReturnValue(new Promise(() => undefined));
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="blink-loading"]').exists()).toBe(true);
+  });
+
+  it("shows a retry action when the status check fails", async () => {
+    mockedBlinkStatus.mockRejectedValue(new TypeError("network down"));
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="blink-error"]').exists()).toBe(true);
+
+    mockedBlinkStatus.mockResolvedValue(unlinkedStatus);
+    await wrapper.find('[data-testid="retry-blink"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="connection-card"]').exists()).toBe(true);
+  });
+
+  it("shows a 'Not connected' state with a call to link an account", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="connection-tag"]').text()).toBe("Not connected");
+    expect(wrapper.text()).toContain("Link a Blink account");
+    expect(wrapper.find('[data-testid="manage-blink"]').text()).toBe("Connect Blink account");
+    expect(wrapper.find('[data-testid="connection-last-error"]').exists()).toBe(false);
+  });
+
+  it("shows the connected state with sync time, clip count, and camera count", async () => {
+    mockedBlinkStatus.mockResolvedValue(linkedStatus);
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="connection-tag"]').text()).toBe("Connected");
+    expect(wrapper.text()).toContain("Last synced");
+    expect(wrapper.text()).toContain("42");
+    expect(wrapper.text()).toContain("Total clips downloaded");
+    expect(wrapper.text()).toContain("3");
+    expect(wrapper.text()).toContain("Cameras");
+    expect(wrapper.find('[data-testid="manage-blink"]').text()).toBe("Manage in Settings");
+  });
+
+  it("shows neither sync time nor link-prompt for a linked account with no sync yet", async () => {
+    mockedBlinkStatus.mockResolvedValue({ ...linkedStatus, last_sync: null });
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.text()).not.toContain("Last synced");
+    expect(wrapper.text()).not.toContain("Link a Blink account");
+  });
+
+  it("flags a linked account that needs attention, with its last error", async () => {
+    mockedBlinkStatus.mockResolvedValue({
+      ...linkedStatus,
+      status: "error",
+      last_error: "Blink rejected the stored credentials.",
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="connection-tag"]').text()).toBe("Needs attention");
+    expect(wrapper.find('[data-testid="connection-last-error"]').text()).toContain(
+      "Blink rejected the stored credentials.",
+    );
+  });
+
+  it("renders the 7-day trend chart from the daily clip counts", async () => {
+    mockedBlinkStatus.mockResolvedValue(linkedStatus);
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="hit-6"]').exists()).toBe(true);
+    await wrapper.find('[data-testid="hit-6"]').trigger("mouseenter");
+    expect(wrapper.find('[data-testid="chart-tooltip"]').text()).toContain("5 clip(s)");
+  });
+
+  it("navigates to Settings when managing the Blink connection", async () => {
+    const router = makeRouter();
+    const pushSpy = vi.spyOn(router, "push");
+    const wrapper = mount(StatusView, { global: mountGlobal(makePinia(), router) });
+    await flushPromises();
+    await wrapper.find('[data-testid="manage-blink"]').trigger("click");
+    expect(pushSpy).toHaveBeenCalledWith({ name: "settings", query: { tab: "general" } });
   });
 });

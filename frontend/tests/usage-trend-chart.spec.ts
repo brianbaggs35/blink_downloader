@@ -82,4 +82,16 @@ describe("UsageTrendChart", () => {
     const wrapper = mountChart({ seriesColor: "orange" });
     expect(wrapper.find(".chart").classes()).toContain("series-orange");
   });
+
+  it("defaults the tooltip unit to call(s)", async () => {
+    const wrapper = mountChart();
+    await wrapper.find('[data-testid="hit-1"]').trigger("mouseenter");
+    expect(wrapper.find('[data-testid="chart-tooltip"]').text()).toContain("5 call(s)");
+  });
+
+  it("uses a custom unit label when given one", async () => {
+    const wrapper = mountChart({ unitLabel: "clip(s)" });
+    await wrapper.find('[data-testid="hit-1"]').trigger("mouseenter");
+    expect(wrapper.find('[data-testid="chart-tooltip"]').text()).toContain("5 clip(s)");
+  });
 });
