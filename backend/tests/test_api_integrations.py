@@ -170,7 +170,7 @@ async def test_google_drive_oauth_callback_rejects_a_missing_code(
     response = await admin_client.get(
         "/api/settings/storage-integrations/google-drive/oauth/callback", follow_redirects=False
     )
-    assert response.headers["location"] == "/settings?tab=integrations&error=google_drive"
+    assert response.headers["location"] == "/integrations?error=google_drive"
 
 
 async def test_google_drive_oauth_callback_rejects_an_unknown_state(
@@ -181,7 +181,7 @@ async def test_google_drive_oauth_callback_rejects_an_unknown_state(
         params={"code": "auth-code", "state": "not-the-real-state"},
         follow_redirects=False,
     )
-    assert response.headers["location"] == "/settings?tab=integrations&error=google_drive"
+    assert response.headers["location"] == "/integrations?error=google_drive"
 
 
 async def test_google_drive_oauth_callback_rejects_credentials_cleared_after_start(
@@ -210,7 +210,7 @@ async def test_google_drive_oauth_callback_rejects_credentials_cleared_after_sta
         params={"code": "auth-code", "state": state},
         follow_redirects=False,
     )
-    assert response.headers["location"] == "/settings?tab=integrations&error=google_drive"
+    assert response.headers["location"] == "/integrations?error=google_drive"
 
 
 async def test_google_drive_oauth_callback_completes_the_flow(
@@ -244,7 +244,7 @@ async def test_google_drive_oauth_callback_completes_the_flow(
         params={"code": "auth-code", "state": state},
         follow_redirects=False,
     )
-    expected = "/settings?tab=integrations&connected=google_drive"
+    expected = "/integrations?connected=google_drive"
     assert callback_response.headers["location"] == expected
 
     settings_response = await admin_client.get("/api/settings/storage-integrations")
@@ -279,7 +279,7 @@ async def test_google_drive_oauth_callback_wraps_exchange_errors(
         params={"code": "auth-code", "state": state},
         follow_redirects=False,
     )
-    assert callback_response.headers["location"] == "/settings?tab=integrations&error=google_drive"
+    assert callback_response.headers["location"] == "/integrations?error=google_drive"
 
 
 # ------------------------------------------------------------------ onedrive
@@ -337,7 +337,7 @@ async def test_onedrive_oauth_callback_rejects_credentials_cleared_after_start(
         params={"code": "auth-code", "state": state},
         follow_redirects=False,
     )
-    assert response.headers["location"] == "/settings?tab=integrations&error=onedrive"
+    assert response.headers["location"] == "/integrations?error=onedrive"
 
 
 async def test_onedrive_oauth_callback_completes_the_flow(
@@ -370,7 +370,7 @@ async def test_onedrive_oauth_callback_completes_the_flow(
         params={"code": "auth-code", "state": state},
         follow_redirects=False,
     )
-    expected = "/settings?tab=integrations&connected=onedrive"
+    expected = "/integrations?connected=onedrive"
     assert callback_response.headers["location"] == expected
 
     settings_response = await admin_client.get("/api/settings/storage-integrations")
@@ -383,7 +383,7 @@ async def test_onedrive_oauth_callback_rejects_a_missing_state(admin_client: Asy
         params={"code": "auth-code"},
         follow_redirects=False,
     )
-    assert response.headers["location"] == "/settings?tab=integrations&error=onedrive"
+    assert response.headers["location"] == "/integrations?error=onedrive"
 
 
 async def test_onedrive_oauth_callback_wraps_exchange_errors(
@@ -414,4 +414,4 @@ async def test_onedrive_oauth_callback_wraps_exchange_errors(
         params={"code": "auth-code", "state": state},
         follow_redirects=False,
     )
-    assert callback_response.headers["location"] == "/settings?tab=integrations&error=onedrive"
+    assert callback_response.headers["location"] == "/integrations?error=onedrive"
