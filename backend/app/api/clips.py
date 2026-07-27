@@ -28,6 +28,13 @@ from app.blink.models import Camera, Clip, StorageBackend
 from app.blink.schemas import BulkActionResponse, BulkClipIds, ClipListResponse, ClipRead
 from app.config import get_settings
 from app.db import get_session
+from app.integrations.cloud import CloudClient, CloudStorageError
+from app.integrations.service import (
+    build_google_drive_client,
+    build_onedrive_client,
+    build_s3_client,
+    get_storage_integration_settings,
+)
 from app.logs import get_logger
 from app.settings.service import resolve_storage_dir
 from app.storage.service import ClipStorage, StorageError, get_clip_storage
@@ -355,15 +362,42 @@ async def bulk_delete_clips(
     return BulkActionResponse(succeeded=succeeded, failed=failed)
 
 
-def _build_zip(clip_paths: list[tuple[Path, str]]) -> Path:
+def _sanitize_path_segment(value: str) -> str:
+    """A camera name or filename is free text - never let it inject extra
+    path segments into the archive."""
+    return value.replace("/", "-").replace("\\", "-")
+
+
+def _clip_arcname(camera_name: str, clip: Clip) -> str:
+    date_folder = f"{clip.recorded_at:%Y-%m-%d}"
+    filename = _sanitize_path_segment(clip.filename or f"{clip.id}.mp4")
+    return f"{_sanitize_path_segment(camera_name)}/{date_folder}/{filename}"
+
+
+def _build_zip(
+    local_entries: list[tuple[Path, str]], remote_entries: list[tuple[str, bytes]]
+) -> Path:
     tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)  # noqa: SIM115
     tmp.close()
     tmp_path = Path(tmp.name)
     with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_STORED) as zf:
-        for path, arcname in clip_paths:
+        for path, arcname in local_entries:
             if path.exists():
                 zf.write(path, arcname=arcname)
+        for arcname, data in remote_entries:
+            zf.writestr(arcname, data)
     return tmp_path
+
+
+async def _cloud_client_for(
+    session: AsyncSession, backend: StorageBackend, encryption_key: str
+) -> CloudClient | None:
+    row = await get_storage_integration_settings(session)
+    if backend == StorageBackend.S3:
+        return build_s3_client(row, encryption_key)
+    if backend == StorageBackend.GOOGLE_DRIVE:
+        return build_google_drive_client(row, encryption_key)
+    return build_onedrive_client(row, encryption_key)
 
 
 @router.post("/bulk-download")
@@ -382,11 +416,48 @@ async def bulk_download_clips(
             detail="None of the selected clips have been downloaded yet.",
         )
 
-    clip_paths = [
-        (Path(c.storage_path), c.filename or f"{c.id}.mp4")  # type: ignore[arg-type]
-        for c in downloadable
-    ]
-    zip_path = await asyncio.to_thread(_build_zip, clip_paths)
+    camera_ids = {c.camera_id for c in downloadable}
+    cameras = (
+        (await session.execute(select(Camera).where(Camera.id.in_(camera_ids)))).scalars().all()
+    )
+    camera_names = {c.id: c.name for c in cameras}
+
+    storage_root = await resolve_storage_dir(session, get_settings())
+    local_storage = get_clip_storage(storage_root)
+    encryption_key = get_settings().encryption_key
+    clients: dict[StorageBackend, CloudClient | None] = {}
+
+    local_entries: list[tuple[Path, str]] = []
+    remote_entries: list[tuple[str, bytes]] = []
+    for clip in downloadable:
+        camera_name = camera_names.get(clip.camera_id, "Unknown Camera")
+        arcname = _clip_arcname(camera_name, clip)
+        if clip.storage_backend == StorageBackend.LOCAL:
+            local_entries.append((local_storage.clip_path(clip.camera_id, clip.id), arcname))
+            continue
+        if clip.storage_backend not in clients:
+            clients[clip.storage_backend] = await _cloud_client_for(
+                session, clip.storage_backend, encryption_key
+            )
+        client = clients[clip.storage_backend]
+        if client is None:
+            continue
+        try:
+            data = await client.download(clip.storage_path)  # type: ignore[arg-type]
+        except CloudStorageError as exc:
+            logger.warning(
+                "clips.bulk_download_remote_fetch_failed", clip_id=str(clip.id), error=str(exc)
+            )
+            continue
+        remote_entries.append((arcname, data))
+
+    if not local_entries and not remote_entries:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="None of the selected clips could be read.",
+        )
+
+    zip_path = await asyncio.to_thread(_build_zip, local_entries, remote_entries)
     zip_name = f"clips-{datetime.now(UTC):%Y%m%d-%H%M%S}.zip"
     return FileResponse(
         zip_path,

@@ -4,6 +4,11 @@ enqueue against the real test Redis — harmless, nothing consumes the queue
 in these tests (same pattern as test_api_blink.py's /blink/sync tests).
 """
 
+# Untyped monkeypatch.setattr(str, lambda) call sites below - same as
+# test_integrations_cloud.py.
+# pyright: reportUnknownArgumentType=false
+# pyright: reportUnknownLambdaType=false
+
 import uuid
 import zipfile
 from datetime import UTC, datetime
@@ -18,6 +23,7 @@ from app.ai.models import AIProviderKind, Analysis, AnalysisTier, SuspicionLabel
 from app.biometrics.models import Person, RecognizedFace
 from app.blink.models import BlinkAccount, Camera, Clip, StorageBackend
 from app.config import get_settings
+from app.integrations.cloud import CloudStorageError
 from app.security.crypto import SecretBox
 from app.settings.service import set_storage_dir
 
@@ -627,11 +633,46 @@ async def test_bulk_download_builds_a_real_zip(
 
     assert clip1.filename is not None
     assert clip2.filename is not None
+    arcname1 = f"Front Door/2026-07-20/{clip1.filename}"
+    arcname2 = f"Front Door/2026-07-20/{clip2.filename}"
     with zipfile.ZipFile(BytesIO(response.content)) as zf:
         names = sorted(zf.namelist())
-        assert names == sorted([clip1.filename, clip2.filename])
-        assert zf.read(clip1.filename) == b"clip-one"
-        assert zf.read(clip2.filename) == b"clip-two"
+        assert names == sorted([arcname1, arcname2])
+        assert zf.read(arcname1) == b"clip-one"
+        assert zf.read(arcname2) == b"clip-two"
+
+
+async def test_bulk_download_organizes_by_camera_and_date(
+    admin_client: AsyncClient, app: FastAPI, tmp_path: Path
+) -> None:
+    await _use_storage(app, tmp_path)
+    driveway = await _make_camera(app, "Driveway")
+    backyard = await _make_camera(app, "Backyard")
+    clip1 = await _make_clip(
+        app,
+        driveway,
+        downloaded=True,
+        storage_dir=tmp_path,
+        recorded_at=datetime(2026, 1, 5, tzinfo=UTC),
+    )
+    clip2 = await _make_clip(
+        app,
+        backyard,
+        downloaded=True,
+        storage_dir=tmp_path,
+        recorded_at=datetime(2026, 1, 6, tzinfo=UTC),
+    )
+
+    response = await admin_client.post(
+        "/api/clips/bulk-download", json={"clip_ids": [str(clip1.id), str(clip2.id)]}
+    )
+    assert response.status_code == 200
+    with zipfile.ZipFile(BytesIO(response.content)) as zf:
+        names = set(zf.namelist())
+        assert names == {
+            f"Driveway/2026-01-05/{clip1.filename}",
+            f"Backyard/2026-01-06/{clip2.filename}",
+        }
 
 
 async def test_bulk_download_skips_a_file_missing_from_disk(
@@ -647,8 +688,192 @@ async def test_bulk_download_skips_a_file_missing_from_disk(
         "/api/clips/bulk-download", json={"clip_ids": [str(present.id), str(ghost.id)]}
     )
     assert response.status_code == 200
+    assert present.filename is not None
     with zipfile.ZipFile(BytesIO(response.content)) as zf:
-        assert zf.namelist() == [present.filename]
+        assert zf.namelist() == [f"Front Door/2026-07-20/{present.filename}"]
+
+
+async def test_bulk_download_includes_a_cloud_archived_clip(
+    monkeypatch: pytest.MonkeyPatch, admin_client: AsyncClient, app: FastAPI, tmp_path: Path
+) -> None:
+    await _use_storage(app, tmp_path)
+    camera = await _make_camera(app)
+    local_clip = await _make_clip(
+        app, camera, downloaded=True, storage_dir=tmp_path, content=b"local-bytes"
+    )
+    async with app.state.sessionmaker() as session:
+        archived_clip = Clip(
+            camera_id=camera.id,
+            blink_clip_id="/media/archived.mp4",
+            recorded_at=datetime(2026, 7, 21, tzinfo=UTC),
+            raw_metadata={},
+            storage_backend=StorageBackend.S3,
+            storage_path="clips/archived.mp4",
+            filename="archived.mp4",
+            downloaded_at=datetime.now(UTC),
+        )
+        session.add(archived_clip)
+        await session.commit()
+        await session.refresh(archived_clip)
+
+    class _FakeS3:
+        async def download(self, key: str) -> bytes:
+            assert key == "clips/archived.mp4"
+            return b"cloud-bytes"
+
+    monkeypatch.setattr("app.api.clips.build_s3_client", lambda *_a, **_kw: _FakeS3())
+    response = await admin_client.post(
+        "/api/clips/bulk-download",
+        json={"clip_ids": [str(local_clip.id), str(archived_clip.id)]},
+    )
+    assert response.status_code == 200
+    assert local_clip.filename is not None
+    with zipfile.ZipFile(BytesIO(response.content)) as zf:
+        names = set(zf.namelist())
+        assert names == {
+            f"Front Door/2026-07-20/{local_clip.filename}",
+            "Front Door/2026-07-21/archived.mp4",
+        }
+        assert zf.read("Front Door/2026-07-21/archived.mp4") == b"cloud-bytes"
+
+
+async def test_bulk_download_reuses_one_client_for_two_clips_on_the_same_backend(
+    monkeypatch: pytest.MonkeyPatch, admin_client: AsyncClient, app: FastAPI, tmp_path: Path
+) -> None:
+    await _use_storage(app, tmp_path)
+    camera = await _make_camera(app)
+    async with app.state.sessionmaker() as session:
+        clip_a = Clip(
+            camera_id=camera.id,
+            blink_clip_id="/media/a.mp4",
+            recorded_at=datetime(2026, 7, 21, tzinfo=UTC),
+            raw_metadata={},
+            storage_backend=StorageBackend.GOOGLE_DRIVE,
+            storage_path="file-a",
+            filename="a.mp4",
+            downloaded_at=datetime.now(UTC),
+        )
+        clip_b = Clip(
+            camera_id=camera.id,
+            blink_clip_id="/media/b.mp4",
+            recorded_at=datetime(2026, 7, 22, tzinfo=UTC),
+            raw_metadata={},
+            storage_backend=StorageBackend.GOOGLE_DRIVE,
+            storage_path="file-b",
+            filename="b.mp4",
+            downloaded_at=datetime.now(UTC),
+        )
+        session.add_all([clip_a, clip_b])
+        await session.commit()
+
+    build_calls = 0
+
+    class _FakeDrive:
+        async def download(self, file_id: str) -> bytes:
+            return f"bytes-for-{file_id}".encode()
+
+    def _build(*_a: object, **_kw: object) -> _FakeDrive:
+        nonlocal build_calls
+        build_calls += 1
+        return _FakeDrive()
+
+    monkeypatch.setattr("app.api.clips.build_google_drive_client", _build)
+    response = await admin_client.post(
+        "/api/clips/bulk-download", json={"clip_ids": [str(clip_a.id), str(clip_b.id)]}
+    )
+    assert response.status_code == 200
+    assert build_calls == 1
+    with zipfile.ZipFile(BytesIO(response.content)) as zf:
+        assert zf.read("Front Door/2026-07-21/a.mp4") == b"bytes-for-file-a"
+        assert zf.read("Front Door/2026-07-22/b.mp4") == b"bytes-for-file-b"
+
+
+async def test_bulk_download_includes_a_onedrive_archived_clip(
+    monkeypatch: pytest.MonkeyPatch, admin_client: AsyncClient, app: FastAPI, tmp_path: Path
+) -> None:
+    await _use_storage(app, tmp_path)
+    camera = await _make_camera(app)
+    async with app.state.sessionmaker() as session:
+        archived_clip = Clip(
+            camera_id=camera.id,
+            blink_clip_id="/media/archived.mp4",
+            recorded_at=datetime(2026, 7, 21, tzinfo=UTC),
+            raw_metadata={},
+            storage_backend=StorageBackend.ONEDRIVE,
+            storage_path="item-1",
+            filename="archived.mp4",
+            downloaded_at=datetime.now(UTC),
+        )
+        session.add(archived_clip)
+        await session.commit()
+
+    class _FakeOneDrive:
+        async def download(self, item_id: str) -> bytes:
+            assert item_id == "item-1"
+            return b"onedrive-bytes"
+
+    monkeypatch.setattr("app.api.clips.build_onedrive_client", lambda *_a, **_kw: _FakeOneDrive())
+    response = await admin_client.post(
+        "/api/clips/bulk-download", json={"clip_ids": [str(archived_clip.id)]}
+    )
+    assert response.status_code == 200
+    with zipfile.ZipFile(BytesIO(response.content)) as zf:
+        assert zf.read("Front Door/2026-07-21/archived.mp4") == b"onedrive-bytes"
+
+
+async def test_bulk_download_skips_a_cloud_clip_whose_backend_is_unconfigured(
+    admin_client: AsyncClient, app: FastAPI, tmp_path: Path
+) -> None:
+    await _use_storage(app, tmp_path)
+    camera = await _make_camera(app)
+    async with app.state.sessionmaker() as session:
+        archived_clip = Clip(
+            camera_id=camera.id,
+            blink_clip_id="/media/archived.mp4",
+            recorded_at=datetime(2026, 7, 21, tzinfo=UTC),
+            raw_metadata={},
+            storage_backend=StorageBackend.S3,
+            storage_path="clips/archived.mp4",
+            filename="archived.mp4",
+            downloaded_at=datetime.now(UTC),
+        )
+        session.add(archived_clip)
+        await session.commit()
+
+    response = await admin_client.post(
+        "/api/clips/bulk-download", json={"clip_ids": [str(archived_clip.id)]}
+    )
+    assert response.status_code == 404
+
+
+async def test_bulk_download_skips_a_cloud_clip_that_fails_to_fetch(
+    monkeypatch: pytest.MonkeyPatch, admin_client: AsyncClient, app: FastAPI, tmp_path: Path
+) -> None:
+    await _use_storage(app, tmp_path)
+    camera = await _make_camera(app)
+    async with app.state.sessionmaker() as session:
+        archived_clip = Clip(
+            camera_id=camera.id,
+            blink_clip_id="/media/archived.mp4",
+            recorded_at=datetime(2026, 7, 21, tzinfo=UTC),
+            raw_metadata={},
+            storage_backend=StorageBackend.S3,
+            storage_path="clips/archived.mp4",
+            filename="archived.mp4",
+            downloaded_at=datetime.now(UTC),
+        )
+        session.add(archived_clip)
+        await session.commit()
+
+    class _RaisingS3:
+        async def download(self, key: str) -> bytes:
+            raise CloudStorageError("boom")
+
+    monkeypatch.setattr("app.api.clips.build_s3_client", lambda *_a, **_kw: _RaisingS3())
+    response = await admin_client.post(
+        "/api/clips/bulk-download", json={"clip_ids": [str(archived_clip.id)]}
+    )
+    assert response.status_code == 404
 
 
 async def test_bulk_download_404_when_none_downloaded(
