@@ -18,8 +18,26 @@ export default defineConfig({
   },
   projects: [
     {
+      name: "setup",
+      testMatch: /auth\.setup\.ts/,
+    },
+    {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
+      use: { ...devices["Desktop Chrome"], storageState: "playwright/.auth/admin.json" },
+      dependencies: ["setup"],
+      testIgnore: [/auth\.setup\.ts/, /mobile\//],
+    },
+    {
+      // A focused subset (tests/mobile/**) covering the hamburger/drawer and
+      // responsive layouts specifically - the rest of the suite already runs
+      // desktop-viewport, and re-running every spec at a phone width too
+      // would mostly just double the run time for no new signal (the
+      // hamburger button itself is CSS-hidden above 768px, so those tests
+      // wouldn't even be reachable outside this project).
+      name: "mobile",
+      use: { ...devices["iPhone 13"], storageState: "playwright/.auth/admin.json" },
+      dependencies: ["setup"],
+      testMatch: /mobile\//,
     },
   ],
 });
