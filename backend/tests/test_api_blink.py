@@ -13,7 +13,7 @@ real test Redis — harmless, nothing consumes the queue in these tests.
 # pyright: reportUnknownMemberType=false
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -248,6 +248,8 @@ async def test_status_when_unlinked(admin_client: AsyncClient) -> None:
         "last_sync": None,
         "last_error": None,
         "camera_count": 0,
+        "total_clip_count": 0,
+        "daily_clip_counts": [],
     }
 
 
@@ -284,6 +286,82 @@ async def test_status_reports_camera_count(admin_client: AsyncClient, app: FastA
     body = response.json()
     assert body["linked"] is True
     assert body["camera_count"] == 1
+
+
+async def _linked_camera(app: FastAPI, account: BlinkAccount) -> Camera:
+    async with app.state.sessionmaker() as session:
+        camera = Camera(
+            blink_account_id=account.id,
+            blink_camera_id="c1",
+            blink_network_id="n1",
+            name="Front Door",
+            camera_type="catalina",
+        )
+        session.add(camera)
+        await session.commit()
+        await session.refresh(camera)
+        return camera
+
+
+async def test_status_total_clip_count_includes_clips_outside_the_daily_window(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    account = await _linked_account(app)
+    camera = await _linked_camera(app, account)
+    async with app.state.sessionmaker() as session:
+        session.add_all(
+            [
+                Clip(camera_id=camera.id, blink_clip_id="c1", recorded_at=datetime.now(UTC)),
+                Clip(
+                    camera_id=camera.id,
+                    blink_clip_id="c2",
+                    recorded_at=datetime.now(UTC) - timedelta(days=30),
+                ),
+            ]
+        )
+        await session.commit()
+
+    response = await admin_client.get("/api/blink/status")
+    body = response.json()
+    assert body["total_clip_count"] == 2
+
+
+async def test_status_daily_clip_counts_are_zero_filled_and_bucketed_by_day(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    account = await _linked_account(app)
+    camera = await _linked_camera(app, account)
+    now = datetime.now(UTC)
+    async with app.state.sessionmaker() as session:
+        session.add_all(
+            [
+                Clip(camera_id=camera.id, blink_clip_id="today-1", recorded_at=now),
+                Clip(camera_id=camera.id, blink_clip_id="today-2", recorded_at=now),
+                Clip(
+                    camera_id=camera.id,
+                    blink_clip_id="two-days-ago",
+                    recorded_at=now - timedelta(days=2),
+                ),
+                # Outside the 7-day window - must not appear in any bucket.
+                Clip(
+                    camera_id=camera.id,
+                    blink_clip_id="ancient",
+                    recorded_at=now - timedelta(days=10),
+                ),
+            ]
+        )
+        await session.commit()
+
+    response = await admin_client.get("/api/blink/status")
+    body = response.json()
+    daily = body["daily_clip_counts"]
+    assert len(daily) == 7
+    assert daily[-1] == {"date": str(now.date()), "count": 2}
+    assert daily[-3] == {"date": str((now - timedelta(days=2)).date()), "count": 1}
+    assert sum(day["count"] for day in daily) == 3
+    assert body["total_clip_count"] == 4
+    # Oldest-first ordering: the earliest bucket is exactly 6 days before today.
+    assert daily[0]["date"] == str((now - timedelta(days=6)).date())
 
 
 # ------------------------------------------------------------------------- sync
