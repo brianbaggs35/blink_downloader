@@ -1,7 +1,6 @@
 import type { Page } from "@playwright/test";
-import { expect, test } from "@playwright/test";
 
-import { seededCameras } from "../fixtures";
+import { expect, seededCameras, test } from "../fixtures";
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/security-feed");

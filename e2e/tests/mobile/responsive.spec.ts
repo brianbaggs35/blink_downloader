@@ -1,5 +1,6 @@
 import type { Locator } from "@playwright/test";
-import { expect, test } from "@playwright/test";
+
+import { expect, test } from "../../fixtures";
 
 async function columnCount(locator: Locator): Promise<number> {
   const value = await locator.evaluate((el) => getComputedStyle(el).gridTemplateColumns);

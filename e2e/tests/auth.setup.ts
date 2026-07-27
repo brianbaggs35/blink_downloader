@@ -1,6 +1,4 @@
-import { expect, test as setup } from "@playwright/test";
-
-import { seededAdmin } from "../fixtures";
+import { expect, seededAdmin, test as setup } from "../fixtures";
 
 // Runs once before the real specs (see the "setup" project in
 // playwright.config.ts) and saves the resulting session cookie so every

@@ -1,6 +1,4 @@
-import { expect, test } from "@playwright/test";
-
-import { seededAdmin } from "../fixtures";
+import { expect, seededAdmin, test } from "../fixtures";
 
 // The chromium project starts every spec already signed in (see
 // playwright.config.ts + auth.setup.ts) - these tests are specifically
