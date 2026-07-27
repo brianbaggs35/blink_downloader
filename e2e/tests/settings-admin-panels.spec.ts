@@ -69,3 +69,60 @@ test("Vehicles panel lists the seeded cameras to protect", async ({ page }) => {
   });
   await expect(frontDoorCard).toBeVisible();
 });
+
+test("Vehicles panel: draw, drag, and clear an outline on the reference frame", async ({
+  page,
+}) => {
+  await page.getByRole("tab", { name: "Vehicles" }).click();
+  const card = page.locator('[data-testid^="vehicle-card-"]', {
+    hasText: seededCameras.frontDoor,
+  });
+  await expect(card).toBeVisible();
+
+  // Idempotent either-state handling - this suite runs against a
+  // persistent, not-reseeded-between-runs database, so a prior run may
+  // have already captured a reference frame for this camera.
+  const initialCapture = card.locator('[data-testid^="capture-frame-"]');
+  // Which button renders depends on whether a prior, non-reseeded run
+  // already captured a frame for this camera, not on anything this test
+  // controls.
+  // eslint-disable-next-line playwright/no-conditional-in-test
+  if (await initialCapture.isVisible().catch(() => false)) {
+    await initialCapture.click();
+  } else {
+    await card.locator('[data-testid^="recapture-frame-"]').click();
+  }
+
+  const svg = card.locator('[data-testid^="outline-svg-"]');
+  await expect(svg).toBeVisible();
+
+  // Clear whatever points a prior run may have left drawn (but not saved).
+  const clearButton = card.locator('[data-testid^="clear-points-"]');
+  // Same reason: whether points are already drawn depends on prior runs.
+  // eslint-disable-next-line playwright/no-conditional-in-test
+  if (await clearButton.isEnabled()) {
+    await clearButton.click();
+  }
+
+  const box = (await svg.boundingBox())!;
+  await page.mouse.click(box.x + box.width * 0.2, box.y + box.height * 0.2);
+  await page.mouse.click(box.x + box.width * 0.8, box.y + box.height * 0.2);
+  await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.8);
+
+  const points = card.locator('[data-testid^="outline-point-"]');
+  await expect(points).toHaveCount(3);
+
+  const firstPoint = points.first();
+  const beforeCx = await firstPoint.getAttribute("cx");
+  await firstPoint.hover();
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.35, box.y + box.height * 0.35, { steps: 5 });
+  await page.mouse.up();
+
+  // Dragging repositions the point rather than removing it.
+  await expect(points).toHaveCount(3);
+  await expect(firstPoint).not.toHaveAttribute("cx", beforeCx ?? "");
+
+  await clearButton.click();
+  await expect(points).toHaveCount(0);
+});
