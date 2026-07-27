@@ -20,6 +20,11 @@ from app.blink.service import BlinkAuthError, BlinkCameraInfo, BlinkError, Blink
 from app.config import Settings, get_settings
 from app.logs import get_logger
 from app.security.crypto import SecretBox
+from app.settings.service import (
+    resolve_blink_auto_analyze_limit,
+    resolve_blink_initial_sync_days,
+    resolve_blink_sync_interval_seconds,
+)
 from app.worker.tasks.download import DOWNLOAD_JOB_NAME
 
 logger = get_logger(__name__)
@@ -30,6 +35,10 @@ SYNC_JOB_NAME = "sync_blink_account"
 async def sync_blink_account(ctx: dict[Any, Any]) -> str:
     settings = get_settings()
     sessionmaker: async_sessionmaker[AsyncSession] = ctx["sessionmaker"]
+    # Its own short-lived session: needed in the finally block below, by
+    # which point _run_sync's own session has already closed.
+    async with sessionmaker() as session:
+        sync_interval_seconds = await resolve_blink_sync_interval_seconds(session, settings)
     try:
         async with sessionmaker() as session:
             return await _run_sync(session, settings, ctx)
@@ -38,9 +47,7 @@ async def sync_blink_account(ctx: dict[Any, Any]) -> str:
         # enqueue even while a deferred run is already queued. _run_sync is
         # upsert-based throughout, so an occasional overlapping run is
         # harmless, just a little redundant work.
-        await ctx["redis"].enqueue_job(
-            SYNC_JOB_NAME, _defer_by=settings.blink_sync_interval_seconds
-        )
+        await ctx["redis"].enqueue_job(SYNC_JOB_NAME, _defer_by=sync_interval_seconds)
 
 
 async def _run_sync(session: AsyncSession, settings: Settings, ctx: dict[Any, Any]) -> str:
@@ -54,7 +61,8 @@ async def _run_sync(session: AsyncSession, settings: Settings, ctx: dict[Any, An
     try:
         cameras = await service.get_cameras()
         since = account.last_sync or (
-            datetime.now(UTC) - timedelta(days=settings.blink_initial_sync_days)
+            datetime.now(UTC)
+            - timedelta(days=await resolve_blink_initial_sync_days(session, settings))
         )
         media_items = await service.list_media(since=since)
     except BlinkAuthError as exc:
@@ -81,7 +89,8 @@ async def _run_sync(session: AsyncSession, settings: Settings, ctx: dict[Any, An
     account.encrypted_token_data = box.encrypt(json.dumps(service.token_data))
     await session.commit()
 
-    auto_analyze_ids = _select_auto_analyze_ids(new_clips, settings.blink_auto_analyze_limit)
+    auto_analyze_limit = await resolve_blink_auto_analyze_limit(session, settings)
+    auto_analyze_ids = _select_auto_analyze_ids(new_clips, auto_analyze_limit)
     for clip_id, _recorded_at in new_clips:
         await ctx["redis"].enqueue_job(
             DOWNLOAD_JOB_NAME, clip_id=str(clip_id), auto_analyze=clip_id in auto_analyze_ids
@@ -101,7 +110,7 @@ def _select_auto_analyze_ids(new_clips: list[tuple[UUID, datetime]], limit: int)
     """The N most recently recorded clips from this sync, auto-queued for AI
     analysis. Caps a first-connection or post-outage backlog from flooding
     the analysis queue — everything still downloads, just not all of it gets
-    auto-analyzed. See Settings.blink_auto_analyze_limit."""
+    auto-analyzed. See resolve_blink_auto_analyze_limit."""
     newest_first = sorted(new_clips, key=lambda pair: pair[1], reverse=True)
     return {clip_id for clip_id, _recorded_at in newest_first[:limit]}
 

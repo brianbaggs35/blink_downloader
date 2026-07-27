@@ -24,8 +24,14 @@ from app.config import get_settings
 from app.db import get_session
 from app.logs import get_logger
 from app.security.crypto import SecretBox
-from app.settings.schemas import StorageSettingsRead, StorageSettingsUpdate
-from app.settings.service import get_app_settings, set_storage_dir
+from app.settings.models import AppSettings
+from app.settings.schemas import (
+    BlinkSyncSettingsRead,
+    BlinkSyncSettingsUpdate,
+    StorageSettingsRead,
+    StorageSettingsUpdate,
+)
+from app.settings.service import get_app_settings, set_blink_sync_settings, set_storage_dir
 from app.users.auth import current_superuser
 
 logger = get_logger(__name__)
@@ -63,6 +69,44 @@ async def update_storage_settings(
     if row.storage_dir:
         return StorageSettingsRead(storage_dir=row.storage_dir, is_default=False)
     return StorageSettingsRead(storage_dir=str(get_settings().storage_dir), is_default=True)
+
+
+def _blink_sync_settings_read(row: AppSettings) -> BlinkSyncSettingsRead:
+    env = get_settings()
+    return BlinkSyncSettingsRead(
+        sync_interval_seconds=row.blink_sync_interval_seconds or env.blink_sync_interval_seconds,
+        initial_sync_days=row.blink_initial_sync_days or env.blink_initial_sync_days,
+        auto_analyze_limit=row.blink_auto_analyze_limit or env.blink_auto_analyze_limit,
+        is_default=(
+            row.blink_sync_interval_seconds is None
+            and row.blink_initial_sync_days is None
+            and row.blink_auto_analyze_limit is None
+        ),
+    )
+
+
+@router.get("/blink-sync", response_model=BlinkSyncSettingsRead)
+async def get_blink_sync_settings(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _user: Annotated[object, Depends(current_superuser)],
+) -> BlinkSyncSettingsRead:
+    return _blink_sync_settings_read(await get_app_settings(session))
+
+
+@router.put("/blink-sync", response_model=BlinkSyncSettingsRead)
+async def update_blink_sync_settings(
+    payload: BlinkSyncSettingsUpdate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _user: Annotated[object, Depends(current_superuser)],
+) -> BlinkSyncSettingsRead:
+    row = await set_blink_sync_settings(session, payload)
+    logger.info(
+        "settings.blink_sync_updated",
+        sync_interval_seconds=row.blink_sync_interval_seconds,
+        initial_sync_days=row.blink_initial_sync_days,
+        auto_analyze_limit=row.blink_auto_analyze_limit,
+    )
+    return _blink_sync_settings_read(row)
 
 
 async def _is_writable_directory(raw_path: str) -> bool:
