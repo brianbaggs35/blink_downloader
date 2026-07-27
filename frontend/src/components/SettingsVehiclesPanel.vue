@@ -135,22 +135,27 @@ function clampUnit(value: number): number {
   return Math.min(1, Math.max(0, value));
 }
 
+/** null when the svg hasn't been laid out yet (zero size). */
+function unitPointFromEvent(svg: SVGSVGElement, event: MouseEvent): Point | null {
+  const rect = svg.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) {
+    return null;
+  }
+  return {
+    x: clampUnit((event.clientX - rect.left) / rect.width),
+    y: clampUnit((event.clientY - rect.top) / rect.height),
+  };
+}
+
 function addPoint(cameraId: string, event: MouseEvent): void {
+  const point = unitPointFromEvent(event.currentTarget as SVGSVGElement, event);
+  if (!point) {
+    return;
+  }
   // cameraId always comes from our own camera list, never external input.
   // eslint-disable-next-line security/detect-object-injection
   const form = forms[cameraId];
-  const svg = event.currentTarget as SVGSVGElement;
-  const rect = svg.getBoundingClientRect();
-  if (rect.width === 0 || rect.height === 0) {
-    return;
-  }
-  form.points = [
-    ...form.points,
-    {
-      x: clampUnit((event.clientX - rect.left) / rect.width),
-      y: clampUnit((event.clientY - rect.top) / rect.height),
-    },
-  ];
+  form.points = [...form.points, point];
 }
 
 function removePoint(cameraId: string, index: number): void {
@@ -158,6 +163,65 @@ function removePoint(cameraId: string, index: number): void {
   // eslint-disable-next-line security/detect-object-injection
   const form = forms[cameraId];
   form.points = form.points.filter((_, i) => i !== index);
+}
+
+// A point drag is only ever active for one point on one camera's outline at
+// a time - tracked here rather than per-form since it's transient UI state,
+// not something worth persisting or reacting to elsewhere.
+const DRAG_MOVE_THRESHOLD = 0.005;
+
+interface PointDragState {
+  cameraId: string;
+  index: number;
+  moved: boolean;
+}
+
+let pointDrag: PointDragState | null = null;
+
+function startPointDrag(cameraId: string, index: number, event: PointerEvent): void {
+  event.preventDefault();
+  pointDrag = { cameraId, index, moved: false };
+}
+
+function movePointDrag(cameraId: string, event: PointerEvent): void {
+  if (!pointDrag || pointDrag.cameraId !== cameraId) {
+    return;
+  }
+  const point = unitPointFromEvent(event.currentTarget as SVGSVGElement, event);
+  if (!point) {
+    return;
+  }
+  // cameraId always comes from our own camera list, never external input.
+  // eslint-disable-next-line security/detect-object-injection
+  const form = forms[cameraId];
+  const { index } = pointDrag;
+  // index is the v-for loop index that started this drag - always a valid,
+  // in-bounds array position, never external input.
+  // eslint-disable-next-line security/detect-object-injection
+  const previous = form.points[index]!;
+  if (
+    Math.abs(point.x - previous.x) > DRAG_MOVE_THRESHOLD ||
+    Math.abs(point.y - previous.y) > DRAG_MOVE_THRESHOLD
+  ) {
+    pointDrag.moved = true;
+  }
+  const next = [...form.points];
+  // eslint-disable-next-line security/detect-object-injection
+  next[index] = point;
+  form.points = next;
+}
+
+function endPointDrag(cameraId: string): void {
+  if (!pointDrag || pointDrag.cameraId !== cameraId) {
+    return;
+  }
+  const { index, moved } = pointDrag;
+  pointDrag = null;
+  // A press-and-release with no meaningful movement in between is a click:
+  // same "click a point to remove it" affordance as before dragging existed.
+  if (!moved) {
+    removePoint(cameraId, index);
+  }
 }
 
 function undoLastPoint(cameraId: string): void {
@@ -348,6 +412,9 @@ async function performDelete(camera: CameraRead): Promise<void> {
                 preserve-aspect-ratio="none"
                 :data-testid="`outline-svg-${camera.id}`"
                 @click="addPoint(camera.id, $event)"
+                @pointermove="movePointDrag(camera.id, $event)"
+                @pointerup="endPointDrag(camera.id)"
+                @pointerleave="endPointDrag(camera.id)"
               >
                 <polygon
                   v-if="forms[camera.id].points.length >= 2"
@@ -362,14 +429,16 @@ async function performDelete(camera: CameraRead): Promise<void> {
                   r="1.6"
                   class="outline-point"
                   :data-testid="`outline-point-${camera.id}-${index}`"
-                  @click.stop="removePoint(camera.id, index)"
+                  @pointerdown="startPointDrag(camera.id, index, $event)"
+                  @click.stop
                 />
               </svg>
             </div>
             <div class="outline-toolbar">
               <span class="muted">
-                {{ forms[camera.id].points.length }} point(s) — click the image to add, click a
-                point to remove. Needs at least {{ MIN_OUTLINE_POINTS }}.
+                {{ forms[camera.id].points.length }} point(s) — click the image to add a point,
+                drag a point to reposition it, or click a point to remove it. Needs at least
+                {{ MIN_OUTLINE_POINTS }}.
               </span>
               <div class="outline-buttons">
                 <Button
@@ -563,7 +632,12 @@ async function performDelete(camera: CameraRead): Promise<void> {
   fill: var(--p-primary-500);
   stroke: white;
   stroke-width: 0.4;
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
+}
+
+.outline-point:active {
+  cursor: grabbing;
 }
 
 .outline-toolbar {

@@ -325,9 +325,10 @@ with hand-computed pixel coordinates instead of golden-image regression tests.
 
 - **Setup**: capture a reference frame from the camera's most recent
   downloaded clip, then draw a polygon outline around the vehicle in it
-  (click to add a point, click a point to remove) and enter its real-world
-  length. This is the one manual step per camera; everything after is
-  automatic.
+  (click to add a point, drag a point to reposition it, click a point with
+  no drag to remove it, or Clear/Undo the whole thing) and enter its
+  real-world length. This is the one manual step per camera; everything
+  after is automatic.
 - **The core idea**: a pinhole camera projects an object of real height `H`
   at distance `Z` to pixel height `h = f·H/Z` for some fixed, unknown focal
   length `f`. The vehicle's own outline plus its real-world length gives a

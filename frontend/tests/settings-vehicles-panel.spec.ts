@@ -288,7 +288,7 @@ describe("SettingsVehiclesPanel drawing the outline", () => {
     expect(wrapper.find(`[data-testid="outline-point-${cameraA.id}-0"]`).exists()).toBe(false);
   });
 
-  it("removes a point when it is clicked, without adding a new one underneath it", async () => {
+  it("removes a point on a press-and-release with no movement, without adding a new one underneath it", async () => {
     mockedCapture.mockResolvedValue(undefined);
     const wrapper = await mountWithFrame();
     const svg = wrapper.find(`[data-testid="outline-svg-${cameraA.id}"]`);
@@ -297,9 +297,140 @@ describe("SettingsVehiclesPanel drawing the outline", () => {
     await svg.trigger("click", { clientX: 360, clientY: 270 });
     expect(wrapper.findAll(`[data-testid^="outline-point-${cameraA.id}-"]`)).toHaveLength(3);
 
-    await wrapper.find(`[data-testid="outline-point-${cameraA.id}-1"]`).trigger("click");
+    await wrapper
+      .find(`[data-testid="outline-point-${cameraA.id}-1"]`)
+      .trigger("pointerdown", { clientX: 360, clientY: 30 });
+    await svg.trigger("pointerup", { clientX: 360, clientY: 30 });
     const remaining = wrapper.findAll(`[data-testid^="outline-point-${cameraA.id}-"]`);
     expect(remaining).toHaveLength(2);
+  });
+
+  it("swallows a point's own click event instead of letting it bubble into adding a new point", async () => {
+    // Real browsers fire a "click" after any same-target pointerdown+pointerup
+    // - actual removal is handled by endPointDrag, so the point's own
+    // @click.stop only needs to stop this from bubbling into the svg's
+    // addPoint handler and creating an unwanted extra point underneath it.
+    mockedCapture.mockResolvedValue(undefined);
+    const wrapper = await mountWithFrame();
+    const svg = wrapper.find(`[data-testid="outline-svg-${cameraA.id}"]`);
+    await svg.trigger("click", { clientX: 40, clientY: 30 });
+    expect(wrapper.findAll(`[data-testid^="outline-point-${cameraA.id}-"]`)).toHaveLength(1);
+
+    await wrapper.find(`[data-testid="outline-point-${cameraA.id}-0"]`).trigger("click");
+    expect(wrapper.findAll(`[data-testid^="outline-point-${cameraA.id}-"]`)).toHaveLength(1);
+  });
+
+  it("drags a point to reposition it instead of removing it", async () => {
+    mockedCapture.mockResolvedValue(undefined);
+    const wrapper = await mountWithFrame();
+    const svg = wrapper.find(`[data-testid="outline-svg-${cameraA.id}"]`);
+    await svg.trigger("click", { clientX: 40, clientY: 30 });
+    await svg.trigger("click", { clientX: 360, clientY: 30 });
+    await svg.trigger("click", { clientX: 360, clientY: 270 });
+
+    await wrapper
+      .find(`[data-testid="outline-point-${cameraA.id}-0"]`)
+      .trigger("pointerdown", { clientX: 40, clientY: 30 });
+    await svg.trigger("pointermove", { clientX: 200, clientY: 150 });
+    await svg.trigger("pointerup", { clientX: 200, clientY: 150 });
+
+    const points = wrapper.findAll(`[data-testid^="outline-point-${cameraA.id}-"]`);
+    expect(points).toHaveLength(3);
+    const moved = wrapper.find(`[data-testid="outline-point-${cameraA.id}-0"]`);
+    expect(moved.attributes("cx")).toBe("50");
+    expect(moved.attributes("cy")).toBe("50");
+  });
+
+  it("ignores drag movement for a different camera's outline", async () => {
+    mockedCameras.mockResolvedValue([cameraA, cameraB]);
+    mockedGetVehicle.mockRejectedValue(notFound());
+    const wrapper = mountPanel();
+    await flushPromises();
+    await wrapper.find(`[data-testid="capture-frame-${cameraA.id}"]`).trigger("click");
+    await wrapper.find(`[data-testid="capture-frame-${cameraB.id}"]`).trigger("click");
+    await flushPromises();
+
+    const svgA = wrapper.find(`[data-testid="outline-svg-${cameraA.id}"]`);
+    await svgA.trigger("click", { clientX: 40, clientY: 30 });
+    await wrapper
+      .find(`[data-testid="outline-point-${cameraA.id}-0"]`)
+      .trigger("pointerdown", { clientX: 40, clientY: 30 });
+
+    // A pointermove/pointerup bubbling through camera B's own svg must not
+    // affect camera A's in-progress drag.
+    const svgB = wrapper.find(`[data-testid="outline-svg-${cameraB.id}"]`);
+    await svgB.trigger("pointermove", { clientX: 200, clientY: 150 });
+    await svgB.trigger("pointerup", { clientX: 200, clientY: 150 });
+
+    const point = wrapper.find(`[data-testid="outline-point-${cameraA.id}-0"]`);
+    expect(point.attributes("cx")).toBe("10");
+    expect(point.attributes("cy")).toBe("10");
+  });
+
+  it("counts as a drag when only the vertical movement crosses the threshold", async () => {
+    mockedCapture.mockResolvedValue(undefined);
+    const wrapper = await mountWithFrame();
+    const svg = wrapper.find(`[data-testid="outline-svg-${cameraA.id}"]`);
+    await svg.trigger("click", { clientX: 40, clientY: 30 });
+
+    await wrapper
+      .find(`[data-testid="outline-point-${cameraA.id}-0"]`)
+      .trigger("pointerdown", { clientX: 40, clientY: 30 });
+    // x barely moves (well under DRAG_MOVE_THRESHOLD); y moves well past it.
+    await svg.trigger("pointermove", { clientX: 41, clientY: 150 });
+    await svg.trigger("pointerup", { clientX: 41, clientY: 150 });
+
+    expect(wrapper.findAll(`[data-testid^="outline-point-${cameraA.id}-"]`)).toHaveLength(1);
+    const point = wrapper.find(`[data-testid="outline-point-${cameraA.id}-0"]`);
+    expect(point.attributes("cy")).not.toBe("10");
+  });
+
+  it("treats a sub-threshold jiggle in both axes as a click, still removing the point", async () => {
+    mockedCapture.mockResolvedValue(undefined);
+    const wrapper = await mountWithFrame();
+    const svg = wrapper.find(`[data-testid="outline-svg-${cameraA.id}"]`);
+    await svg.trigger("click", { clientX: 40, clientY: 30 });
+
+    await wrapper
+      .find(`[data-testid="outline-point-${cameraA.id}-0"]`)
+      .trigger("pointerdown", { clientX: 40, clientY: 30 });
+    // Both axes move by 1px - well under DRAG_MOVE_THRESHOLD (2px/1.5px here).
+    await svg.trigger("pointermove", { clientX: 41, clientY: 31 });
+    await svg.trigger("pointerup", { clientX: 41, clientY: 31 });
+
+    expect(wrapper.findAll(`[data-testid^="outline-point-${cameraA.id}-"]`)).toHaveLength(0);
+  });
+
+  it("ignores drag movement once the svg has no rendered size (e.g. mid-layout-change)", async () => {
+    mockedCapture.mockResolvedValue(undefined);
+    const wrapper = await mountWithFrame();
+    const svg = wrapper.find(`[data-testid="outline-svg-${cameraA.id}"]`);
+    await svg.trigger("click", { clientX: 40, clientY: 30 });
+
+    await wrapper
+      .find(`[data-testid="outline-point-${cameraA.id}-0"]`)
+      .trigger("pointerdown", { clientX: 40, clientY: 30 });
+    Element.prototype.getBoundingClientRect = vi.fn(() => rectOf(0, 0));
+    await svg.trigger("pointermove", { clientX: 200, clientY: 150 });
+
+    const point = wrapper.find(`[data-testid="outline-point-${cameraA.id}-0"]`);
+    expect(point.attributes("cx")).toBe("10");
+    expect(point.attributes("cy")).toBe("10");
+  });
+
+  it("ends the drag without removing the point when the pointer leaves the image", async () => {
+    mockedCapture.mockResolvedValue(undefined);
+    const wrapper = await mountWithFrame();
+    const svg = wrapper.find(`[data-testid="outline-svg-${cameraA.id}"]`);
+    await svg.trigger("click", { clientX: 40, clientY: 30 });
+
+    await wrapper
+      .find(`[data-testid="outline-point-${cameraA.id}-0"]`)
+      .trigger("pointerdown", { clientX: 40, clientY: 30 });
+    await svg.trigger("pointermove", { clientX: 5, clientY: 5 });
+    await svg.trigger("pointerleave", { clientX: -20, clientY: -20 });
+
+    expect(wrapper.findAll(`[data-testid^="outline-point-${cameraA.id}-"]`)).toHaveLength(1);
   });
 
   it("draws the polygon once at least two points exist", async () => {
