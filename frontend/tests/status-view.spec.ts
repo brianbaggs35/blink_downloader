@@ -22,6 +22,7 @@ const linkedStatus = fakeBlinkStatus({
   status: "active",
   last_sync: "2026-07-26T12:00:00Z",
   camera_count: 3,
+  network_ids: ["net-1"],
   total_clip_count: 42,
   daily_clip_counts: [
     { date: "2026-07-20", count: 1 },
@@ -180,5 +181,42 @@ describe("StatusView Blink connection", () => {
     await flushPromises();
     await wrapper.find('[data-testid="manage-blink"]').trigger("click");
     expect(pushSpy).toHaveBeenCalledWith({ name: "settings", query: { tab: "general" } });
+  });
+
+  it("shows the singular network ID label for one network", async () => {
+    mockedBlinkStatus.mockResolvedValue(linkedStatus);
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="network-ids"]').text()).toBe("Network ID: net-1");
+  });
+
+  it("shows the plural network IDs label, comma-joined, for more than one network", async () => {
+    mockedBlinkStatus.mockResolvedValue({ ...linkedStatus, network_ids: ["net-1", "net-2"] });
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="network-ids"]').text()).toBe(
+      "Network IDs: net-1, net-2",
+    );
+  });
+
+  it("hides the network ID line when there are none yet", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="network-ids"]').exists()).toBe(false);
+  });
+
+  it("derives clips today from the last daily count and clips this week from their sum", async () => {
+    mockedBlinkStatus.mockResolvedValue(linkedStatus);
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="clips-today"]').text()).toBe("5");
+    expect(wrapper.find('[data-testid="clips-this-week"]').text()).toBe("12");
+  });
+
+  it("shows zero for today/this-week stats before any daily counts exist", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="clips-today"]').text()).toBe("0");
+    expect(wrapper.find('[data-testid="clips-this-week"]').text()).toBe("0");
   });
 });

@@ -55,6 +55,7 @@ function linkedStatus(overrides: Partial<BlinkStatusResponse> = {}): BlinkStatus
     last_sync: null,
     last_error: null,
     camera_count: 2,
+    network_ids: [],
     total_clip_count: 0,
     daily_clip_counts: [],
     ...overrides,
@@ -68,6 +69,7 @@ function unlinkedStatus(): BlinkStatusResponse {
     last_sync: null,
     last_error: null,
     camera_count: 0,
+    network_ids: [],
     total_clip_count: 0,
     daily_clip_counts: [],
   };
