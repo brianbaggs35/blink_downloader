@@ -14,6 +14,9 @@ vi.mock("@/api", async (importOriginal) => ({
   recordCameraClip: vi.fn(),
 }));
 
+const toastAdd = vi.fn();
+vi.mock("primevue/usetoast", () => ({ useToast: () => ({ add: toastAdd }) }));
+
 import {
   getBlinkStatus,
   getSecurityFeedSettings,
@@ -160,12 +163,39 @@ describe("SecurityFeedView camera grid", () => {
     expect(viewer.find('[data-testid="customize-feed"]').exists()).toBe(false);
   });
 
-  it("triggers a recording without throwing when the API call fails", async () => {
-    mockedRecord.mockRejectedValue(new ApiError(502, "camera offline"));
+  it("toasts success once a recording starts", async () => {
+    mockedRecord.mockResolvedValue({ status: "queued" });
     const wrapper = await mountView();
     await wrapper.find(`[data-testid="record-now-${cameraA.id}"]`).trigger("click");
     await flushPromises();
     expect(mockedRecord).toHaveBeenCalledWith(cameraA.id);
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: "success", summary: "Recording started" }),
+    );
+  });
+
+  it("toasts the API error message when starting a recording fails", async () => {
+    mockedRecord.mockRejectedValue(new ApiError(502, "camera offline"));
+    const wrapper = await mountView();
+    await wrapper.find(`[data-testid="record-now-${cameraA.id}"]`).trigger("click");
+    await flushPromises();
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: "error",
+        summary: "Could not start recording",
+        detail: "camera offline",
+      }),
+    );
+  });
+
+  it("toasts a generic error for a non-API recording failure", async () => {
+    mockedRecord.mockRejectedValue(new TypeError("down"));
+    const wrapper = await mountView();
+    await wrapper.find(`[data-testid="record-now-${cameraA.id}"]`).trigger("click");
+    await flushPromises();
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: "error", detail: "Unexpected error." }),
+    );
   });
 
   it("forces a fresh snapshot when Snap is clicked", async () => {

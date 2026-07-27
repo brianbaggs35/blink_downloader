@@ -3,6 +3,7 @@ import Button from "primevue/button";
 import Message from "primevue/message";
 import Skeleton from "primevue/skeleton";
 import Tag from "primevue/tag";
+import { useToast } from "primevue/usetoast";
 import { onMounted, onUnmounted, reactive, ref } from "vue";
 import { RouterLink } from "vue-router";
 
@@ -23,6 +24,7 @@ import type { CameraRead, SecurityFeedSettingsRead } from "@/api";
 
 const auth = useAuthStore();
 const blink = useBlinkStore();
+const toast = useToast();
 const { formatRelativeTime } = useFormatting();
 
 const loading = ref(true);
@@ -34,6 +36,7 @@ const tileVersion = reactive<Record<string, number>>({});
 const tileError = reactive<Record<string, boolean>>({});
 const tileUpdatedAt = reactive<Record<string, Date>>({});
 const snapping = reactive<Record<string, boolean>>({});
+const recording = reactive<Record<string, boolean>>({});
 
 // Forces every "Xs ago" label to re-render on a shared 1s tick, without
 // each tile needing its own timer.
@@ -93,7 +96,25 @@ async function snapNow(camera: CameraRead): Promise<void> {
 }
 
 async function recordClipNow(camera: CameraRead): Promise<void> {
-  await recordCameraClip(camera.id).catch(() => undefined);
+  recording[camera.id] = true;
+  try {
+    await recordCameraClip(camera.id);
+    toast.add({
+      severity: "success",
+      summary: "Recording started",
+      detail: `The clip will appear in your Library shortly (${camera.name}).`,
+      life: 4000,
+    });
+  } catch (caught) {
+    toast.add({
+      severity: "error",
+      summary: "Could not start recording",
+      detail: caught instanceof ApiError ? caught.message : "Unexpected error.",
+      life: 4000,
+    });
+  } finally {
+    recording[camera.id] = false;
+  }
 }
 
 async function load(): Promise<void> {
@@ -256,6 +277,7 @@ function lastUpdatedLabel(camera: CameraRead): string {
               v-if="auth.isAdmin"
               type="button"
               class="tile-action"
+              :disabled="recording[camera.id]"
               :data-testid="`record-now-${camera.id}`"
               @click="recordClipNow(camera)"
             >
