@@ -52,6 +52,7 @@ export function fakeBlinkStatus(overrides: Partial<BlinkStatusResponse> = {}): B
     last_sync: null,
     last_error: null,
     camera_count: 0,
+    network_ids: [],
     total_clip_count: 0,
     daily_clip_counts: [],
     ...overrides,

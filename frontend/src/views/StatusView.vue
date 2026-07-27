@@ -95,6 +95,17 @@ const dailyPoints = computed<TrendPoint[]>(() =>
   })),
 );
 
+const clipsToday = computed(() => {
+  const days = blink.status?.daily_clip_counts ?? [];
+  return days.length > 0 ? days[days.length - 1].count : 0;
+});
+
+const clipsThisWeek = computed(() =>
+  (blink.status?.daily_clip_counts ?? []).reduce((sum, day) => sum + day.count, 0),
+);
+
+const networkIds = computed(() => blink.status?.network_ids ?? []);
+
 function goToBlinkSettings(): void {
   void router.push({ name: "settings", query: { tab: "general" } });
 }
@@ -181,6 +192,14 @@ onMounted(refreshAll);
               Link a Blink account to start syncing cameras and clips.
             </p>
           </div>
+          <p
+            v-if="networkIds.length > 0"
+            class="muted"
+            data-testid="network-ids"
+          >
+            {{ networkIds.length === 1 ? "Network ID" : "Network IDs" }}:
+            {{ networkIds.join(", ") }}
+          </p>
           <Message
             v-if="blink.status?.last_error"
             severity="error"
@@ -209,6 +228,20 @@ onMounted(refreshAll);
           <article class="stat-tile">
             <span class="stat-value">{{ blink.status?.camera_count ?? 0 }}</span>
             <span class="stat-label">Cameras</span>
+          </article>
+          <article class="stat-tile">
+            <span
+              class="stat-value"
+              data-testid="clips-today"
+            >{{ clipsToday }}</span>
+            <span class="stat-label">Clips today</span>
+          </article>
+          <article class="stat-tile">
+            <span
+              class="stat-value"
+              data-testid="clips-this-week"
+            >{{ clipsThisWeek }}</span>
+            <span class="stat-label">Clips this week</span>
           </article>
         </div>
 
