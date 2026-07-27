@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/api/client";
 import { useAuthStore } from "@/stores/auth";
 import SettingsView from "@/views/SettingsView.vue";
-import { fakeUser, makePinia, makeRouter, mountGlobal } from "./helpers";
+import { fakeBlinkStatus, fakeUser, makePinia, makeRouter, mountGlobal } from "./helpers";
 
 vi.mock("@/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api")>()),
@@ -40,13 +40,7 @@ const mockedUpdateStorage = vi.mocked(updateStorageSettings);
 const mockedGetBlinkSync = vi.mocked(getBlinkSyncSettings);
 const mockedUpdateBlinkSync = vi.mocked(updateBlinkSyncSettings);
 
-const unlinkedBlinkStatus = {
-  linked: false,
-  status: null,
-  last_sync: null,
-  last_error: null,
-  camera_count: 0,
-} as const;
+const unlinkedBlinkStatus = fakeBlinkStatus();
 
 beforeEach(() => {
   vi.clearAllMocks();

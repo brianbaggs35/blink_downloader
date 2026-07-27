@@ -6,7 +6,7 @@ import { createMemoryHistory, createRouter, type Router } from "vue-router";
 
 import { routes } from "@/router";
 
-import type { HealthReport, UserRead } from "@/api";
+import type { BlinkStatusResponse, HealthReport, UserRead } from "@/api";
 
 /** Guard-free router over the real route table. */
 export function makeRouter(): Router {
@@ -43,6 +43,20 @@ export const healthyReport: HealthReport = {
   redis: "ok",
   worker: "ok",
 };
+
+/** Unlinked by default - pass overrides for a linked/error/etc. shape. */
+export function fakeBlinkStatus(overrides: Partial<BlinkStatusResponse> = {}): BlinkStatusResponse {
+  return {
+    linked: false,
+    status: null,
+    last_sync: null,
+    last_error: null,
+    camera_count: 0,
+    total_clip_count: 0,
+    daily_clip_counts: [],
+    ...overrides,
+  };
+}
 
 export function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {

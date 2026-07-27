@@ -5,7 +5,7 @@ import { nextTick } from "vue";
 import NavSidebar from "@/components/NavSidebar.vue";
 import { useMobileNav } from "@/composables/useMobileNav";
 import { useSidebarCollapse } from "@/composables/useSidebarCollapse";
-import { makePinia, makeRouter, mountGlobal } from "./helpers";
+import { fakeBlinkStatus, makePinia, makeRouter, mountGlobal } from "./helpers";
 
 vi.mock("@/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api")>()),
@@ -16,15 +16,7 @@ import { getBlinkStatus } from "@/api";
 
 const mockedBlinkStatus = vi.mocked(getBlinkStatus);
 
-const unlinkedStatus = {
-  linked: false,
-  status: null,
-  last_sync: null,
-  last_error: null,
-  camera_count: 0,
-  total_clip_count: 0,
-  daily_clip_counts: [],
-} as const;
+const unlinkedStatus = fakeBlinkStatus();
 
 beforeEach(() => {
   useSidebarCollapse().setCollapsed(false);

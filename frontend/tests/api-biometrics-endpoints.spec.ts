@@ -94,7 +94,7 @@ describe("people endpoints", () => {
 
   it("updatePerson PUTs the new name", async () => {
     const mock = capture(jsonResponse({ ...personFixture, name: "New Name" }));
-    await updatePerson("person-1", { name: "New Name" });
+    await updatePerson("person-1", { name: "New Name", never_mark_suspicious: false });
     expect(mock.mock.calls[0]?.[0]).toBe("/api/biometrics/people/person-1");
     expect((mock.mock.calls[0]?.[1] as RequestInit).method).toBe("PUT");
   });

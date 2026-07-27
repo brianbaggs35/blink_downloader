@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/api/client";
 import SetupView from "@/views/SetupView.vue";
-import { fakeUser, makePinia, makeRouter, mountGlobal } from "./helpers";
+import { fakeBlinkStatus, fakeUser, makePinia, makeRouter, mountGlobal } from "./helpers";
 
 vi.mock("@/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api")>()),
@@ -41,17 +41,11 @@ const mockedListCameras = vi.mocked(listCameras);
 const mockedUpdateCamera = vi.mocked(updateCamera);
 
 function unlinkedStatus() {
-  return { linked: false, status: null, last_sync: null, last_error: null, camera_count: 0 };
+  return fakeBlinkStatus();
 }
 
 function linkedStatus() {
-  return {
-    linked: true,
-    status: "active" as const,
-    last_sync: null,
-    last_error: null,
-    camera_count: 1,
-  };
+  return fakeBlinkStatus({ linked: true, status: "active", camera_count: 1 });
 }
 
 beforeEach(() => {

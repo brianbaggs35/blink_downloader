@@ -55,12 +55,22 @@ function linkedStatus(overrides: Partial<BlinkStatusResponse> = {}): BlinkStatus
     last_sync: null,
     last_error: null,
     camera_count: 2,
+    total_clip_count: 0,
+    daily_clip_counts: [],
     ...overrides,
   };
 }
 
 function unlinkedStatus(): BlinkStatusResponse {
-  return { linked: false, status: null, last_sync: null, last_error: null, camera_count: 0 };
+  return {
+    linked: false,
+    status: null,
+    last_sync: null,
+    last_error: null,
+    camera_count: 0,
+    total_clip_count: 0,
+    daily_clip_counts: [],
+  };
 }
 
 const cameraA: CameraRead = {
@@ -336,8 +346,24 @@ describe("LibraryView — recognized person filter", () => {
   beforeEach(() => {
     mockedStatus.mockResolvedValue(linkedStatus());
     mockedPeople.mockResolvedValue([
-      { id: "p-1", name: "Alex", has_thumbnail: false, face_count: 1, created_at: "", updated_at: "" },
-      { id: "p-2", name: "Sam", has_thumbnail: false, face_count: 1, created_at: "", updated_at: "" },
+      {
+        id: "p-1",
+        name: "Alex",
+        never_mark_suspicious: false,
+        has_thumbnail: false,
+        face_count: 1,
+        created_at: "",
+        updated_at: "",
+      },
+      {
+        id: "p-2",
+        name: "Sam",
+        never_mark_suspicious: false,
+        has_thumbnail: false,
+        face_count: 1,
+        created_at: "",
+        updated_at: "",
+      },
     ]);
   });
 
@@ -801,7 +827,15 @@ describe("LibraryView — recognized-only stat and toggle", () => {
   it("filters to has_recognized_person and clears the person-specific filter when toggled on", async () => {
     withRecognizedTotal(7);
     mockedPeople.mockResolvedValue([
-      { id: "p-1", name: "Alex", has_thumbnail: false, face_count: 1, created_at: "", updated_at: "" },
+      {
+        id: "p-1",
+        name: "Alex",
+        never_mark_suspicious: false,
+        has_thumbnail: false,
+        face_count: 1,
+        created_at: "",
+        updated_at: "",
+      },
     ]);
     const { wrapper } = await mountLibrary();
 
@@ -823,7 +857,15 @@ describe("LibraryView — recognized-only stat and toggle", () => {
   it("clears the toggle when a specific person is then chosen", async () => {
     withRecognizedTotal(7);
     mockedPeople.mockResolvedValue([
-      { id: "p-1", name: "Alex", has_thumbnail: false, face_count: 1, created_at: "", updated_at: "" },
+      {
+        id: "p-1",
+        name: "Alex",
+        never_mark_suspicious: false,
+        has_thumbnail: false,
+        face_count: 1,
+        created_at: "",
+        updated_at: "",
+      },
     ]);
     const { wrapper } = await mountLibrary();
 

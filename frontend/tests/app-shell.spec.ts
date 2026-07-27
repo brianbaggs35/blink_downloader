@@ -14,19 +14,13 @@ import PageHeader from "@/components/PageHeader.vue";
 import TopBar from "@/components/TopBar.vue";
 import { useAuthStore } from "@/stores/auth";
 import LibraryView from "@/views/LibraryView.vue";
-import { fakeUser, makePinia, makeRouter, mountGlobal } from "./helpers";
+import { fakeBlinkStatus, fakeUser, makePinia, makeRouter, mountGlobal } from "./helpers";
 
 const mockedStatus = vi.mocked(getBlinkStatus);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockedStatus.mockResolvedValue({
-    linked: false,
-    status: null,
-    last_sync: null,
-    last_error: null,
-    camera_count: 0,
-  });
+  mockedStatus.mockResolvedValue(fakeBlinkStatus());
 });
 
 describe("application shell", () => {
