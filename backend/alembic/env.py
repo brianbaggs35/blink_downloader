@@ -13,6 +13,7 @@ from app.biometrics import models as biometrics_models  # noqa: F401
 from app.blink import models as blink_models  # noqa: F401  — register tables on Base.metadata
 from app.config import get_settings
 from app.db import Base
+from app.integrations import models as integrations_models  # noqa: F401
 from app.livefeed import models as livefeed_models  # noqa: F401
 from app.settings import models as settings_models  # noqa: F401
 from app.users import models  # noqa: F401  — register tables on Base.metadata

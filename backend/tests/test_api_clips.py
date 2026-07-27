@@ -16,7 +16,7 @@ from httpx import AsyncClient
 
 from app.ai.models import AIProviderKind, Analysis, AnalysisTier, SuspicionLabel
 from app.biometrics.models import Person, RecognizedFace
-from app.blink.models import BlinkAccount, Camera, Clip
+from app.blink.models import BlinkAccount, Camera, Clip, StorageBackend
 from app.config import get_settings
 from app.security.crypto import SecretBox
 from app.settings.service import set_storage_dir
@@ -110,6 +110,27 @@ async def test_list_filters_by_camera(admin_client: AsyncClient, app: FastAPI) -
     body = response.json()
     assert body["total"] == 1
     assert body["items"][0]["camera_id"] == str(cam_a.id)
+
+
+async def test_list_filters_by_storage_backend(admin_client: AsyncClient, app: FastAPI) -> None:
+    camera = await _make_camera(app)
+    local_clip = await _make_clip(app, camera)
+    archived_clip = await _make_clip(app, camera)
+    async with app.state.sessionmaker() as session:
+        clip = await session.get(Clip, archived_clip.id)
+        assert clip is not None
+        clip.storage_backend = StorageBackend.S3
+        await session.commit()
+
+    response = await admin_client.get("/api/clips", params={"storage_backend": "s3"})
+    body = response.json()
+    assert body["total"] == 1
+    assert body["items"][0]["id"] == str(archived_clip.id)
+
+    response = await admin_client.get("/api/clips", params={"storage_backend": "local"})
+    body = response.json()
+    assert body["total"] == 1
+    assert body["items"][0]["id"] == str(local_clip.id)
 
 
 async def _recognize(app: FastAPI, clip: Clip, name: str) -> Person:

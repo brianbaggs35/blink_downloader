@@ -64,7 +64,8 @@ def app() -> FastAPI:
 
 TEST_TABLES = (
     "access_tokens, users, blink_accounts, app_settings, ai_settings, alert_settings, "
-    "people, biometrics_settings, live_view_settings, security_feed_settings"
+    "people, biometrics_settings, live_view_settings, security_feed_settings, "
+    "storage_integration_settings"
 )
 
 
