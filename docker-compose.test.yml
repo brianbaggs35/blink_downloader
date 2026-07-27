@@ -114,6 +114,10 @@ services:
       context: .
       dockerfile: docker/frontend.Dockerfile
       target: prod
+      args:
+        # Set by `make e2e-coverage` only - every other target (including
+        # plain `make e2e`) leaves this at the Dockerfile's own default.
+        VITE_COVERAGE: ${VITE_COVERAGE:-false}
     ports:
       - "127.0.0.1:8443:8443"
     volumes:
@@ -151,6 +155,10 @@ services:
     environment:
       E2E_BASE_URL: https://frontend:8443
       CI: "true"
+      # Set (to /e2e/.nyc_output) only by `make e2e-coverage` - see
+      # fixtures/index.ts. Empty/unset everywhere else, so a plain
+      # `make e2e`/`make e2e-test` run doesn't try to collect anything.
+      COVERAGE_DIR: ${COVERAGE_DIR:-}
     depends_on:
       frontend:
         condition: service_started

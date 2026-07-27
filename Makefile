@@ -92,6 +92,20 @@ e2e-test: ## Run Playwright against an already-running `make e2e-up` stack
 e2e-down: ## Tear down the e2e stack
 	$(COMPOSE_TEST) --profile e2e down -v
 
+e2e-coverage: certs ## Run e2e against an istanbul-instrumented frontend and report code coverage
+	@$(COMPOSE_TEST) --profile e2e down -v --remove-orphans 2>/dev/null || true
+	@rm -rf e2e/.nyc_output e2e/coverage
+	VITE_COVERAGE=true COVERAGE_DIR=/e2e/.nyc_output \
+	  $(COMPOSE_TEST) --profile e2e up --build --abort-on-container-exit --exit-code-from playwright; \
+	status=$$?; \
+	docker run --rm -v "$(CURDIR)/e2e:/e2e" alpine sh -c \
+	  "chown -R $(shell id -u):$(shell id -g) /e2e/.nyc_output && rm -rf /e2e/node_modules"; \
+	docker run --rm -v "$(CURDIR)/e2e:/e2e" -v "$(CURDIR)/frontend/src:/app/src:ro" -w /e2e \
+	  --user "$(shell id -u):$(shell id -g)" \
+	  node:24-slim sh -c "npm ci --no-audit --no-fund && npm run coverage:report"; \
+	$(COMPOSE_TEST) --profile e2e down -v; \
+	exit $$status
+
 lint: lint-backend lint-frontend lint-e2e ## Run every linter
 
 lint-backend: ## ruff + pyright + bandit
