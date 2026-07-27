@@ -61,7 +61,7 @@ describe("NavSidebar", () => {
 
     const drawer = document.body.querySelector('[data-testid="mobile-nav-drawer"]');
     expect(drawer).toBeTruthy();
-    expect(drawer!.querySelectorAll(".nav-item").length).toBe(10);
+    expect(drawer!.querySelectorAll(".nav-item").length).toBe(11);
     expect(drawer!.textContent).toContain(`v${__APP_VERSION__}`);
     useMobileNav().close();
   });
