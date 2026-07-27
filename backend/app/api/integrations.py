@@ -48,7 +48,7 @@ router = APIRouter(prefix="/settings/storage-integrations", tags=["integrations"
 GOOGLE_DRIVE = "google_drive"
 ONEDRIVE = "onedrive"
 
-SETTINGS_REDIRECT_PATH = "/settings?tab=integrations"
+SETTINGS_REDIRECT_PATH = "/integrations"
 
 
 def _read(row: StorageIntegrationSettings) -> StorageIntegrationSettingsRead:
@@ -156,11 +156,11 @@ async def callback_google_drive_oauth(
     state: str | None = Query(default=None),
 ) -> RedirectResponse:
     if not code or not state or not await consume_oauth_state(session, GOOGLE_DRIVE, state):
-        return RedirectResponse(f"{SETTINGS_REDIRECT_PATH}&error=google_drive")
+        return RedirectResponse(f"{SETTINGS_REDIRECT_PATH}?error=google_drive")
     row = await get_storage_integration_settings(session)
     settings = get_settings()
     if not row.google_drive_client_id or not row.encrypted_google_drive_client_secret:
-        return RedirectResponse(f"{SETTINGS_REDIRECT_PATH}&error=google_drive")
+        return RedirectResponse(f"{SETTINGS_REDIRECT_PATH}?error=google_drive")
     client_secret = SecretBox(settings.encryption_key).decrypt(
         row.encrypted_google_drive_client_secret
     )
@@ -171,10 +171,10 @@ async def callback_google_drive_oauth(
         )
     except CloudStorageError as exc:
         logger.warning("integrations.google_drive_oauth_failed", error=str(exc))
-        return RedirectResponse(f"{SETTINGS_REDIRECT_PATH}&error=google_drive")
+        return RedirectResponse(f"{SETTINGS_REDIRECT_PATH}?error=google_drive")
     await set_google_drive_refresh_token(session, refresh_token, settings.encryption_key)
     logger.info("integrations.google_drive_connected")
-    return RedirectResponse(f"{SETTINGS_REDIRECT_PATH}&connected=google_drive")
+    return RedirectResponse(f"{SETTINGS_REDIRECT_PATH}?connected=google_drive")
 
 
 @router.get("/onedrive/oauth/start")
@@ -208,11 +208,11 @@ async def callback_onedrive_oauth(
     state: str | None = Query(default=None),
 ) -> RedirectResponse:
     if not code or not state or not await consume_oauth_state(session, ONEDRIVE, state):
-        return RedirectResponse(f"{SETTINGS_REDIRECT_PATH}&error=onedrive")
+        return RedirectResponse(f"{SETTINGS_REDIRECT_PATH}?error=onedrive")
     row = await get_storage_integration_settings(session)
     settings = get_settings()
     if not row.onedrive_client_id or not row.encrypted_onedrive_client_secret:
-        return RedirectResponse(f"{SETTINGS_REDIRECT_PATH}&error=onedrive")
+        return RedirectResponse(f"{SETTINGS_REDIRECT_PATH}?error=onedrive")
     client_secret = SecretBox(settings.encryption_key).decrypt(row.encrypted_onedrive_client_secret)
     redirect_uri = str(request.url_for("callback_onedrive_oauth"))
     try:
@@ -221,7 +221,7 @@ async def callback_onedrive_oauth(
         )
     except CloudStorageError as exc:
         logger.warning("integrations.onedrive_oauth_failed", error=str(exc))
-        return RedirectResponse(f"{SETTINGS_REDIRECT_PATH}&error=onedrive")
+        return RedirectResponse(f"{SETTINGS_REDIRECT_PATH}?error=onedrive")
     await set_onedrive_refresh_token(session, refresh_token, settings.encryption_key)
     logger.info("integrations.onedrive_connected")
-    return RedirectResponse(f"{SETTINGS_REDIRECT_PATH}&connected=onedrive")
+    return RedirectResponse(f"{SETTINGS_REDIRECT_PATH}?connected=onedrive")
