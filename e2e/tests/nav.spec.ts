@@ -38,6 +38,12 @@ test("collapsing the sidebar persists across a reload", async ({ page }) => {
   await expect(page.locator(".sidebar.collapsed")).toHaveCount(0);
 });
 
+test("shows the seeded Blink account as connected in the nav badge", async ({ page }) => {
+  const badge = page.getByTestId("nav-blink-badge");
+  await expect(badge).toHaveClass(/badge-connected/);
+  await expect(badge).toHaveText("Blink connected");
+});
+
 test("the theme toggle switches between dark and light", async ({ page }) => {
   // Every test starts from the same frozen storageState (see auth.setup.ts),
   // captured before anything ever touched the theme - dark is the app's

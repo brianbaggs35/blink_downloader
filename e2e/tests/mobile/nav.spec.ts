@@ -12,6 +12,7 @@ test("the hamburger opens the mobile drawer with the full nav", async ({ page })
   await expect(drawer).toBeVisible();
   await expect(drawer).toContainText("Security Feed");
   await expect(drawer).toContainText("Settings");
+  await expect(drawer.getByTestId("nav-blink-badge-mobile")).toHaveText("Blink connected");
 });
 
 test("Escape closes the drawer", async ({ page }) => {
