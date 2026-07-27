@@ -1,6 +1,4 @@
-import { expect, test } from "@playwright/test";
-
-import { seededPerson } from "../fixtures";
+import { expect, seededPerson, test } from "../fixtures";
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/biometrics");

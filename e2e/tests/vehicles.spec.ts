@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../fixtures";
 
 test("shows the empty state when no vehicles are configured yet", async ({ page }) => {
   await page.goto("/vehicles");

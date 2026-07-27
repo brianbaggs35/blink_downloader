@@ -1,6 +1,4 @@
-import { expect, test } from "@playwright/test";
-
-import { seededAnalyses, seededCameras } from "../fixtures";
+import { expect, seededAnalyses, seededCameras, test } from "../fixtures";
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/");

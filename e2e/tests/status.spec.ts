@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../fixtures";
 
 test("shows every health tile as operational for a healthy stack", async ({ page }) => {
   await page.goto("/status");
