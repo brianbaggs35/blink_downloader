@@ -185,6 +185,18 @@ async def account_status(
             select(func.count()).select_from(Camera).where(Camera.blink_account_id == account.id)
         )
     ).scalar_one()
+    network_ids = (
+        (
+            await session.execute(
+                select(Camera.blink_network_id)
+                .where(Camera.blink_account_id == account.id)
+                .distinct()
+                .order_by(Camera.blink_network_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
     total_clip_count, daily_clip_counts = await _clip_stats(session, account.id)
     return BlinkStatusResponse(
         linked=True,
@@ -192,6 +204,7 @@ async def account_status(
         last_sync=account.last_sync,
         last_error=account.last_error,
         camera_count=camera_count,
+        network_ids=list(network_ids),
         total_clip_count=total_clip_count,
         daily_clip_counts=daily_clip_counts,
     )

@@ -248,6 +248,7 @@ async def test_status_when_unlinked(admin_client: AsyncClient) -> None:
         "last_sync": None,
         "last_error": None,
         "camera_count": 0,
+        "network_ids": [],
         "total_clip_count": 0,
         "daily_clip_counts": [],
     }
@@ -286,6 +287,42 @@ async def test_status_reports_camera_count(admin_client: AsyncClient, app: FastA
     body = response.json()
     assert body["linked"] is True
     assert body["camera_count"] == 1
+    assert body["network_ids"] == ["n1"]
+
+
+async def test_status_reports_distinct_network_ids(admin_client: AsyncClient, app: FastAPI) -> None:
+    account = await _linked_account(app)
+    async with app.state.sessionmaker() as session:
+        session.add_all(
+            [
+                Camera(
+                    blink_account_id=account.id,
+                    blink_camera_id="c1",
+                    blink_network_id="n2",
+                    name="Front Door",
+                    camera_type="catalina",
+                ),
+                Camera(
+                    blink_account_id=account.id,
+                    blink_camera_id="c2",
+                    blink_network_id="n1",
+                    name="Backyard",
+                    camera_type="catalina",
+                ),
+                Camera(
+                    blink_account_id=account.id,
+                    blink_camera_id="c3",
+                    blink_network_id="n1",
+                    name="Garage",
+                    camera_type="catalina",
+                ),
+            ]
+        )
+        await session.commit()
+
+    response = await admin_client.get("/api/blink/status")
+    body = response.json()
+    assert body["network_ids"] == ["n1", "n2"]
 
 
 async def _linked_camera(app: FastAPI, account: BlinkAccount) -> Camera:
