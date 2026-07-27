@@ -28,7 +28,10 @@ const groups: NavGroup[] = [
   },
   {
     label: "Archive",
-    items: [{ label: "Storage", icon: "pi pi-database", to: { name: "storage" } }],
+    items: [
+      { label: "Storage", icon: "pi pi-database", to: { name: "storage" } },
+      { label: "Integrations", icon: "pi pi-cloud", to: { name: "integrations" } },
+    ],
   },
   {
     label: "Intelligence",

@@ -1,8 +1,7 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import InputNumber from "primevue/inputnumber";
 import Select from "primevue/select";
-import Tab from "primevue/tab";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/api/client";
 import { useAuthStore } from "@/stores/auth";
@@ -54,18 +53,9 @@ beforeEach(() => {
   });
 });
 
-// PrimeVue's TabList schedules a setTimeout(…, 150) on mount to measure and
-// position the active-tab ink bar. Letting it fire after the environment
-// for this test has already been torn down throws — wait it out here so
-// each test's own timer resolves while the DOM is still alive.
-afterEach(async () => {
-  await new Promise((resolve) => setTimeout(resolve, 160));
-});
-
-// The other Settings tabs are covered by their own dedicated spec files —
-// stub them here so this file only exercises tab gating/switching, without
-// triggering their real onMounted API calls (PrimeVue's Tabs "lazy" mode
-// still mounts a panel's real content the first time its tab is opened).
+// The other Settings sections are covered by their own dedicated spec
+// files — stub them here so this file only exercises section gating/
+// switching, without triggering their real onMounted API calls.
 const settingsTabStubs = {
   SettingsUsersPanel: { template: '<div data-testid="stub-users" />' },
   SettingsAiProviderPanel: { template: '<div data-testid="stub-ai" />' },
@@ -75,6 +65,7 @@ const settingsTabStubs = {
   SettingsAlertsPanel: { template: '<div data-testid="stub-alerts" />' },
   SettingsLiveViewPanel: { template: '<div data-testid="stub-live-view" />' },
   SettingsSecurityFeedPanel: { template: '<div data-testid="stub-security-feed" />' },
+  SettingsArchivedPanel: { template: '<div data-testid="stub-archived" />' },
   SettingsAboutPanel: { template: '<div data-testid="stub-about" />' },
 };
 
@@ -385,15 +376,15 @@ describe("SettingsView tabs", () => {
       global: { ...mountGlobal(pinia, makeRouter()), stubs: settingsTabStubs },
     });
     await flushPromises();
-    const tabs = wrapper.findAllComponents(Tab);
-    expect(tabs.map((t) => t.text())).toEqual(["General", "About"]);
+    const items = wrapper.findAll('[data-testid^="settings-nav-"]');
+    expect(items.map((i) => i.text())).toEqual(["General", "About"]);
   });
 
-  it("shows every admin tab for a superuser, with About last", async () => {
+  it("shows every admin section for a superuser, with About last", async () => {
     const wrapper = mountSettings();
     await flushPromises();
-    const tabs = wrapper.findAllComponents(Tab);
-    expect(tabs.map((t) => t.text())).toEqual([
+    const items = wrapper.findAll('[data-testid^="settings-nav-"]');
+    expect(items.map((i) => i.text())).toEqual([
       "General",
       "Users",
       "AI Provider",
@@ -403,27 +394,41 @@ describe("SettingsView tabs", () => {
       "Alerts",
       "Live View",
       "Security Feed",
+      "Archived",
       "About",
     ]);
   });
 
   it.each([
-    ["Users", "stub-users"],
-    ["AI Provider", "stub-ai"],
-    ["Biometrics", "stub-biometrics"],
-    ["Cameras", "stub-cameras"],
-    ["Vehicles", "stub-vehicles"],
-    ["Alerts", "stub-alerts"],
-    ["About", "stub-about"],
-  ])("opens the %s tab and mounts its panel, unmounting General", async (label, testId) => {
+    ["users", "stub-users"],
+    ["ai", "stub-ai"],
+    ["biometrics", "stub-biometrics"],
+    ["cameras", "stub-cameras"],
+    ["vehicles", "stub-vehicles"],
+    ["alerts", "stub-alerts"],
+    ["archived", "stub-archived"],
+    ["about", "stub-about"],
+  ])("opens the %s section and mounts its panel, unmounting General", async (value, testId) => {
     const wrapper = mountSettings();
     await flushPromises();
-    const tab = wrapper.findAllComponents(Tab).find((t) => t.text() === label);
-    expect(tab).toBeTruthy();
-    await tab!.trigger("click");
+    const navItem = wrapper.find(`[data-testid="settings-nav-${value}"]`);
+    expect(navItem.exists()).toBe(true);
+    await navItem.trigger("click");
     await flushPromises();
     expect(wrapper.find(`[data-testid="${testId}"]`).exists()).toBe(true);
     expect(wrapper.find('[data-testid="display-name"]').exists()).toBe(false);
+  });
+
+  it("marks the active section's nav item", async () => {
+    const wrapper = mountSettings();
+    await flushPromises();
+    const general = wrapper.find('[data-testid="settings-nav-general"]');
+    expect(general.classes()).toContain("active");
+
+    await wrapper.find('[data-testid="settings-nav-users"]').trigger("click");
+    await flushPromises();
+    expect(general.classes()).not.toContain("active");
+    expect(wrapper.find('[data-testid="settings-nav-users"]').classes()).toContain("active");
   });
 
   it("opens directly on the tab named in the ?tab= query for an admin", async () => {

@@ -29,6 +29,16 @@ export type BulkActionResponse = components["schemas"]["BulkActionResponse"];
 export type StorageSettingsRead = components["schemas"]["StorageSettingsRead"];
 export type StorageSettingsUpdate = components["schemas"]["StorageSettingsUpdate"];
 
+export type StorageBackend = components["schemas"]["StorageBackend"];
+export type StorageIntegrationSettingsRead = components["schemas"]["StorageIntegrationSettingsRead"];
+export type StorageIntegrationSettingsUpdate =
+  components["schemas"]["StorageIntegrationSettingsUpdate"];
+export type StorageTestResult = components["schemas"]["StorageTestResult"];
+export type StorageTestResponse = components["schemas"]["StorageTestResponse"];
+export type BackendStorageSummary = components["schemas"]["BackendStorageSummary"];
+export type StorageSummaryResponse = components["schemas"]["StorageSummaryResponse"];
+export type TemporaryLinkResponse = components["schemas"]["TemporaryLinkResponse"];
+
 export type BlinkSyncSettingsRead = components["schemas"]["BlinkSyncSettingsRead"];
 export type BlinkSyncSettingsUpdate = components["schemas"]["BlinkSyncSettingsUpdate"];
 
@@ -299,6 +309,58 @@ export function updateStorageSettings(
   body: StorageSettingsUpdate,
 ): Promise<StorageSettingsRead> {
   return api<StorageSettingsRead>("/settings/storage", { method: "PATCH", json: body });
+}
+
+export function getStorageIntegrationSettings(): Promise<StorageIntegrationSettingsRead> {
+  return api<StorageIntegrationSettingsRead>("/settings/storage-integrations");
+}
+
+export function updateStorageIntegrationSettings(
+  body: StorageIntegrationSettingsUpdate,
+): Promise<StorageIntegrationSettingsRead> {
+  return api<StorageIntegrationSettingsRead>("/settings/storage-integrations", {
+    method: "PUT",
+    json: body,
+  });
+}
+
+export function testStorageIntegrations(): Promise<StorageTestResponse> {
+  return api<StorageTestResponse>("/settings/storage-integrations/test", { method: "POST" });
+}
+
+/** Browser-navigation URLs (the backend responds with a 302 to the
+ * provider's own consent screen) — never fetched as JSON. */
+export function googleDriveOAuthStartUrl(): string {
+  return "/api/settings/storage-integrations/google-drive/oauth/start";
+}
+
+export function onedriveOAuthStartUrl(): string {
+  return "/api/settings/storage-integrations/onedrive/oauth/start";
+}
+
+export function getStorageSummary(): Promise<StorageSummaryResponse> {
+  return api<StorageSummaryResponse>("/storage/summary");
+}
+
+export function archiveClips(
+  clipIds: string[],
+  backend: StorageBackend,
+): Promise<BulkActionResponse> {
+  return api<BulkActionResponse>("/storage/archive", {
+    method: "POST",
+    json: { clip_ids: clipIds, backend },
+  });
+}
+
+export function restoreClips(clipIds: string[]): Promise<BulkActionResponse> {
+  return api<BulkActionResponse>("/storage/restore", {
+    method: "POST",
+    json: { clip_ids: clipIds },
+  });
+}
+
+export function getClipTemporaryLink(clipId: string): Promise<TemporaryLinkResponse> {
+  return api<TemporaryLinkResponse>(`/storage/clips/${clipId}/link`, { method: "POST" });
 }
 
 export function getBlinkSyncSettings(): Promise<BlinkSyncSettingsRead> {

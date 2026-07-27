@@ -5,6 +5,7 @@ import AppShell from "@/layouts/AppShell.vue";
 import AiUsageView from "@/views/AiUsageView.vue";
 import AiView from "@/views/AiView.vue";
 import BiometricsView from "@/views/BiometricsView.vue";
+import IntegrationsView from "@/views/IntegrationsView.vue";
 import LibraryView from "@/views/LibraryView.vue";
 import LiveView from "@/views/LiveView.vue";
 import LoginView from "@/views/LoginView.vue";
@@ -32,6 +33,12 @@ export const routes = [
       { path: "status", name: "status", component: StatusView, meta: { title: "Status" } },
       { path: "live", name: "live-view", component: LiveView, meta: { title: "Live View" } },
       { path: "storage", name: "storage", component: StorageView, meta: { title: "Storage" } },
+      {
+        path: "integrations",
+        name: "integrations",
+        component: IntegrationsView,
+        meta: { title: "Integrations" },
+      },
       { path: "ai", name: "ai", component: AiView, meta: { title: "AI" } },
       { path: "ai-usage", name: "ai-usage", component: AiUsageView, meta: { title: "AI Usage" } },
       { path: "vehicles", name: "vehicles", component: VehiclesView, meta: { title: "Vehicles" } },

@@ -12,7 +12,7 @@ async function mountLinks(path: string) {
 }
 
 describe("NavLinks", () => {
-  it("renders the ten destinations in product order", async () => {
+  it("renders the eleven destinations in product order", async () => {
     const wrapper = await mountLinks("/");
     const labels = wrapper.findAll(".nav-item span").map((node) => node.text());
     expect(labels).toEqual([
@@ -21,6 +21,7 @@ describe("NavLinks", () => {
       "Status",
       "Live View",
       "Storage",
+      "Integrations",
       "AI",
       "AI Usage",
       "Vehicles",
@@ -38,6 +39,7 @@ describe("NavLinks", () => {
       "/status",
       "/live",
       "/storage",
+      "/integrations",
       "/ai",
       "/ai-usage",
       "/vehicles",
