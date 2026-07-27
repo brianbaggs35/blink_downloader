@@ -6,6 +6,8 @@ account-management rights.
 """
 
 import json
+import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -25,6 +27,7 @@ from app.blink.schemas import (
     BlinkLinkResponse,
     BlinkStatusResponse,
     BlinkVerifyRequest,
+    DailyClipCount,
 )
 from app.config import get_settings
 from app.db import get_session
@@ -42,6 +45,8 @@ router = APIRouter(prefix="/blink", tags=["blink"])
 
 blink_rate_limit = RateLimiter(times=5, seconds=60, scope="blink-link")
 
+STATUS_DAILY_HISTORY_DAYS = 7
+
 
 def get_blink_linker(request: Request) -> BlinkLinker:
     return request.app.state.blink_linker
@@ -49,6 +54,40 @@ def get_blink_linker(request: Request) -> BlinkLinker:
 
 async def _account_count(session: AsyncSession) -> int:
     return (await session.execute(select(func.count()).select_from(BlinkAccount))).scalar_one()
+
+
+async def _clip_stats(
+    session: AsyncSession, account_id: uuid.UUID
+) -> tuple[int, list[DailyClipCount]]:
+    """Total clip count plus a fixed-width, zero-filled daily count for the
+    last STATUS_DAILY_HISTORY_DAYS days (oldest first, today last) - for the
+    Status page's at-a-glance activity trend."""
+    total = (
+        await session.execute(
+            select(func.count())
+            .select_from(Clip)
+            .join(Camera, Camera.id == Clip.camera_id)
+            .where(Camera.blink_account_id == account_id)
+        )
+    ).scalar_one()
+
+    today = datetime.now(UTC).date()
+    start = today - timedelta(days=STATUS_DAILY_HISTORY_DAYS - 1)
+    rows = await session.execute(
+        select(func.date(Clip.recorded_at), func.count())
+        .join(Camera, Camera.id == Clip.camera_id)
+        .where(Camera.blink_account_id == account_id, Clip.recorded_at >= start)
+        .group_by(func.date(Clip.recorded_at))
+    )
+    counts_by_day = {str(day): count for day, count in rows}
+    daily = [
+        DailyClipCount(
+            date=str(start + timedelta(days=offset)),
+            count=counts_by_day.get(str(start + timedelta(days=offset)), 0),
+        )
+        for offset in range(STATUS_DAILY_HISTORY_DAYS)
+    ]
+    return total, daily
 
 
 async def _persist_new_account(
@@ -146,12 +185,15 @@ async def account_status(
             select(func.count()).select_from(Camera).where(Camera.blink_account_id == account.id)
         )
     ).scalar_one()
+    total_clip_count, daily_clip_counts = await _clip_stats(session, account.id)
     return BlinkStatusResponse(
         linked=True,
         status=account.status,
         last_sync=account.last_sync,
         last_error=account.last_error,
         camera_count=camera_count,
+        total_clip_count=total_clip_count,
+        daily_clip_counts=daily_clip_counts,
     )
 
 

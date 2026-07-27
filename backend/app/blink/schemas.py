@@ -25,12 +25,21 @@ class BlinkLinkResponse(BaseModel):
     link_session_id: uuid.UUID | None = None
 
 
+class DailyClipCount(BaseModel):
+    date: str
+    count: int
+
+
 class BlinkStatusResponse(BaseModel):
     linked: bool
     status: BlinkAccountStatus | None = None
     last_sync: datetime | None = None
     last_error: str | None = None
     camera_count: int = 0
+    total_clip_count: int = 0
+    daily_clip_counts: list[DailyClipCount] = []
+    """Always exactly STATUS_DAILY_HISTORY_DAYS entries, oldest first, zero-filled
+    for days with no clips - a fixed-width trend, not a sparse list of hits."""
 
 
 class CameraRead(BaseModel):
