@@ -11,11 +11,9 @@ import { ApiError, createPerson, listPeople, personThumbnailUrl } from "@/api";
 import EmptyState from "@/components/EmptyState.vue";
 import PageHeader from "@/components/PageHeader.vue";
 import PersonDetailPanel from "@/components/PersonDetailPanel.vue";
-import { useAuthStore } from "@/stores/auth";
 
 import type { PersonRead } from "@/api";
 
-const auth = useAuthStore();
 const toast = useToast();
 
 const people = ref<PersonRead[]>([]);
@@ -87,7 +85,7 @@ function onPersonDeleted(): void {
     >
       <template #actions>
         <Button
-          v-if="auth.isAdmin && selectedPersonId === null"
+          v-if="selectedPersonId === null"
           label="Add person"
           icon="pi pi-plus"
           data-testid="open-add-person"
@@ -135,7 +133,6 @@ function onPersonDeleted(): void {
       >
         <template #actions>
           <Button
-            v-if="auth.isAdmin"
             label="Add person"
             icon="pi pi-plus"
             data-testid="open-add-person-empty"

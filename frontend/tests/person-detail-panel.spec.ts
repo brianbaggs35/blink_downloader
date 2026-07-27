@@ -157,9 +157,9 @@ describe("PersonDetailPanel display", () => {
     expect(document.body.querySelector('[data-testid="delete-face-face-1"]')).toBeNull();
   });
 
-  it("hides the enrollment panel for a viewer", async () => {
+  it("shows the enrollment panel for a viewer too (enrollment isn't admin-only)", async () => {
     await mountPanel("p-1", false);
-    expect(document.body.querySelector('[data-testid="enroll-camera-select"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="enroll-camera-select"]')).toBeTruthy();
   });
 
   it("shows the enrollment panel for an admin", async () => {

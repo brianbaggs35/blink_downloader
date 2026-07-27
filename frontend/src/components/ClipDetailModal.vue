@@ -284,7 +284,7 @@ async function onMissedFaceEnrolled(): Promise<void> {
                 /> AI summary
               </p>
               <div
-                v-if="canManage && clip.downloaded_at"
+                v-if="clip.downloaded_at"
                 class="ai-header-actions"
               >
                 <Button
@@ -297,6 +297,7 @@ async function onMissedFaceEnrolled(): Promise<void> {
                   @click="openMissedFaceDialog"
                 />
                 <Button
+                  v-if="canManage"
                   :label="analysis ? 'Re-analyze' : 'Analyze now'"
                   text
                   size="small"
