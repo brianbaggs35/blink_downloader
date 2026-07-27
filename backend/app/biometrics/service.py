@@ -33,7 +33,7 @@ from app.biometrics.recognition import (
     detect_faces,
     ensure_model_ready,
 )
-from app.biometrics.schemas import BiometricsSettingsUpdate
+from app.biometrics.schemas import BiometricsSettingsUpdate, PersonUpdate
 from app.blink.models import Clip
 from app.storage.service import ClipStorage
 from app.video.ffmpeg import extract_biometrics_frame, extract_keyframes
@@ -112,8 +112,9 @@ async def create_person(session: AsyncSession, name: str) -> Person:
     return person
 
 
-async def rename_person(session: AsyncSession, person: Person, name: str) -> Person:
-    person.name = name
+async def update_person(session: AsyncSession, person: Person, payload: PersonUpdate) -> Person:
+    person.name = payload.name
+    person.never_mark_suspicious = payload.never_mark_suspicious
     await session.commit()
     await session.refresh(person)
     return person

@@ -242,7 +242,8 @@ async def test_get_person_404_for_unknown_id(admin_client: AsyncClient) -> None:
 async def test_update_person_requires_admin(viewer_client: AsyncClient, app: FastAPI) -> None:
     person = await _make_person(app)
     response = await viewer_client.put(
-        f"/api/biometrics/people/{person.id}", json={"name": "New Name"}
+        f"/api/biometrics/people/{person.id}",
+        json={"name": "New Name", "never_mark_suspicious": False},
     )
     assert response.status_code == 403
 
@@ -250,10 +251,43 @@ async def test_update_person_requires_admin(viewer_client: AsyncClient, app: Fas
 async def test_update_person_renames(admin_client: AsyncClient, app: FastAPI) -> None:
     person = await _make_person(app)
     response = await admin_client.put(
-        f"/api/biometrics/people/{person.id}", json={"name": "New Name"}
+        f"/api/biometrics/people/{person.id}",
+        json={"name": "New Name", "never_mark_suspicious": False},
     )
     assert response.status_code == 200
     assert response.json()["name"] == "New Name"
+
+
+async def test_update_person_requires_never_mark_suspicious(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    person = await _make_person(app)
+    response = await admin_client.put(
+        f"/api/biometrics/people/{person.id}", json={"name": "New Name"}
+    )
+    assert response.status_code == 422
+
+
+async def test_create_person_defaults_never_mark_suspicious_to_false(
+    admin_client: AsyncClient,
+) -> None:
+    response = await admin_client.post("/api/biometrics/people", json={"name": "Alex"})
+    assert response.json()["never_mark_suspicious"] is False
+
+
+async def test_update_person_can_set_never_mark_suspicious(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    person = await _make_person(app)
+    response = await admin_client.put(
+        f"/api/biometrics/people/{person.id}",
+        json={"name": person.name, "never_mark_suspicious": True},
+    )
+    assert response.status_code == 200
+    assert response.json()["never_mark_suspicious"] is True
+
+    fetched = await admin_client.get(f"/api/biometrics/people/{person.id}")
+    assert fetched.json()["never_mark_suspicious"] is True
 
 
 async def test_delete_person_requires_admin(viewer_client: AsyncClient, app: FastAPI) -> None:

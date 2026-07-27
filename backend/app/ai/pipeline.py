@@ -176,7 +176,15 @@ async def run_analysis(
             # (auto or manual re-analyze) gets another chance.
             logger.warning("biometrics.recognition_skipped", clip_id=str(clip.id), error=str(exc))
 
-    label = suspicion_label_for(final_result.suspicion_score)
+    # A trusted household member never trips the label/event/alert just for
+    # being recognized - checked here (after recognition, before anything is
+    # persisted) rather than by skipping tier2 escalation above: the raw
+    # suspicion_score, escalation flag, and any tier2 usage/cost already
+    # happened and are recorded as-is, only the final label is overridden.
+    bypassed = await _has_bypass_person(session, set(recognized_scores.keys()))
+    label = (
+        SuspicionLabel.ROUTINE if bypassed else suspicion_label_for(final_result.suspicion_score)
+    )
     await _supersede_current_analysis(session, clip.id)
 
     proximity = None
@@ -486,6 +494,19 @@ async def _recognize_and_label(
 async def _person_names(session: AsyncSession, person_ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:
     stmt = select(Person.id, Person.name).where(Person.id.in_(person_ids))
     return {row.id: row.name for row in await session.execute(stmt)}
+
+
+async def _has_bypass_person(session: AsyncSession, person_ids: set[uuid.UUID]) -> bool:
+    """True if any recognized person in this clip is flagged
+    never_mark_suspicious."""
+    if not person_ids:
+        return False
+    stmt = (
+        select(Person.id)
+        .where(Person.id.in_(person_ids), Person.never_mark_suspicious.is_(True))
+        .limit(1)
+    )
+    return (await session.execute(stmt)).scalar_one_or_none() is not None
 
 
 def _bbox_overlap_ratio(

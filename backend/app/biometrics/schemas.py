@@ -23,6 +23,7 @@ class RecognizedPersonRead(BaseModel):
 class PersonRead(BaseModel):
     id: uuid.UUID
     name: str
+    never_mark_suspicious: bool
     has_thumbnail: bool
     face_count: int
     created_at: datetime
@@ -35,6 +36,7 @@ class PersonCreate(BaseModel):
 
 class PersonUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
+    never_mark_suspicious: bool
 
 
 class FaceEmbeddingRead(BaseModel):

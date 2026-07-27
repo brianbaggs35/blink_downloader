@@ -27,7 +27,7 @@ from app.biometrics.models import (
     RecognizedFace,
 )
 from app.biometrics.recognition import DetectedFace
-from app.biometrics.schemas import BiometricsSettingsUpdate
+from app.biometrics.schemas import BiometricsSettingsUpdate, PersonUpdate
 from app.biometrics.service import (
     REVERTED_LABEL,
     ClipFrameError,
@@ -41,9 +41,9 @@ from app.biometrics.service import (
     get_person,
     list_people,
     match_faces,
-    rename_person,
     report_false_positive,
     update_biometrics_settings,
+    update_person,
 )
 from app.blink.models import BlinkAccount, Camera, Clip
 from app.config import get_settings
@@ -194,13 +194,42 @@ async def test_list_people_orders_by_name(app_session: AsyncSession) -> None:
     assert [p.name for p in people] == ["Amir", "Zoe"]
 
 
-async def test_rename_person(app_session: AsyncSession) -> None:
+async def test_update_person_renames(app_session: AsyncSession) -> None:
     person = await create_person(app_session, "Old Name")
-    renamed = await rename_person(app_session, person, "New Name")
+    renamed = await update_person(
+        app_session, person, PersonUpdate(name="New Name", never_mark_suspicious=False)
+    )
     assert renamed.name == "New Name"
     reread = await get_person(app_session, person.id)
     assert reread is not None
     assert reread.name == "New Name"
+
+
+async def test_new_person_never_marks_suspicious_by_default(app_session: AsyncSession) -> None:
+    person = await create_person(app_session, "Fresh Enrollment")
+    assert person.never_mark_suspicious is False
+
+
+async def test_update_person_can_set_never_mark_suspicious(app_session: AsyncSession) -> None:
+    person = await create_person(app_session, "Trusted Neighbor")
+    updated = await update_person(
+        app_session, person, PersonUpdate(name=person.name, never_mark_suspicious=True)
+    )
+    assert updated.never_mark_suspicious is True
+    reread = await get_person(app_session, person.id)
+    assert reread is not None
+    assert reread.never_mark_suspicious is True
+
+
+async def test_update_person_can_clear_never_mark_suspicious(app_session: AsyncSession) -> None:
+    person = await create_person(app_session, "Formerly Trusted")
+    await update_person(
+        app_session, person, PersonUpdate(name=person.name, never_mark_suspicious=True)
+    )
+    cleared = await update_person(
+        app_session, person, PersonUpdate(name=person.name, never_mark_suspicious=False)
+    )
+    assert cleared.never_mark_suspicious is False
 
 
 async def test_delete_person_removes_row_and_files(

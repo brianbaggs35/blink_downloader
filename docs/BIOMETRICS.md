@@ -147,6 +147,27 @@ reviewing footage never has to leave it to fix a recognition mistake:
   accumulated positive/negative sets is not built — match confidence is one
   global setting, not tightened per person.)
 
+## Never mark suspicious
+
+Each enrolled person has a **"Never mark suspicious"** toggle (in their detail
+panel on the Biometrics tab, admin-only). When on, any clip where that person
+is recognized — regardless of what the VLM's raw suspicion score was — is
+persisted with `suspicion_label = routine` instead of whatever
+`suspicion_label_for()` would otherwise return. That, in turn, suppresses the
+`suspicious_activity` Event and the push-alert dispatch for that clip, since
+both are gated on the final label, not the raw score.
+
+For a household member (or a frequent, known-safe visitor) this stops routine
+comings-and-goings from tripping alerts just because a package on the porch
+or an unusual hour pushed the model's score up. It's intentionally a
+post-hoc override, not a pre-emptive skip: tier 2 escalation is decided
+*before* face recognition runs (recognition needs the tier 1/2 result's
+entities to label against), so a clip can still escalate to — and be billed
+against — tier 2 even when the person who ends up bypassing the label was
+recognized. `Analysis.suspicion_score` is left at its raw, unmodified value;
+only the label (and what's gated on it) is overridden, so the score and label
+can legitimately disagree on a bypassed clip.
+
 ## Settings
 
 **Settings > Biometrics**, admin-only:
