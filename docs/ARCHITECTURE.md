@@ -343,6 +343,12 @@ with hand-computed pixel coordinates instead of golden-image regression tests.
 - **Alerting**: "someone came within `distance_threshold_feet` of the
   vehicle" is one of two alert triggers (alongside "clip scored suspicious"),
   with its own toggle, quiet hours, and dedup window — see Alerting, below.
+- **Identification vs. geometry**: `Vehicle.description` (e.g. "Blue Honda
+  Civic") plays no part in the proximity math above — that's pure geometry
+  off the outline and length — but it *is* passed into the VLM prompt
+  whenever a vehicle is registered, so the model can tell the protected
+  vehicle apart from any other vehicle that might also be in frame, instead
+  of just being told "a vehicle" exists somewhere in the shot.
 
 This only makes sense for a camera that doesn't move (a mounted driveway/
 porch camera, not a battery unit someone carries around) — the reference

@@ -114,6 +114,7 @@ async def run_analysis(
         baseline_context=baseline_context,
         feedback_examples=list(feedback_examples or []),
         detect_people_for_proximity=vehicle is not None,
+        vehicle_description=vehicle.description if vehicle is not None else None,
     )
 
     usage_rows: list[AIUsage] = []
@@ -139,6 +140,7 @@ async def run_analysis(
                 baseline_context=baseline_context,
                 feedback_examples=list(feedback_examples or []),
                 detect_people_for_proximity=vehicle is not None,
+                vehicle_description=vehicle.description if vehicle is not None else None,
                 prior_tier_summary=(
                     f"{tier1_result.summary} "
                     f"(preliminary suspicion: {tier1_result.suspicion_score:.2f})"

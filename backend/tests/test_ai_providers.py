@@ -71,6 +71,17 @@ def test_build_prompt_includes_only_whats_provided() -> None:
     assert "a person lingered near the door" in full
 
 
+def test_build_prompt_names_the_protected_vehicle_when_known() -> None:
+    generic = build_prompt(make_request(detect_people_for_proximity=True))
+    assert "(a vehicle)" in generic
+
+    named = build_prompt(
+        make_request(detect_people_for_proximity=True, vehicle_description="Blue Honda Civic")
+    )
+    assert "(a Blue Honda Civic)" in named
+    assert "tell it apart from any other vehicle" in named
+
+
 # ------------------------------------------------------------- _parse_entities
 
 
