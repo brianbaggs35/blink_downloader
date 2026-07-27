@@ -6,7 +6,7 @@ import { createMemoryHistory, createRouter, type Router } from "vue-router";
 
 import { routes } from "@/router";
 
-import type { BlinkStatusResponse, HealthReport, UserRead } from "@/api";
+import type { BlinkStatusResponse, HealthReport, StorageIntegrationSettingsRead, UserRead } from "@/api";
 
 /** Guard-free router over the real route table. */
 export function makeRouter(): Router {
@@ -55,6 +55,31 @@ export function fakeBlinkStatus(overrides: Partial<BlinkStatusResponse> = {}): B
     network_ids: [],
     total_clip_count: 0,
     daily_clip_counts: [],
+    ...overrides,
+  };
+}
+
+/** All-disconnected by default - pass overrides for a connected/configured shape. */
+export function fakeStorageIntegrationSettings(
+  overrides: Partial<StorageIntegrationSettingsRead> = {},
+): StorageIntegrationSettingsRead {
+  return {
+    s3_enabled: false,
+    s3_bucket: null,
+    s3_region: null,
+    s3_prefix: null,
+    s3_credentials_set: false,
+    google_drive_enabled: false,
+    google_drive_client_id: null,
+    google_drive_client_secret_set: false,
+    google_drive_connected: false,
+    google_drive_folder_id: null,
+    onedrive_enabled: false,
+    onedrive_client_id: null,
+    onedrive_client_secret_set: false,
+    onedrive_connected: false,
+    onedrive_folder_path: null,
+    auto_archive_backend: "local",
     ...overrides,
   };
 }
