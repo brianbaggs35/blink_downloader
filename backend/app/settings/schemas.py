@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class StorageSettingsRead(BaseModel):
@@ -22,3 +22,18 @@ class StorageSettingsUpdate(BaseModel):
             msg = "storage_dir must be an absolute path."
             raise ValueError(msg)
         return value
+
+
+class BlinkSyncSettingsRead(BaseModel):
+    sync_interval_seconds: int
+    initial_sync_days: int
+    auto_analyze_limit: int
+    is_default: bool
+    """True when none of the three are overridden and all reflect env defaults."""
+
+
+class BlinkSyncSettingsUpdate(BaseModel):
+    sync_interval_seconds: int | None = Field(default=None, ge=10, le=3600)
+    initial_sync_days: int | None = Field(default=None, ge=1, le=30)
+    auto_analyze_limit: int | None = Field(default=None, ge=1, le=20)
+    """Each null falls back to its BLINK_-prefixed env var default."""

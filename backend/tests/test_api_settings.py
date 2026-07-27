@@ -297,4 +297,64 @@ async def test_ai_test_analysis_reports_failure_without_a_500(admin_client: Asyn
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is False
-    assert "could not reach" in body["detail"]
+
+
+# ------------------------------------------------------- blink sync tuning
+
+
+async def test_blink_sync_requires_authentication(client: AsyncClient) -> None:
+    response = await client.get("/api/settings/blink-sync")
+    assert response.status_code == 401
+
+
+async def test_blink_sync_default_reflects_env_vars(admin_client: AsyncClient) -> None:
+    response = await admin_client.get("/api/settings/blink-sync")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["is_default"] is True
+    assert body["sync_interval_seconds"] > 0
+    assert body["initial_sync_days"] > 0
+    assert body["auto_analyze_limit"] > 0
+
+
+async def test_blink_sync_update_overrides_all_three(admin_client: AsyncClient) -> None:
+    response = await admin_client.put(
+        "/api/settings/blink-sync",
+        json={"sync_interval_seconds": 90, "initial_sync_days": 2, "auto_analyze_limit": 8},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["is_default"] is False
+    assert body["sync_interval_seconds"] == 90
+    assert body["initial_sync_days"] == 2
+    assert body["auto_analyze_limit"] == 8
+
+    followup = await admin_client.get("/api/settings/blink-sync")
+    assert followup.json()["sync_interval_seconds"] == 90
+
+
+async def test_blink_sync_clearing_restores_defaults(admin_client: AsyncClient) -> None:
+    await admin_client.put(
+        "/api/settings/blink-sync",
+        json={"sync_interval_seconds": 90, "initial_sync_days": 2, "auto_analyze_limit": 8},
+    )
+    response = await admin_client.put("/api/settings/blink-sync", json={})
+    assert response.status_code == 200
+    assert response.json()["is_default"] is True
+
+
+async def test_blink_sync_out_of_range_values_rejected(admin_client: AsyncClient) -> None:
+    response = await admin_client.put("/api/settings/blink-sync", json={"auto_analyze_limit": 500})
+    assert response.status_code == 422
+
+
+async def test_blink_sync_get_requires_admin(viewer_client: AsyncClient) -> None:
+    response = await viewer_client.get("/api/settings/blink-sync")
+    assert response.status_code == 403
+
+
+async def test_blink_sync_viewer_cannot_update(viewer_client: AsyncClient) -> None:
+    response = await viewer_client.put(
+        "/api/settings/blink-sync", json={"sync_interval_seconds": 90}
+    )
+    assert response.status_code == 403

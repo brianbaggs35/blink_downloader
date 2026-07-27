@@ -75,15 +75,19 @@ application owns it directly:
   via reanalyze/bulk-analyze. The rest of the app works the same with one
   camera enabled as with ten.
 - **First-sync backfill cap**: a fresh link backfills the last
-  `BLINK_INITIAL_SYNC_DAYS` (default 1 day), and only the
-  `BLINK_AUTO_ANALYZE_LIMIT` most recent clips from that backfill (default 5)
-  are automatically queued for AI analysis — everything else still downloads
-  and appears in the Library, just not auto-analyzed, so a busy first sync
-  can't flood the analysis queue (and, if a paid provider is configured,
-  run up a surprise bill) the moment an account is linked. Older, undiscovered
-  clips beyond `blinkpy`'s own per-request page cap are fetched by requesting
-  enough pages up front (`BlinkPyService._MEDIA_PAGE_STOP`) rather than
-  silently truncating, which is `blinkpy`'s own out-of-the-box default.
+  `initial_sync_days` (default 1 day), and only the `auto_analyze_limit` most
+  recent clips from that backfill (default 5) are automatically queued for AI
+  analysis — everything else still downloads and appears in the Library, just
+  not auto-analyzed, so a busy first sync can't flood the analysis queue (and,
+  if a paid provider is configured, run up a surprise bill) the moment an
+  account is linked. Both are admin-editable at Settings → General → Blink
+  sync (`AppSettings.blink_initial_sync_days`/`blink_auto_analyze_limit`,
+  falling back to the `BLINK_INITIAL_SYNC_DAYS`/`BLINK_AUTO_ANALYZE_LIMIT` env
+  vars until overridden) rather than requiring a redeploy to tune. Older,
+  undiscovered clips beyond `blinkpy`'s own per-request page cap are fetched
+  by requesting enough pages up front (`BlinkPyService._MEDIA_PAGE_STOP`)
+  rather than silently truncating, which is `blinkpy`'s own out-of-the-box
+  default.
 
 ## Live View & Security Feed
 
@@ -239,13 +243,15 @@ down for a while, can turn up dozens of clips in one sync — backfilling and
 auto-analyzing all of them would burn through AI budget and rate limits on a
 backlog nobody asked to see analyzed the moment they reconnected:
 
-- **The initial backfill window is capped at 24 hours** (`BLINK_INITIAL_SYNC_DAYS`,
-  default `1`) — a sync with no prior `last_sync` (first link, or first sync
-  after being disconnected long enough that `last_sync` predates this) only
-  looks back one day, not further into Blink's history.
+- **The initial backfill window is capped at 24 hours** (`initial_sync_days`,
+  default `1`, admin-editable at Settings → General → Blink sync) — a sync
+  with no prior `last_sync` (first link, or first sync after being
+  disconnected long enough that `last_sync` predates this) only looks back
+  one day by default, not further into Blink's history.
 - **Auto-analysis is capped per sync, not per clip**: if one sync run
-  discovers more than `BLINK_AUTO_ANALYZE_LIMIT` (default `5`) new clips,
-  only the most recent N (by recording time) are auto-queued for analysis.
+  discovers more than `auto_analyze_limit` (default `5`, same Settings
+  section) new clips, only the most recent N (by recording time) are
+  auto-queued for analysis.
   The rest still download normally — they're in the Library, playable,
   downloadable — they just aren't auto-analyzed. A routine sync (the normal
   steady state, a handful of clips at most) is never affected by this cap
