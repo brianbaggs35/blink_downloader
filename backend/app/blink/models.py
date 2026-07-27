@@ -25,6 +25,9 @@ class BlinkAccountStatus(StrEnum):
 
 class StorageBackend(StrEnum):
     LOCAL = "local"
+    S3 = "s3"
+    GOOGLE_DRIVE = "google_drive"
+    ONEDRIVE = "onedrive"
 
 
 class BlinkAccount(Base):

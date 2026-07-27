@@ -24,7 +24,7 @@ from app.ai.models import Analysis, Feedback
 from app.ai.schemas import AnalysisRead, FeedbackCreate, FeedbackRead
 from app.biometrics.models import Person, RecognizedFace
 from app.biometrics.schemas import RecognizedPersonRead
-from app.blink.models import Camera, Clip
+from app.blink.models import Camera, Clip, StorageBackend
 from app.blink.schemas import BulkActionResponse, BulkClipIds, ClipListResponse, ClipRead
 from app.config import get_settings
 from app.db import get_session
@@ -69,6 +69,7 @@ def _clip_read(clip: Clip, recognized_people: list[RecognizedPersonRead]) -> Cli
         downloaded_at=clip.downloaded_at,
         deleted_on_blink=clip.deleted_on_blink,
         thumbnail_generated=clip.thumbnail_generated,
+        storage_backend=clip.storage_backend,
         recognized_people=recognized_people,
     )
 
@@ -83,6 +84,7 @@ async def list_clips(
     downloaded_only: bool = False,
     recognized_person_id: uuid.UUID | None = None,
     has_recognized_person: bool | None = None,
+    storage_backend: StorageBackend | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=24, ge=1, le=MAX_PAGE_SIZE),
 ) -> ClipListResponse:
@@ -91,6 +93,9 @@ async def list_clips(
     if camera_id is not None:
         stmt = stmt.where(Clip.camera_id == camera_id)
         count_stmt = count_stmt.where(Clip.camera_id == camera_id)
+    if storage_backend is not None:
+        stmt = stmt.where(Clip.storage_backend == storage_backend)
+        count_stmt = count_stmt.where(Clip.storage_backend == storage_backend)
     if since is not None:
         stmt = stmt.where(Clip.recorded_at >= since)
         count_stmt = count_stmt.where(Clip.recorded_at >= since)

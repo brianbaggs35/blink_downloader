@@ -27,6 +27,15 @@ dependencies = [
     "ollama>=0.6.2",
     "pillow>=12.3.0",
     "numpy>=2.5.1",
+    # Storage archive integrations (app/integrations/) - S3 (boto3), Google
+    # Drive (google-auth-oauthlib + google-api-python-client), OneDrive's
+    # OAuth token lifecycle (msal; file operations go straight to Microsoft
+    # Graph over httpx, already a dependency - Microsoft has no separate
+    # "OneDrive files" SDK). All pure Python, no native extensions.
+    "boto3>=1.40.0",
+    "google-auth-oauthlib>=1.4.0",
+    "google-api-python-client>=2.198.0",
+    "msal>=1.37.0",
     "onnxruntime>=1.28.0",
     # Pulls in full opencv-python (not -headless): its declared dependency,
     # and uv/pip have no package-substitution mechanism to swap it for the
