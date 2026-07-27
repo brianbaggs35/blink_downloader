@@ -71,6 +71,11 @@ class AnalysisRequest:
     baseline_context: str | None = None
     feedback_examples: list[str] = field(default_factory=list[str])
     detect_people_for_proximity: bool = False
+    vehicle_description: str | None = None
+    """The protected vehicle's own description (e.g. "Blue Honda Civic"), set
+    alongside detect_people_for_proximity - lets the model tell the protected
+    vehicle apart from any other vehicle that might also be in frame, instead
+    of just being told a vehicle exists somewhere in the shot."""
     prior_tier_summary: str | None = None
     """Set only on a tier-2 escalation call: the cheaper tier's own summary
     and score, so the stronger model refines rather than starts blind."""
@@ -159,11 +164,16 @@ def build_prompt(request: AnalysisRequest) -> str:
         examples = "\n".join(f"- {ex}" for ex in request.feedback_examples)
         parts.append(f"This household previously corrected similar clips:\n{examples}")
     if request.detect_people_for_proximity:
+        vehicle_ref = (
+            f"a {request.vehicle_description}" if request.vehicle_description else "a vehicle"
+        )
         parts.append(
-            "A protected vehicle is visible in this camera's frame. For every "
-            "person detected, include a tight bounding box around their full "
-            "body (needed to measure distance from the vehicle) — this is "
-            "required, not optional, for person entities."
+            f"The homeowner's protected vehicle ({vehicle_ref}) is visible in this "
+            "camera's frame — use that description to tell it apart from any other "
+            "vehicle that might also be in the shot. For every person detected, "
+            "include a tight bounding box around their full body (needed to measure "
+            "distance from the protected vehicle) — this is required, not optional, "
+            "for person entities."
         )
     parts.append(
         "Routine activity (the household coming and going, mail/deliveries, "

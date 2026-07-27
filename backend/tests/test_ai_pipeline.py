@@ -347,6 +347,23 @@ async def test_escalates_to_tier2_when_tier1_is_suspicious(
     assert all(u.analysis_id == analysis.id for u in usage_rows)
 
 
+async def test_escalation_request_also_names_the_protected_vehicle(
+    app_session: AsyncSession, sample_clip_path: Path
+) -> None:
+    camera, clip = await _make_camera_and_clip(app_session, sample_clip_path)
+    await _make_vehicle(app_session, camera)
+    ScriptedProvider.queued = [
+        make_result(summary="Someone is lingering by the door.", suspicion=0.8),
+        make_result(summary="Confirmed: a person is testing the door handle.", suspicion=0.9),
+    ]
+    settings = make_settings(tier2_suspicion_threshold=0.5)
+
+    await run_analysis(app_session, clip, camera, settings, get_settings().encryption_key)
+
+    assert len(ScriptedProvider.calls) == 2
+    assert ScriptedProvider.calls[1].vehicle_description == "The blue sedan"
+
+
 async def test_does_not_escalate_when_tier2_disabled(
     app_session: AsyncSession, sample_clip_path: Path
 ) -> None:
@@ -615,6 +632,9 @@ async def test_vehicle_registered_requests_proximity_bboxes(
         app_session, clip, camera, make_settings(tier2_enabled=False), get_settings().encryption_key
     )
     assert ScriptedProvider.calls[0].detect_people_for_proximity is True
+    # So the model can tell the protected vehicle apart from any other one
+    # that might also be in frame, not just told "a vehicle exists somewhere".
+    assert ScriptedProvider.calls[0].vehicle_description == "The blue sedan"
 
 
 async def test_close_person_breaches_the_threshold(
