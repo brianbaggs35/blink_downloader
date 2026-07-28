@@ -6,10 +6,12 @@ from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy import select, text
 
+from app.ai.models import AIUsage
 from app.biometrics.models import Person
 from app.blink.models import Camera, Clip
 from app.settings.service import set_storage_dir
 from app.testing.seed import DEMO_PERSON_NAME, E2E_ADMIN_EMAIL, E2E_ADMIN_PASSWORD, seed
+from app.vehicles.models import ProximityEvent, Vehicle
 from tests.conftest import login
 
 
@@ -47,9 +49,26 @@ async def test_seed_creates_admin_once(client: AsyncClient, app: FastAPI, tmp_pa
             assert camera.preview_updated_at is not None
             assert Path(camera.preview_path).exists()
 
+        vehicle = (await session.execute(select(Vehicle))).scalar_one()
+        assert vehicle.reference_frame_path is not None
+        assert Path(vehicle.reference_frame_path).exists()
+        assert len(vehicle.outline_points) >= 3
+
+        proximity_events = (await session.execute(select(ProximityEvent))).scalars().all()
+        assert len(proximity_events) == 3
+        assert all(event.vehicle_id == vehicle.id for event in proximity_events)
+
+        usage_rows = (await session.execute(select(AIUsage))).scalars().all()
+        assert len(usage_rows) == 6
+        assert sum(1 for row in usage_rows if not row.success) == 1
+        assert len({row.provider for row in usage_rows}) == 2
+
     # Leave a clean slate for other tests (client fixture truncates pre-test too).
     async with app.state.sessionmaker() as session:
         await session.execute(
-            text("TRUNCATE TABLE access_tokens, users, blink_accounts, people, analyses CASCADE")
+            text(
+                "TRUNCATE TABLE access_tokens, users, blink_accounts, people, analyses, "
+                "vehicles, ai_usage CASCADE"
+            )
         )
         await session.commit()

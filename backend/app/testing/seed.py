@@ -20,7 +20,7 @@ from fastapi_users.password import PasswordHelper
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.models import Analysis, AnalysisTier, SuspicionLabel
+from app.ai.models import AIProviderKind, AIUsage, Analysis, AnalysisTier, SuspicionLabel
 from app.biometrics.models import FaceEmbedding, Person, RecognizedFace
 from app.blink.models import BlinkAccount, Camera, Clip
 from app.config import get_settings
@@ -28,8 +28,9 @@ from app.db import build_engine, build_sessionmaker
 from app.logs import configure_logging, get_logger
 from app.security.crypto import SecretBox
 from app.settings.service import resolve_storage_dir
-from app.storage.service import get_clip_storage
+from app.storage.service import ClipStorage, get_clip_storage
 from app.users.models import User
+from app.vehicles.models import ProximityEvent, Vehicle
 
 logger = get_logger(__name__)
 
@@ -243,6 +244,160 @@ async def _seed_demo_data(session: AsyncSession) -> None:
     suspicious.detected_entities = [
         {**suspicious.detected_entities[0], "recognized_person_id": str(person.id)}
     ]
+
+    await _seed_vehicle_data(session, storage, front_door, clips)
+    await _seed_ai_usage_data(session, clips, routine, suspicious)
+
+
+async def _seed_vehicle_data(
+    session: AsyncSession, storage: ClipStorage, camera: Camera, clips: list[Clip]
+) -> None:
+    """One protected vehicle on the front door camera, with a few recent
+    proximity events - enough for the Vehicles tab's card, outline overlay,
+    and recent-activity list to all have something real to show."""
+    reference_bytes = await _make_demo_preview_bytes(2)
+    reference_path = storage.vehicle_reference_path(camera.id)
+    await storage.write(reference_path, reference_bytes)
+
+    vehicle = Vehicle(
+        camera_id=camera.id,
+        description="A silver sedan is normally parked in the driveway overnight.",
+        outline_points=[[0.3, 0.55], [0.7, 0.55], [0.75, 0.85], [0.25, 0.85]],
+        reference_frame_path=str(reference_path),
+        estimated_length_feet=16.0,
+        distance_threshold_feet=10.0,
+    )
+    session.add(vehicle)
+    await session.flush()
+
+    now = datetime.now(UTC)
+    session.add_all(
+        [
+            ProximityEvent(
+                vehicle_id=vehicle.id,
+                clip_id=clips[0].id,
+                distance_feet=4.2,
+                error_margin_feet=1.1,
+                occurred_at=now - timedelta(hours=2),
+            ),
+            ProximityEvent(
+                vehicle_id=vehicle.id,
+                clip_id=clips[1].id,
+                distance_feet=7.8,
+                error_margin_feet=1.4,
+                occurred_at=now - timedelta(hours=30),
+            ),
+            ProximityEvent(
+                vehicle_id=vehicle.id,
+                clip_id=clips[2].id,
+                distance_feet=2.5,
+                error_margin_feet=0.9,
+                occurred_at=now - timedelta(days=5),
+            ),
+        ]
+    )
+
+
+async def _seed_ai_usage_data(
+    session: AsyncSession, clips: list[Clip], routine: Analysis, suspicious: Analysis
+) -> None:
+    """Usage rows spread across the last week, across more than one
+    provider/model and including one failure - enough for the AI Usage
+    tab's KPI tiles, daily chart, and by-provider breakdown to all have
+    something real (and non-trivial) to show."""
+    now = datetime.now(UTC)
+    session.add_all(
+        [
+            AIUsage(
+                analysis_id=routine.id,
+                clip_id=routine.clip_id,
+                tier=AnalysisTier.TIER1,
+                provider=AIProviderKind.ANTHROPIC,
+                model="claude-haiku-4-5",
+                prompt_tokens=1200,
+                completion_tokens=180,
+                total_tokens=1380,
+                frame_count=4,
+                estimated_cost_usd=0.008,
+                latency_ms=1450,
+                success=True,
+                created_at=now - timedelta(days=6, hours=1),
+            ),
+            AIUsage(
+                analysis_id=suspicious.id,
+                clip_id=suspicious.clip_id,
+                tier=AnalysisTier.TIER1,
+                provider=AIProviderKind.ANTHROPIC,
+                model="claude-haiku-4-5",
+                prompt_tokens=1350,
+                completion_tokens=210,
+                total_tokens=1560,
+                frame_count=4,
+                estimated_cost_usd=0.009,
+                latency_ms=1610,
+                success=True,
+                created_at=now - timedelta(days=4, hours=3),
+            ),
+            AIUsage(
+                analysis_id=suspicious.id,
+                clip_id=suspicious.clip_id,
+                tier=AnalysisTier.TIER2,
+                provider=AIProviderKind.OPENAI,
+                model="gpt-5-mini",
+                prompt_tokens=2100,
+                completion_tokens=340,
+                total_tokens=2440,
+                frame_count=8,
+                estimated_cost_usd=0.041,
+                latency_ms=2870,
+                success=True,
+                created_at=now - timedelta(days=4, hours=3, minutes=1),
+            ),
+            AIUsage(
+                clip_id=clips[3].id,
+                tier=AnalysisTier.TIER1,
+                provider=AIProviderKind.ANTHROPIC,
+                model="claude-haiku-4-5",
+                prompt_tokens=1180,
+                completion_tokens=160,
+                total_tokens=1340,
+                frame_count=4,
+                estimated_cost_usd=0.007,
+                latency_ms=1390,
+                success=True,
+                created_at=now - timedelta(days=2, hours=5),
+            ),
+            AIUsage(
+                clip_id=clips[3].id,
+                tier=AnalysisTier.TIER1,
+                provider=AIProviderKind.OPENAI,
+                model="gpt-5-mini",
+                prompt_tokens=0,
+                completion_tokens=0,
+                total_tokens=0,
+                frame_count=4,
+                estimated_cost_usd=0,
+                latency_ms=640,
+                success=False,
+                error_message="The provider's API returned a 503 while analyzing this clip.",
+                created_at=now - timedelta(days=1, hours=2),
+            ),
+            AIUsage(
+                clip_id=clips[0].id,
+                tier=AnalysisTier.TIER1,
+                provider=AIProviderKind.ANTHROPIC,
+                model="claude-haiku-4-5",
+                prompt_tokens=1260,
+                completion_tokens=190,
+                total_tokens=1450,
+                frame_count=4,
+                estimated_cost_usd=0.008,
+                latency_ms=1480,
+                success=True,
+                created_at=now - timedelta(hours=8),
+            ),
+        ]
+    )
 
 
 async def seed() -> bool:
