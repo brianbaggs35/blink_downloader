@@ -2,12 +2,15 @@ import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 
 import NavLinks from "@/components/NavLinks.vue";
-import { makePinia, makeRouter, mountGlobal } from "./helpers";
+import { useAuthStore } from "@/stores/auth";
+import { fakeUser, makePinia, makeRouter, mountGlobal } from "./helpers";
 
-async function mountLinks(path: string) {
+async function mountLinks(path: string, isAdmin = true) {
+  const pinia = makePinia();
+  useAuthStore().user = { ...fakeUser, is_superuser: isAdmin };
   const router = makeRouter();
   await router.push(path);
-  const wrapper = mount(NavLinks, { global: mountGlobal(makePinia(), router) });
+  const wrapper = mount(NavLinks, { global: mountGlobal(pinia, router) });
   return wrapper;
 }
 
@@ -81,5 +84,12 @@ describe("NavLinks", () => {
     const wrapper = await mountLinks("/");
     await wrapper.findAll("a.nav-item")[1]!.trigger("click");
     expect(wrapper.emitted("navigate")).toHaveLength(1);
+  });
+
+  it("hides Integrations for a viewer, keeping Storage (which stays viewer-safe)", async () => {
+    const wrapper = await mountLinks("/", false);
+    const labels = wrapper.findAll(".nav-item span").map((node) => node.text());
+    expect(labels).toContain("Storage");
+    expect(labels).not.toContain("Integrations");
   });
 });

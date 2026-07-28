@@ -5,7 +5,8 @@ import { nextTick } from "vue";
 import NavSidebar from "@/components/NavSidebar.vue";
 import { useMobileNav } from "@/composables/useMobileNav";
 import { useSidebarCollapse } from "@/composables/useSidebarCollapse";
-import { fakeBlinkStatus, makePinia, makeRouter, mountGlobal } from "./helpers";
+import { useAuthStore } from "@/stores/auth";
+import { fakeBlinkStatus, fakeUser, makePinia, makeRouter, mountGlobal } from "./helpers";
 
 vi.mock("@/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api")>()),
@@ -25,10 +26,12 @@ beforeEach(() => {
 });
 
 async function mountSidebar() {
+  const pinia = makePinia();
+  useAuthStore().user = { ...fakeUser, is_superuser: true };
   const router = makeRouter();
   await router.push("/");
   const wrapper = mount(NavSidebar, {
-    global: mountGlobal(makePinia(), router),
+    global: mountGlobal(pinia, router),
     attachTo: document.body,
   });
   return wrapper;
