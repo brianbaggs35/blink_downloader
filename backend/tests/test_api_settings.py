@@ -8,6 +8,7 @@ call" policy.
 # pytest calls autouse fixtures implicitly; pyright can't see that usage.
 # pyright: reportUnusedFunction=false
 
+from pathlib import Path
 from typing import ClassVar
 
 import pytest
@@ -120,8 +121,8 @@ async def test_browse_rejects_a_nonexistent_path(admin_client: AsyncClient) -> N
     assert "does not exist" in response.json()["detail"]
 
 
-async def test_browse_rejects_a_file_path(admin_client: AsyncClient, tmp_path: object) -> None:
-    a_file = tmp_path / "not-a-dir.txt"  # type: ignore[operator]
+async def test_browse_rejects_a_file_path(admin_client: AsyncClient, tmp_path: Path) -> None:
+    a_file = tmp_path / "not-a-dir.txt"
     a_file.write_text("hello")
     response = await admin_client.get("/api/settings/storage/browse", params={"path": str(a_file)})
     assert response.status_code == 400
@@ -136,9 +137,9 @@ async def test_browse_rejects_a_relative_path(admin_client: AsyncClient) -> None
 
 
 async def test_browse_rejects_an_unreadable_directory(
-    admin_client: AsyncClient, tmp_path: object
+    admin_client: AsyncClient, tmp_path: Path
 ) -> None:
-    unreadable = tmp_path / "locked"  # type: ignore[operator]
+    unreadable = tmp_path / "locked"
     unreadable.mkdir()
     unreadable.chmod(0o000)
     try:

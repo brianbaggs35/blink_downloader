@@ -112,6 +112,41 @@ class S3Client:
             raise CloudStorageError(f"S3 upload failed: {exc}") from exc
         return key
 
+    async def list_folders(self, prefix: str | None = None) -> list[tuple[str, str]]:
+        """(path, display_name) pairs for the immediate 'subfolders' of
+        `prefix` - S3 has no real directories; these are common prefixes
+        ending in '/' from a delimited listing, the same convention the AWS
+        console itself uses to present a bucket as a folder tree."""
+        normalized = f"{prefix.strip('/')}/" if prefix else ""
+        try:
+            response = await asyncio.to_thread(
+                self._client.list_objects_v2,
+                Bucket=self._bucket,
+                Prefix=normalized,
+                Delimiter="/",
+            )
+        except (BotoCoreError, ClientError) as exc:
+            raise CloudStorageError(f"S3 could not list folders: {exc}") from exc
+        folders: list[tuple[str, str]] = []
+        for entry in response.get("CommonPrefixes", []):
+            path = entry["Prefix"].rstrip("/")
+            folders.append((path, path.rsplit("/", 1)[-1]))
+        return folders
+
+    async def create_folder(self, prefix: str) -> str:
+        """S3 'creates' a folder by writing a zero-byte object whose key ends
+        in '/' - there is no dedicated folder-creation API, since S3 keys are
+        just opaque strings and 'folder' is purely a UI convention over
+        common prefixes."""
+        path = prefix.strip("/")
+        try:
+            await asyncio.to_thread(
+                self._client.put_object, Bucket=self._bucket, Key=f"{path}/", Body=b""
+            )
+        except (BotoCoreError, ClientError) as exc:
+            raise CloudStorageError(f"S3 could not create folder: {exc}") from exc
+        return path
+
     async def download(self, key: str) -> bytes:
         try:
             response = await asyncio.to_thread(
@@ -280,6 +315,35 @@ class GoogleDriveClient:
         except (GoogleHttpError, GoogleAuthError) as exc:
             raise CloudStorageError(f"Could not reach Google Drive: {exc}") from exc
 
+    def _list_folders_sync(self, parent_id: str | None) -> list[tuple[str, str]]:
+        query = (
+            f"'{parent_id or 'root'}' in parents "
+            "and mimeType='application/vnd.google-apps.folder' and trashed=false"
+        )
+        response = (
+            self._service().files().list(q=query, fields="files(id,name)", spaces="drive").execute()
+        )
+        return [(entry["id"], entry["name"]) for entry in response.get("files", [])]
+
+    async def list_folders(self, parent_id: str | None = None) -> list[tuple[str, str]]:
+        try:
+            return await asyncio.to_thread(self._list_folders_sync, parent_id)
+        except (GoogleHttpError, GoogleAuthError) as exc:
+            raise CloudStorageError(f"Google Drive could not list folders: {exc}") from exc
+
+    def _create_folder_sync(self, parent_id: str | None, name: str) -> str:
+        metadata: dict[str, Any] = {"name": name, "mimeType": "application/vnd.google-apps.folder"}
+        if parent_id:
+            metadata["parents"] = [parent_id]
+        response = self._service().files().create(body=metadata, fields="id").execute()
+        return str(response["id"])
+
+    async def create_folder(self, parent_id: str | None, name: str) -> str:
+        try:
+            return await asyncio.to_thread(self._create_folder_sync, parent_id, name)
+        except (GoogleHttpError, GoogleAuthError) as exc:
+            raise CloudStorageError(f"Google Drive could not create folder: {exc}") from exc
+
 
 # ------------------------------------------------------------------ OneDrive
 
@@ -424,3 +488,39 @@ class OneDriveClient:
                 response.raise_for_status()
             except httpx.HTTPError as exc:
                 raise CloudStorageError(f"Could not reach OneDrive: {exc}") from exc
+
+    def _children_url(self, item_id: str | None) -> str:
+        if item_id:
+            return f"{GRAPH_API_URL}/me/drive/items/{item_id}/children"
+        return f"{GRAPH_API_URL}/me/drive/root/children"
+
+    async def list_folders(self, item_id: str | None = None) -> list[tuple[str, str]]:
+        token = await self._access_token()
+        async with httpx.AsyncClient(timeout=30) as client:
+            try:
+                response = await client.get(
+                    self._children_url(item_id), headers={"Authorization": f"Bearer {token}"}
+                )
+                response.raise_for_status()
+            except httpx.HTTPError as exc:
+                raise CloudStorageError(f"OneDrive could not list folders: {exc}") from exc
+        items = response.json().get("value", [])
+        return [(entry["id"], entry["name"]) for entry in items if "folder" in entry]
+
+    async def create_folder(self, parent_id: str | None, name: str) -> str:
+        token = await self._access_token()
+        async with httpx.AsyncClient(timeout=30) as client:
+            try:
+                response = await client.post(
+                    self._children_url(parent_id),
+                    headers={"Authorization": f"Bearer {token}"},
+                    json={
+                        "name": name,
+                        "folder": {},
+                        "@microsoft.graph.conflictBehavior": "rename",
+                    },
+                )
+                response.raise_for_status()
+            except httpx.HTTPError as exc:
+                raise CloudStorageError(f"OneDrive could not create folder: {exc}") from exc
+        return str(response.json()["id"])
