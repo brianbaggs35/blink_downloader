@@ -228,6 +228,50 @@ jobs:
           sarif_file: trivy-frontend.sarif
           category: trivy-frontend
 
+  prod-smoke:
+    name: Docker · production stack smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Generate a self-signed TLS cert
+        run: make certs
+      - name: Write throwaway secrets for this ephemeral stack
+        run: |
+          cat >> "$GITHUB_ENV" <<EOF
+          POSTGRES_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')
+          REDIS_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')
+          BLINK_SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')
+          BLINK_ENCRYPTION_KEY=$(python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())')
+          EOF
+      - name: Boot the production stack
+        run: docker compose -f docker-compose.yml up -d --build --wait
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - name: Install Playwright
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Run the smoke spec against the live production stack
+        working-directory: e2e
+        run: npm run smoke
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml logs
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-report
+          path: e2e/smoke-report
+          retention-days: 7
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.yml down -v
+
   e2e-lint:
     name: E2E · eslint + tsc
     runs-on: ubuntu-latest

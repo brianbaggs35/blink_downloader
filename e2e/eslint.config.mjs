@@ -16,7 +16,7 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   pluginSecurity.configs.recommended,
   {
-    files: ["tests/**/*.ts"],
+    files: ["tests/**/*.ts", "smoke-tests/**/*.ts"],
     ...pluginPlaywright.configs["flat/recommended"],
   },
 );
