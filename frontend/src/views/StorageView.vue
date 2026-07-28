@@ -1,20 +1,34 @@
 <script setup lang="ts">
 import Button from "primevue/button";
 import Message from "primevue/message";
+import MeterGroup from "primevue/metergroup";
 import Skeleton from "primevue/skeleton";
 import Tag from "primevue/tag";
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 
-import { ApiError, getStorageIntegrationSettings, getStorageSummary } from "@/api";
+import {
+  ApiError,
+  getStorageIntegrationSettings,
+  getStorageSettings,
+  getStorageSummary,
+  updateStorageIntegrationSettings,
+  updateStorageSettings,
+} from "@/api";
+import CloudFolderBrowserDialog from "@/components/CloudFolderBrowserDialog.vue";
 import PageHeader from "@/components/PageHeader.vue";
+import StorageDirectoryBrowserDialog from "@/components/StorageDirectoryBrowserDialog.vue";
 import { useFormatting } from "@/composables/useFormatting";
 import { useAuthStore } from "@/stores/auth";
 
+import type { MeterItem } from "primevue/metergroup";
 import type {
   BackendStorageSummary,
+  CloudProvider,
   StorageBackend,
   StorageIntegrationSettingsRead,
+  StorageIntegrationSettingsUpdate,
+  StorageSettingsRead,
   StorageSummaryResponse,
 } from "@/api";
 
@@ -32,6 +46,9 @@ const BACKEND_META: Record<StorageBackend, BackendMeta> = {
 
 const BACKENDS: StorageBackend[] = ["local", "s3", "google_drive", "onedrive"];
 
+const QUOTA_WARNING_PERCENT = 70;
+const QUOTA_CRITICAL_PERCENT = 90;
+
 const router = useRouter();
 const auth = useAuthStore();
 const { formatFileSize } = useFormatting();
@@ -40,20 +57,24 @@ const loading = ref(true);
 const loadError = ref("");
 const summary = ref<StorageSummaryResponse | null>(null);
 const integrations = ref<StorageIntegrationSettingsRead | null>(null);
+const storageSettings = ref<StorageSettingsRead | null>(null);
 
 async function load(): Promise<void> {
   loading.value = true;
   loadError.value = "";
   try {
-    // Integration connection status is admin-only (same as the Integrations
-    // page itself) - a viewer still gets real per-backend usage numbers,
-    // just without the "is this actually connected" detail on top.
-    const [summaryResult, integrationsResult] = await Promise.all([
+    // Integration connection status and the local folder path are admin-only
+    // (same as the Settings page itself) - a viewer still gets real
+    // per-backend usage numbers, just without the "where exactly is this"
+    // detail on top.
+    const [summaryResult, integrationsResult, storageSettingsResult] = await Promise.all([
       getStorageSummary(),
       auth.isAdmin ? getStorageIntegrationSettings() : Promise.resolve(null),
+      auth.isAdmin ? getStorageSettings() : Promise.resolve(null),
     ]);
     summary.value = summaryResult;
     integrations.value = integrationsResult;
+    storageSettings.value = storageSettingsResult;
   } catch (caught) {
     loadError.value = caught instanceof ApiError ? caught.message : "Could not load storage usage.";
   } finally {
@@ -88,11 +109,12 @@ function isConnected(backend: StorageBackend): boolean {
   return integrations.value.onedrive_enabled && integrations.value.onedrive_connected;
 }
 
-/** Which folder a connected provider is actually using, for display next to
- * its card - null when there's nothing meaningful to show (local disk, not
- * connected, or a viewer with no integrations detail at all). */
+/** Which folder a backend is actually using, for display next to its card -
+ * null when there's nothing meaningful to show (a disconnected provider, or
+ * a viewer with no admin-only detail to show at all). */
 function folderLabel(backend: StorageBackend): string | null {
-  if (backend === "local" || !integrations.value || !isConnected(backend)) return null;
+  if (backend === "local") return storageSettings.value?.storage_dir ?? null;
+  if (!integrations.value || !isConnected(backend)) return null;
   if (backend === "s3") {
     if (!integrations.value.s3_bucket) return null;
     return integrations.value.s3_prefix
@@ -114,6 +136,146 @@ const autoArchiveLabel = computed(() => {
   }
   return `New downloads auto-archive to ${BACKEND_META[integrations.value.auto_archive_backend].label}.`;
 });
+
+// --------------------------------------------------------------- quota gauge
+
+interface QuotaGauge {
+  percent: number;
+  usedBytes: number;
+  quotaBytes: number;
+  meterValue: MeterItem[];
+}
+
+const quotaGauge = computed<QuotaGauge | null>(() => {
+  const quotaBytes = summary.value?.local_quota_bytes;
+  if (!quotaBytes) return null;
+  const usedBytes = backendRow("local").total_bytes;
+  const percent = Math.min(100, (usedBytes / quotaBytes) * 100);
+  const color =
+    percent >= QUOTA_CRITICAL_PERCENT
+      ? "var(--p-red-500)"
+      : percent >= QUOTA_WARNING_PERCENT
+        ? "var(--p-yellow-500)"
+        : "var(--p-green-500)";
+  return { percent, usedBytes, quotaBytes, meterValue: [{ label: "Used", value: usedBytes, color }] };
+});
+
+// -------------------------------------------------------------- local folder
+
+const localBrowserOpen = ref(false);
+const localFolderSaving = ref(false);
+const localFolderError = ref("");
+
+function openLocalBrowser(): void {
+  localFolderError.value = "";
+  localBrowserOpen.value = true;
+}
+
+async function selectLocalFolder(path: string): Promise<void> {
+  localFolderError.value = "";
+  localFolderSaving.value = true;
+  try {
+    // Echoes the current quota back - update_storage_settings replaces the
+    // whole row, and this picker only ever changes storage_dir.
+    storageSettings.value = await updateStorageSettings({
+      storage_dir: path,
+      local_storage_quota_bytes: summary.value?.local_quota_bytes ?? null,
+    });
+  } catch (caught) {
+    localFolderError.value =
+      caught instanceof ApiError ? caught.message : "Could not update the storage folder.";
+  } finally {
+    localFolderSaving.value = false;
+  }
+}
+
+// -------------------------------------------------------------- cloud folder
+
+const cloudBrowseFor = ref<CloudProvider | null>(null);
+// Kept separate from cloudBrowseFor (which drives :visible and goes back to
+// null on close) so the dialog's own header/provider don't blank out mid
+// fade-out transition - it only ever changes on open, never on close.
+const cloudBrowseProvider = ref<CloudProvider>("s3");
+const cloudFolderSaving = ref(false);
+const cloudFolderError = ref("");
+
+function openCloudBrowser(backend: StorageBackend): void {
+  // Only called from the template's Browse button, itself only rendered
+  // once isConnected(backend) is true - "local" is never connect-gated, so
+  // this narrows backend to CloudProvider for the rest of the function.
+  /* v8 ignore next */
+  if (backend === "local") return;
+  cloudFolderError.value = "";
+  cloudBrowseFor.value = backend;
+  cloudBrowseProvider.value = backend;
+}
+
+/** Builds a full update payload from the currently loaded settings, since
+ * the PUT endpoint replaces the whole row - callers only need to specify
+ * what's actually changing. */
+function integrationUpdatePayload(
+  overrides: Partial<StorageIntegrationSettingsUpdate>,
+): StorageIntegrationSettingsUpdate {
+  // Only called once a cloud folder has actually been selected, which
+  // requires the dialog to have opened, which requires integrations.value.
+  /* v8 ignore next */
+  const current = integrations.value!;
+  return {
+    s3_enabled: current.s3_enabled,
+    s3_bucket: current.s3_bucket,
+    s3_region: current.s3_region,
+    s3_prefix: current.s3_prefix,
+    s3_access_key_id: null,
+    s3_secret_access_key: null,
+    google_drive_enabled: current.google_drive_enabled,
+    google_drive_client_id: current.google_drive_client_id,
+    google_drive_client_secret: null,
+    google_drive_folder_id: current.google_drive_folder_id,
+    onedrive_enabled: current.onedrive_enabled,
+    onedrive_client_id: current.onedrive_client_id,
+    onedrive_client_secret: null,
+    onedrive_folder_path: current.onedrive_folder_path,
+    auto_archive_backend: current.auto_archive_backend,
+    auto_archive_after_days: current.auto_archive_after_days,
+    ...overrides,
+  };
+}
+
+async function onCloudFolderSelected(payload: { id: string; path: string }): Promise<void> {
+  cloudFolderError.value = "";
+  cloudFolderSaving.value = true;
+  try {
+    const overrides: Partial<StorageIntegrationSettingsUpdate> =
+      cloudBrowseProvider.value === "s3"
+        ? { s3_prefix: payload.id ? `${payload.id}/` : null }
+        : cloudBrowseProvider.value === "google_drive"
+          ? { google_drive_folder_id: payload.id || null }
+          : { onedrive_folder_path: payload.path || null };
+    integrations.value = await updateStorageIntegrationSettings(integrationUpdatePayload(overrides));
+  } catch (caught) {
+    cloudFolderError.value = caught instanceof ApiError ? caught.message : "Could not save this folder.";
+  } finally {
+    cloudFolderSaving.value = false;
+  }
+}
+
+function isBrowsingLoading(backend: StorageBackend): boolean {
+  if (backend === "local") return localFolderSaving.value;
+  return cloudFolderSaving.value && cloudBrowseProvider.value === backend;
+}
+
+function openBrowserFor(backend: StorageBackend): void {
+  if (backend === "local") {
+    openLocalBrowser();
+  } else {
+    openCloudBrowser(backend);
+  }
+}
+
+function folderActionError(backend: StorageBackend): string {
+  if (backend === "local") return localFolderError.value;
+  return cloudBrowseProvider.value === backend ? cloudFolderError.value : "";
+}
 
 function goToStorageSettings(): void {
   void router.push({ name: "settings", query: { tab: "storage" } });
@@ -243,8 +405,38 @@ function goToLibrary(): void {
               <span class="stat-label">on this backend</span>
             </div>
           </div>
+
+          <div
+            v-if="backend === 'local' && quotaGauge"
+            class="quota-gauge"
+            data-testid="storage-quota-gauge"
+          >
+            <div class="quota-gauge-text">
+              <span>{{ formatFileSize(quotaGauge.usedBytes) }} of
+                {{ formatFileSize(quotaGauge.quotaBytes) }} used</span>
+              <span
+                class="quota-gauge-percent"
+                data-testid="storage-quota-percent"
+              >{{ Math.round(quotaGauge.percent) }}%</span>
+            </div>
+            <MeterGroup
+              :value="quotaGauge.meterValue"
+              :max="quotaGauge.quotaBytes"
+            />
+          </div>
+
           <Button
-            v-if="backend !== 'local' && auth.isAdmin && !isConnected(backend)"
+            v-if="auth.isAdmin && (backend === 'local' || isConnected(backend))"
+            label="Browse"
+            icon="pi pi-folder-open"
+            text
+            size="small"
+            :loading="isBrowsingLoading(backend)"
+            :data-testid="`backend-browse-${backend}`"
+            @click="openBrowserFor(backend)"
+          />
+          <Button
+            v-else-if="backend !== 'local' && auth.isAdmin && !isConnected(backend)"
             label="Connect"
             icon="pi pi-arrow-right"
             text
@@ -252,6 +444,15 @@ function goToLibrary(): void {
             :data-testid="`backend-connect-${backend}`"
             @click="goToIntegrations"
           />
+
+          <Message
+            v-if="folderActionError(backend)"
+            severity="error"
+            :closable="false"
+            :data-testid="`backend-folder-error-${backend}`"
+          >
+            {{ folderActionError(backend) }}
+          </Message>
         </article>
       </div>
 
@@ -266,6 +467,19 @@ function goToLibrary(): void {
         </p>
       </div>
     </template>
+
+    <StorageDirectoryBrowserDialog
+      v-model:visible="localBrowserOpen"
+      :initial-path="storageSettings?.storage_dir"
+      @select="selectLocalFolder"
+    />
+    <CloudFolderBrowserDialog
+      :visible="cloudBrowseFor !== null"
+      :provider="cloudBrowseProvider"
+      :provider-label="BACKEND_META[cloudBrowseProvider].label"
+      @update:visible="cloudBrowseFor = null"
+      @select="onCloudFolderSelected"
+    />
   </section>
 </template>
 
@@ -396,6 +610,30 @@ function goToLibrary(): void {
 .backend-stats .stat-label {
   font-size: 0.75rem;
   color: var(--p-surface-500);
+}
+
+.quota-gauge {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.quota-gauge-text {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--p-surface-500);
+}
+
+.quota-gauge-percent {
+  font-weight: 700;
+  color: var(--p-surface-700);
+}
+
+.blink-dark .quota-gauge-percent {
+  color: var(--p-surface-200);
 }
 
 .footer-hint {
