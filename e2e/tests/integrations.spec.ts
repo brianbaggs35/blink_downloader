@@ -44,7 +44,7 @@ test("configures and saves S3, and the connection reflects on the Storage page a
   await page.getByTestId("integration-configure-s3").click();
   await expect(page.getByTestId("integration-form-s3")).toBeVisible();
 
-  await page.getByTestId("s3-enabled").check();
+  await page.getByTestId("s3-enabled").locator("input").check();
   await page.getByTestId("s3-bucket").fill("e2e-clips-bucket");
   await page.getByTestId("s3-region").fill("us-east-1");
   await page.getByTestId("s3-access-key").locator("input").fill("AKIAEXAMPLEKEY");
@@ -72,4 +72,38 @@ test("configures and saves S3, and the connection reflects on the Storage page a
 
   await page.getByTestId("bulk-archive").click();
   await expect(page.getByText(/Queued 1 clip\(s\) to archive/)).toBeVisible();
+});
+
+test("the Storage page's auto-archive picker only offers connected destinations, and hints to connect one when there are none", async ({
+  page,
+}) => {
+  // Persistent database, not reseeded between runs or test files - the test
+  // above saves real-looking S3 credentials as part of its own flow, so
+  // this test can't assume nothing is connected without guaranteeing it
+  // itself first. Google Drive/OneDrive can't be "connected" via e2e at all
+  // (that needs a real OAuth round trip), so S3 is the only one to
+  // explicitly reset here.
+  await page.goto("/integrations");
+  await page.getByTestId("integration-configure-s3").click();
+  await page.getByTestId("s3-enabled").locator("input").uncheck();
+  await page.getByTestId("integration-save-s3").click();
+  await expect(page.getByText("Integration saved")).toBeVisible();
+
+  await page.goto("/storage");
+  await expect(page.getByRole("heading", { name: "Storage", exact: true })).toBeVisible();
+  await page.getByTestId("edit-auto-archive").click();
+  await expect(page.getByTestId("auto-archive-backend")).toBeVisible();
+
+  // The destination picker must not offer an unconnected cloud provider at
+  // all (rather than offering it and then warning), so the only option is
+  // Local disk.
+  await page.getByTestId("auto-archive-backend").click();
+  await expect(page.getByRole("option", { name: "Google Drive" })).toHaveCount(0);
+  await expect(page.getByRole("option", { name: "Amazon S3" })).toHaveCount(0);
+  await expect(page.getByRole("option", { name: "Local disk" })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await expect(page.getByTestId("storage-no-providers-connected")).toBeVisible();
+  await page.getByTestId("storage-go-to-integrations").click();
+  await expect(page.getByRole("heading", { name: "Integrations", exact: true })).toBeVisible();
 });

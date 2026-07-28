@@ -1,4 +1,5 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
+import Checkbox from "primevue/checkbox";
 import InputNumber from "primevue/inputnumber";
 import ToggleSwitch from "primevue/toggleswitch";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -193,8 +194,8 @@ describe("SettingsAlertsPanel save", () => {
     });
     const wrapper = mountPanel();
     await flushPromises();
-    await wrapper.find('[data-testid="discord-clear-webhook"]').setValue(true);
-    await wrapper.find('[data-testid="smtp-clear-password"]').setValue(true);
+    await byTestId(wrapper, Checkbox, "discord-clear-webhook").vm.$emit("update:modelValue", true);
+    await byTestId(wrapper, Checkbox, "smtp-clear-password").vm.$emit("update:modelValue", true);
     await wrapper.find('[data-testid="alerts-form"]').trigger("submit.prevent");
     await flushPromises();
     expect(mockedUpdate).toHaveBeenCalledWith(
@@ -207,7 +208,7 @@ describe("SettingsAlertsPanel save", () => {
     mockedUpdate.mockResolvedValue(baseSettings);
     const wrapper = mountPanel();
     await flushPromises();
-    await wrapper.find('[data-testid="slack-clear-webhook"]').setValue(true);
+    await byTestId(wrapper, Checkbox, "slack-clear-webhook").vm.$emit("update:modelValue", true);
     await wrapper.find('[data-testid="alerts-form"]').trigger("submit.prevent");
     await flushPromises();
     expect(mockedUpdate).toHaveBeenCalledWith(expect.objectContaining({ slack_webhook_url: "" }));
