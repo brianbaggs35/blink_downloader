@@ -110,6 +110,19 @@ design):
    give it more to key conditions on.
 2. **Product features** — a cloud-provider file browser/folder creation for
    the Storage tab, digests/notifications polish, search, timeline, backups.
+3. **A fake Blink API server for e2e** — the e2e stack's seeded Blink account
+   uses bogus credentials (there's no real account to give it), so anything
+   that makes a genuine call against Blink's cloud — the worker's background
+   sync, camera preview refresh, record-clip — is disabled in that
+   environment via `Settings.disable_blink_network_calls`, and instead just
+   serves the seeded cached fixtures (see `docs/STORAGE.md`-adjacent comments
+   in `app/config.py`/`app/livefeed/service.py`). That's a deliberate,
+   working short-circuit, not a mock — a real fake HTTP server standing in
+   for Blink's API (matching blinkpy's actual request/response shapes) would
+   let e2e exercise the genuine success-path code (a real sync discovering
+   clips, a real forced snapshot) instead of always taking the
+   cached/disabled branch. Worth doing if e2e ever needs to assert on that
+   success path specifically; not needed for anything today.
 
 ## Deferred / watching
 

@@ -95,6 +95,10 @@ services:
       BLINK_REDIS_URL: redis://redis:6379/0
       BLINK_SECRET_KEY: e2e-secret-key-not-for-production
       BLINK_ENCRYPTION_KEY: iRZbYNDbXbGGoHy4JV2XChcPYDbdCTC9YXf29CQzB1I=
+      # Camera preview/record requests are served directly by this container
+      # (app/api/cameras.py), not the worker - see the worker service's own
+      # copy of this var, and Settings.disable_blink_network_calls, for why.
+      BLINK_DISABLE_BLINK_NETWORK_CALLS: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -142,6 +146,13 @@ services:
       BLINK_REDIS_URL: redis://redis:6379/0
       BLINK_SECRET_KEY: e2e-secret-key-not-for-production
       BLINK_ENCRYPTION_KEY: iRZbYNDbXbGGoHy4JV2XChcPYDbdCTC9YXf29CQzB1I=
+      # The seeded Blink account's credentials are bogus (see app/testing/seed.py)
+      # - a real sync can only ever fail against Blink's actual cloud API,
+      # flipping the seeded "healthy" status to an auth error at some point
+      # during the run. Fixtures are inserted directly by the seed script,
+      # so no real sync is needed here at all - see the backend service's
+      # own copy of this var, and Settings.disable_blink_network_calls.
+      BLINK_DISABLE_BLINK_NETWORK_CALLS: "true"
     depends_on:
       redis:
         condition: service_healthy

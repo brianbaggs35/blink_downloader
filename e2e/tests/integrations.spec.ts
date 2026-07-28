@@ -6,6 +6,10 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("searching narrows the integration cards shown", async ({ page }) => {
+  // The cards depend on an API call that resolves after the (immediately
+  // rendered, static) heading - wait for one before counting, rather than
+  // racing whichever finished loading first.
+  await expect(page.getByTestId("integration-card-s3")).toBeVisible();
   const cardsBefore = await page.getByTestId(/^integration-card-/).count();
   expect(cardsBefore).toBeGreaterThanOrEqual(3);
 

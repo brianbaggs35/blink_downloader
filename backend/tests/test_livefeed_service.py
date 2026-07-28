@@ -32,6 +32,7 @@ from app.livefeed.service import (
 )
 from app.security.crypto import SecretBox
 from app.storage.service import get_clip_storage
+from tests.conftest import PlainSettings
 
 
 class FakeBlinkService:
@@ -292,6 +293,56 @@ async def test_get_camera_preview_force_ignores_stale_cache_and_raises(
         await get_camera_preview(app_session, get_settings(), camera, storage, force=True)
 
 
+async def test_get_camera_preview_serves_stale_cache_without_calling_blink_when_disabled(
+    app_session: AsyncSession, tmp_path: Path
+) -> None:
+    """See Settings.disable_blink_network_calls - e2e's seeded account can
+    never really talk to Blink, so this should never even try."""
+    account, camera = await _make_account_and_camera(app_session)
+    storage = get_clip_storage(tmp_path)
+    good_path = await get_camera_preview(app_session, get_settings(), camera, storage, force=False)
+    await _stale_the_cache(app_session, camera)
+    FakeBlinkService.calls = []
+
+    disabled_settings = PlainSettings(disable_blink_network_calls=True)
+    path = await get_camera_preview(app_session, disabled_settings, camera, storage, force=False)
+
+    assert path == good_path
+    assert FakeBlinkService.calls == []
+    await app_session.refresh(account)
+    assert account.status == BlinkAccountStatus.ACTIVE
+
+
+async def test_get_camera_preview_force_also_serves_cache_when_disabled(
+    app_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Even an explicit "Snap now" can't reach a real camera here - disabled
+    means disabled regardless of force."""
+    _account, camera = await _make_account_and_camera(app_session)
+    storage = get_clip_storage(tmp_path)
+    good_path = await get_camera_preview(app_session, get_settings(), camera, storage, force=False)
+    FakeBlinkService.calls = []
+
+    disabled_settings = PlainSettings(disable_blink_network_calls=True)
+    path = await get_camera_preview(app_session, disabled_settings, camera, storage, force=True)
+
+    assert path == good_path
+    assert FakeBlinkService.calls == []
+
+
+async def test_get_camera_preview_raises_when_disabled_with_no_cache(
+    app_session: AsyncSession, tmp_path: Path
+) -> None:
+    _account, camera = await _make_account_and_camera(app_session)
+    storage = get_clip_storage(tmp_path)
+    disabled_settings = PlainSettings(disable_blink_network_calls=True)
+
+    with pytest.raises(BlinkError, match="disabled"):
+        await get_camera_preview(app_session, disabled_settings, camera, storage, force=False)
+
+    assert FakeBlinkService.calls == []
+
+
 # ------------------------------------------------------------------ record
 
 
@@ -312,3 +363,22 @@ async def test_record_camera_clip_marks_account_error_on_auth_failure(
 
     await app_session.refresh(account)
     assert account.status == BlinkAccountStatus.ERROR
+
+
+async def test_record_camera_clip_raises_without_touching_the_account_when_disabled(
+    app_session: AsyncSession,
+) -> None:
+    """See Settings.disable_blink_network_calls - still surfaces as a
+    failure to the caller (matching live_view.spec.ts's expectation that
+    saving a clip against the synthetic e2e account reports an error), but
+    never corrupts the shared account row other tests also read."""
+    account, camera = await _make_account_and_camera(app_session)
+    disabled_settings = PlainSettings(disable_blink_network_calls=True)
+
+    with pytest.raises(BlinkError, match="disabled"):
+        await record_camera_clip(app_session, disabled_settings, camera)
+
+    assert FakeBlinkService.calls == []
+    await app_session.refresh(account)
+    assert account.status == BlinkAccountStatus.ACTIVE
+    assert account.last_error is None

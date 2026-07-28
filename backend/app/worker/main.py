@@ -45,10 +45,11 @@ async def startup(ctx: dict[Any, Any]) -> None:
     ctx["engine"] = engine
     ctx["sessionmaker"] = build_sessionmaker(engine)
     logger.info("worker.started")
-    # Self-reschedules at the end of every run (see blink_sync.py) so its
-    # cadence follows BLINK_SYNC_INTERVAL_SECONDS, which arq's calendar-style
-    # cron can't express directly.
-    await ctx["redis"].enqueue_job(SYNC_JOB_NAME)
+    if not settings.disable_blink_network_calls:
+        # Self-reschedules at the end of every run (see blink_sync.py) so its
+        # cadence follows BLINK_SYNC_INTERVAL_SECONDS, which arq's
+        # calendar-style cron can't express directly.
+        await ctx["redis"].enqueue_job(SYNC_JOB_NAME)
 
 
 async def shutdown(ctx: dict[Any, Any]) -> None:
