@@ -36,4 +36,12 @@ describe("SettingsAboutPanel", () => {
     );
     expect(wrapper.text()).toContain("not affiliated with, endorsed by, or sponsored by");
   });
+
+  it("credits the source of the Google Drive and OneDrive icons", () => {
+    const wrapper = mount(SettingsAboutPanel);
+    const link = wrapper.find('a[href="https://github.com/Templarian/MaterialDesign"]');
+    expect(link.exists()).toBe(true);
+    expect(link.text()).toBe("Pictogrammers Material Design Icons");
+    expect(wrapper.text()).toContain("not to imply endorsement");
+  });
 });
