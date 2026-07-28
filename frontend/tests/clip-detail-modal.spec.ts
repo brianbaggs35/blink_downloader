@@ -315,7 +315,7 @@ describe("ClipDetailModal — analyzed content", () => {
     mockedGetAnalysis.mockResolvedValue(routineAnalysis);
     await mountModal(clip);
     expect(document.body.querySelector('[data-testid="recognized-entity-tag"]')).toBeNull();
-    const tag = document.body.querySelector(".entity-tag");
+    const tag = document.body.querySelector(".entity-chip");
     expect(tag?.className).not.toContain("recognized");
   });
 });
@@ -548,7 +548,7 @@ describe("ClipDetailModal — report a false positive", () => {
   it("omits the report action for an unrecognized entity", async () => {
     mockedGetAnalysis.mockResolvedValue(routineAnalysis);
     await mountModal(clip);
-    expect(document.body.querySelector(".report-mismatch")).toBeNull();
+    expect(document.body.querySelector('[data-testid^="report-false-positive-"]')).toBeNull();
   });
 
   it("asks for confirmation naming the recognized person before reporting", async () => {

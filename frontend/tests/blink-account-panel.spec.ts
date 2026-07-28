@@ -14,6 +14,9 @@ vi.mock("@/api", async (importOriginal) => ({
 const toastAdd = vi.fn();
 vi.mock("primevue/usetoast", () => ({ useToast: () => ({ add: toastAdd }) }));
 
+const confirmRequire = vi.fn();
+vi.mock("primevue/useconfirm", () => ({ useConfirm: () => ({ require: confirmRequire }) }));
+
 import {
   getBlinkStatus,
   linkBlinkAccount,
@@ -299,17 +302,25 @@ describe("BlinkAccountPanel — linked", () => {
     );
   });
 
-  it("opens an unlink confirmation and unlinks on confirm", async () => {
+  it("asks for confirmation before unlinking, with the same danger-styled prompt as any other delete", async () => {
+    const wrapper = await mountPanel();
+    await wrapper.find('[data-testid="open-unlink-confirm"]').trigger("click");
+    const options = confirmRequire.mock.calls.at(-1)?.[0] as {
+      header: string;
+      acceptProps: { label: string; severity: string };
+    };
+    expect(options.header).toBe("Unlink Blink account?");
+    expect(options.acceptProps).toEqual({ label: "Unlink", severity: "danger" });
+  });
+
+  it("unlinks on confirm", async () => {
     mockedUnlink.mockResolvedValue(undefined);
     mockedStatus.mockResolvedValueOnce(linkedStatus).mockResolvedValue(unlinkedStatus());
     const wrapper = await mountPanel();
 
     await wrapper.find('[data-testid="open-unlink-confirm"]').trigger("click");
-    await nextTick();
-    await flushPromises();
-    expect(document.body.querySelector('[data-testid="unlink-modal"]')).toBeTruthy();
-
-    document.body.querySelector<HTMLElement>('[data-testid="confirm-unlink"]')!.click();
+    const options = confirmRequire.mock.calls.at(-1)?.[0] as { accept: () => void };
+    options.accept();
     await flushPromises();
 
     expect(mockedUnlink).toHaveBeenCalled();
@@ -318,44 +329,18 @@ describe("BlinkAccountPanel — linked", () => {
     );
   });
 
-  it("cancels the unlink confirmation without unlinking", async () => {
+  it("does not unlink unless the confirmation is accepted", async () => {
     const wrapper = await mountPanel();
     await wrapper.find('[data-testid="open-unlink-confirm"]').trigger("click");
-    await nextTick();
-    await flushPromises();
-    expect(document.body.querySelector('[data-testid="unlink-modal"]')).toBeTruthy();
-
-    const cancelButton = Array.from(document.body.querySelectorAll("button")).find(
-      (b) => b.textContent === "Cancel",
-    );
-    cancelButton!.click();
-    await nextTick();
-    await flushPromises();
-
-    expect(document.body.querySelector('[data-testid="unlink-modal"]')).toBeFalsy();
     expect(mockedUnlink).not.toHaveBeenCalled();
-  });
-
-  it("closes the unlink modal when dismissed directly (escape/mask click)", async () => {
-    const wrapper = await mountPanel();
-    await wrapper.find('[data-testid="open-unlink-confirm"]').trigger("click");
-    await nextTick();
-    await flushPromises();
-    expect(document.body.querySelector('[data-testid="unlink-modal"]')).toBeTruthy();
-
-    await wrapper.findAllComponents({ name: "Dialog" })[1]!.vm.$emit("update:visible", false);
-    await nextTick();
-    await flushPromises();
-    expect(document.body.querySelector('[data-testid="unlink-modal"]')).toBeFalsy();
   });
 
   it("shows an error toast when unlink fails", async () => {
     mockedUnlink.mockRejectedValue(new TypeError("network down"));
     const wrapper = await mountPanel();
     await wrapper.find('[data-testid="open-unlink-confirm"]').trigger("click");
-    await nextTick();
-    await flushPromises();
-    document.body.querySelector<HTMLElement>('[data-testid="confirm-unlink"]')!.click();
+    const options = confirmRequire.mock.calls.at(-1)?.[0] as { accept: () => void };
+    options.accept();
     await flushPromises();
     expect(toastAdd).toHaveBeenCalledWith(
       expect.objectContaining({ severity: "error", summary: "Could not unlink" }),
@@ -366,9 +351,8 @@ describe("BlinkAccountPanel — linked", () => {
     mockedUnlink.mockRejectedValue(new ApiError(500, "Server exploded."));
     const wrapper = await mountPanel();
     await wrapper.find('[data-testid="open-unlink-confirm"]').trigger("click");
-    await nextTick();
-    await flushPromises();
-    document.body.querySelector<HTMLElement>('[data-testid="confirm-unlink"]')!.click();
+    const options = confirmRequire.mock.calls.at(-1)?.[0] as { accept: () => void };
+    options.accept();
     await flushPromises();
     expect(toastAdd).toHaveBeenCalledWith(
       expect.objectContaining({ severity: "error", detail: "Server exploded." }),

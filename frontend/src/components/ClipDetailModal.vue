@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Button from "primevue/button";
+import Chip from "primevue/chip";
 import Dialog from "primevue/dialog";
 import Message from "primevue/message";
 import Popover from "primevue/popover";
@@ -381,37 +382,34 @@ async function onMissedFaceEnrolled(): Promise<void> {
                 v-if="analysis.detected_entities.length > 0"
                 class="entities"
               >
-                <span
+                <div
                   v-for="(entity, index) in analysis.detected_entities"
                   :key="index"
-                  class="entity-tag"
-                  :class="{ recognized: entity.recognized_person_id }"
-                  :data-testid="entity.recognized_person_id ? 'recognized-entity-tag' : undefined"
+                  class="entity-chip-group"
                 >
-                  <i
-                    v-if="entity.recognized_person_id"
-                    class="pi pi-verified"
-                    aria-hidden="true"
+                  <Chip
+                    :label="`${entity.label} (${Math.round(entity.confidence * 100)}%)`"
+                    :icon="entity.recognized_person_id ? 'pi pi-verified' : undefined"
+                    class="entity-chip"
+                    :class="{ recognized: entity.recognized_person_id }"
+                    :data-testid="entity.recognized_person_id ? 'recognized-entity-tag' : undefined"
                   />
-                  {{ entity.label }} ({{ Math.round(entity.confidence * 100) }}%)
-                  <button
+                  <Button
                     v-if="entity.recognized_person_id && canManage"
-                    type="button"
-                    class="report-mismatch"
-                    :disabled="reportingPersonId === entity.recognized_person_id"
+                    icon="pi pi-times-circle"
+                    text
+                    rounded
+                    size="small"
+                    severity="danger"
+                    :loading="reportingPersonId === entity.recognized_person_id"
                     :data-testid="`report-false-positive-${entity.recognized_person_id}`"
                     :aria-label="`Report that ${entity.label} was recognized by mistake`"
                     @click="
                       entity.recognized_person_id &&
                         confirmReportFalsePositive(entity.recognized_person_id, entity.label)
                     "
-                  >
-                    <i
-                      class="pi pi-times-circle"
-                      aria-hidden="true"
-                    />
-                  </button>
-                </span>
+                  />
+                </div>
               </div>
 
               <p
@@ -626,58 +624,31 @@ async function onMissedFaceEnrolled(): Promise<void> {
   gap: 6px;
 }
 
-.entity-tag {
+.entity-chip-group {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: var(--p-surface-100);
+  gap: 2px;
+}
+
+.entity-chip {
   font-size: 0.76rem;
+  background: var(--p-surface-100);
   color: var(--p-surface-600);
 }
 
-.blink-dark .entity-tag {
+.blink-dark .entity-chip {
   background: var(--p-surface-800);
   color: var(--p-surface-300);
 }
 
-.entity-tag.recognized {
+.entity-chip.recognized {
   background: color-mix(in srgb, var(--p-primary-500) 18%, transparent);
   color: var(--p-primary-700);
   font-weight: 600;
 }
 
-.blink-dark .entity-tag.recognized {
+.blink-dark .entity-chip.recognized {
   color: var(--p-primary-300);
-}
-
-.report-mismatch {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: none;
-  padding: 0;
-  margin-left: 2px;
-  cursor: pointer;
-  color: inherit;
-  opacity: 0.6;
-  font-size: 0.9em;
-}
-
-.report-mismatch:hover {
-  opacity: 1;
-  color: var(--p-red-600);
-}
-
-.blink-dark .report-mismatch:hover {
-  color: var(--p-red-300);
-}
-
-.report-mismatch:disabled {
-  cursor: default;
-  opacity: 0.35;
 }
 
 .proximity {

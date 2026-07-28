@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import Button from "primevue/button";
 import Checkbox from "primevue/checkbox";
+import DatePicker from "primevue/datepicker";
 import InputNumber from "primevue/inputnumber";
 import InputText from "primevue/inputtext";
 import Message from "primevue/message";
@@ -46,8 +47,26 @@ const smtpToAddressesText = ref("");
 const alertOnSuspiciousClip = ref(true);
 const suspicionAlertThreshold = ref(0.5);
 const alertOnVehicleProximity = ref(true);
-const quietHoursStart = ref("");
-const quietHoursEnd = ref("");
+// DatePicker's own clear icon emits null (not "") - both mean "unset" to save().
+const quietHoursStart = ref<string | null>("");
+const quietHoursEnd = ref<string | null>("");
+
+/** DatePicker's own types claim modelValue is always a Date, but
+ * update-model-type="string" (paired with time-only) makes it a plain
+ * "HH:MM" string at runtime - PrimeVue's .d.ts doesn't account for that
+ * prop's effect on modelValue's type. Bridges the two so the template stays
+ * honestly typed as string | null throughout the rest of this file. */
+function timeOnlyModel(source: { value: string | null }) {
+  return computed({
+    get: () => source.value as unknown as Date,
+    set: (value: unknown) => {
+      source.value = value as string | null;
+    },
+  });
+}
+
+const quietHoursStartModel = timeOnlyModel(quietHoursStart);
+const quietHoursEndModel = timeOnlyModel(quietHoursEnd);
 const dedupWindowMinutes = ref(15);
 
 async function load(): Promise<void> {
@@ -424,21 +443,27 @@ const smtpPasswordPlaceholder = computed(() =>
         <div class="tier-grid">
           <label class="field">
             <span class="field-label">Quiet hours start</span>
-            <input
-              v-model="quietHoursStart"
-              type="time"
-              class="time-input"
+            <DatePicker
+              v-model="quietHoursStartModel"
+              time-only
+              hour-format="24"
+              update-model-type="string"
+              show-clear
+              fluid
               data-testid="quiet-hours-start"
-            >
+            />
           </label>
           <label class="field">
             <span class="field-label">Quiet hours end</span>
-            <input
-              v-model="quietHoursEnd"
-              type="time"
-              class="time-input"
+            <DatePicker
+              v-model="quietHoursEndModel"
+              time-only
+              hour-format="24"
+              update-model-type="string"
+              show-clear
+              fluid
               data-testid="quiet-hours-end"
-            >
+            />
           </label>
           <label class="field">
             <span class="field-label">Don't repeat the same alert for (minutes)</span>
@@ -592,21 +617,6 @@ const smtpPasswordPlaceholder = computed(() =>
 
 .blink-dark .field-label {
   color: var(--p-surface-300);
-}
-
-.time-input {
-  height: 2.5rem;
-  padding: 0 12px;
-  border-radius: 6px;
-  border: 1px solid var(--p-surface-300);
-  background: var(--p-surface-0);
-  color: inherit;
-  font: inherit;
-}
-
-.blink-dark .time-input {
-  border-color: var(--p-surface-700);
-  background: var(--p-surface-900);
 }
 
 .clear-key {
