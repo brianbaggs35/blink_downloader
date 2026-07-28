@@ -78,6 +78,7 @@ def _read(row: StorageIntegrationSettings) -> StorageIntegrationSettingsRead:
         onedrive_connected=bool(row.encrypted_onedrive_refresh_token),
         onedrive_folder_path=row.onedrive_folder_path,
         auto_archive_backend=row.auto_archive_backend,
+        auto_archive_after_days=row.auto_archive_after_days,
     )
 
 

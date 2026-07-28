@@ -38,6 +38,9 @@ class StorageIntegrationSettingsRead(BaseModel):
     """Where a newly-downloaded clip ends up living. LOCAL (the default)
     keeps today's behavior; any other value uploads-then-deletes-local
     right after the clip finishes analysis."""
+    auto_archive_after_days: int
+    """0 archives immediately (today's behavior); a positive value defers
+    the move by that many days instead."""
 
 
 class StorageIntegrationSettingsUpdate(BaseModel):
@@ -60,6 +63,7 @@ class StorageIntegrationSettingsUpdate(BaseModel):
     onedrive_folder_path: str | None = None
 
     auto_archive_backend: StorageBackend = StorageBackend.LOCAL
+    auto_archive_after_days: int = Field(default=0, ge=0, le=365)
 
 
 class CloudFolderEntry(BaseModel):

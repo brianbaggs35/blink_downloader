@@ -17,8 +17,10 @@ from app.worker.tasks.alerts import send_alert
 from app.worker.tasks.analyze import analyze_clip
 from app.worker.tasks.archive import (
     ARCHIVE_CLIP_JOB_NAME,
+    AUTO_ARCHIVE_CLIP_JOB_NAME,
     RESTORE_CLIP_JOB_NAME,
     archive_clip_job,
+    auto_archive_clip_job,
     restore_clip_job,
 )
 from app.worker.tasks.blink_sync import SYNC_JOB_NAME, sync_blink_account
@@ -66,6 +68,7 @@ class WorkerSettings:
         func(analyze_clip, max_tries=2, timeout=240),
         func(send_alert, max_tries=2, timeout=30),
         func(archive_clip_job, name=ARCHIVE_CLIP_JOB_NAME, max_tries=2, timeout=300),
+        func(auto_archive_clip_job, name=AUTO_ARCHIVE_CLIP_JOB_NAME, max_tries=2, timeout=300),
         func(restore_clip_job, name=RESTORE_CLIP_JOB_NAME, max_tries=2, timeout=300),
     ]
     cron_jobs: ClassVar[list[Any]] = [cron(heartbeat, second=0, run_at_startup=True)]

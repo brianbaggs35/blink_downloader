@@ -25,7 +25,11 @@ from app.worker.main import (
 )
 from app.worker.tasks.alerts import SEND_ALERT_JOB_NAME
 from app.worker.tasks.analyze import ANALYZE_JOB_NAME
-from app.worker.tasks.archive import ARCHIVE_CLIP_JOB_NAME, RESTORE_CLIP_JOB_NAME
+from app.worker.tasks.archive import (
+    ARCHIVE_CLIP_JOB_NAME,
+    AUTO_ARCHIVE_CLIP_JOB_NAME,
+    RESTORE_CLIP_JOB_NAME,
+)
 from app.worker.tasks.blink_sync import SYNC_JOB_NAME
 from app.worker.tasks.download import DOWNLOAD_JOB_NAME
 from tests.conftest import PlainSettings
@@ -83,6 +87,7 @@ def test_worker_settings_wired() -> None:
         ANALYZE_JOB_NAME,
         SEND_ALERT_JOB_NAME,
         ARCHIVE_CLIP_JOB_NAME,
+        AUTO_ARCHIVE_CLIP_JOB_NAME,
         RESTORE_CLIP_JOB_NAME,
     }
     assert len(WorkerSettings.cron_jobs) == 1
@@ -99,6 +104,7 @@ def test_worker_settings_wired() -> None:
         ANALYZE_JOB_NAME,
         SEND_ALERT_JOB_NAME,
         ARCHIVE_CLIP_JOB_NAME,
+        AUTO_ARCHIVE_CLIP_JOB_NAME,
         RESTORE_CLIP_JOB_NAME,
     ],
 )

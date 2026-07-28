@@ -20,9 +20,11 @@ import pytest
 from app.blink.models import BlinkAccount, Camera, Clip, StorageBackend
 from app.config import get_settings
 from app.integrations.cloud import CloudStorageError
+from app.integrations.schemas import StorageIntegrationSettingsUpdate
+from app.integrations.service import update_storage_integration_settings
 from app.security.crypto import SecretBox
 from app.settings.service import set_storage_dir
-from app.worker.tasks.archive import archive_clip_job, restore_clip_job
+from app.worker.tasks.archive import archive_clip_job, auto_archive_clip_job, restore_clip_job
 
 
 class _FakeCloudClient:
@@ -150,6 +152,90 @@ async def test_archive_clip_job_reports_archive_errors(
     monkeypatch.setattr("app.integrations.archive.build_s3_client", lambda *_a, **_kw: None)
 
     result = await archive_clip_job(worker_ctx, str(clip.id), "s3")
+    assert result.startswith("failed:")
+
+
+# ---------------------------------------------------------- auto_archive_clip
+
+
+async def test_auto_archive_clip_job_returns_clip_not_found(worker_ctx: dict[str, Any]) -> None:
+    result = await auto_archive_clip_job(worker_ctx, str(uuid.uuid4()))
+    assert result == "clip_not_found"
+
+
+async def test_auto_archive_clip_job_skips_a_clip_thats_already_archived(
+    worker_ctx: dict[str, Any], tmp_path: Path
+) -> None:
+    camera = await _make_camera(worker_ctx)
+    clip = await _make_archived_clip(worker_ctx, camera, tmp_path)
+
+    result = await auto_archive_clip_job(worker_ctx, str(clip.id))
+    assert result == "skipped"
+
+
+async def test_auto_archive_clip_job_skips_when_auto_archive_since_turned_off(
+    worker_ctx: dict[str, Any], tmp_path: Path
+) -> None:
+    camera = await _make_camera(worker_ctx)
+    clip = await _make_local_clip(worker_ctx, camera, tmp_path)
+    async with worker_ctx["sessionmaker"]() as session:
+        await update_storage_integration_settings(
+            session,
+            StorageIntegrationSettingsUpdate(auto_archive_backend=StorageBackend.LOCAL),
+            get_settings().encryption_key,
+        )
+
+    result = await auto_archive_clip_job(worker_ctx, str(clip.id))
+    assert result == "skipped"
+
+    async with worker_ctx["sessionmaker"]() as session:
+        refreshed = await session.get(Clip, clip.id)
+        assert refreshed is not None
+        assert refreshed.storage_backend == StorageBackend.LOCAL
+
+
+async def test_auto_archive_clip_job_reads_current_settings_at_fire_time(
+    monkeypatch: pytest.MonkeyPatch, worker_ctx: dict[str, Any], tmp_path: Path
+) -> None:
+    """Proves the deferred job reflects whatever backend is configured NOW,
+    not whatever was configured back when the delay was originally
+    scheduled - the whole reason it re-reads settings instead of taking a
+    backend argument like archive_clip_job does."""
+    camera = await _make_camera(worker_ctx)
+    clip = await _make_local_clip(worker_ctx, camera, tmp_path)
+    async with worker_ctx["sessionmaker"]() as session:
+        await update_storage_integration_settings(
+            session,
+            StorageIntegrationSettingsUpdate(auto_archive_backend=StorageBackend.GOOGLE_DRIVE),
+            get_settings().encryption_key,
+        )
+    monkeypatch.setattr(
+        "app.integrations.archive.build_google_drive_client", lambda *_a, **_kw: _FakeCloudClient()
+    )
+
+    result = await auto_archive_clip_job(worker_ctx, str(clip.id))
+    assert result == "ok"
+
+    async with worker_ctx["sessionmaker"]() as session:
+        refreshed = await session.get(Clip, clip.id)
+        assert refreshed is not None
+        assert refreshed.storage_backend == StorageBackend.GOOGLE_DRIVE
+
+
+async def test_auto_archive_clip_job_reports_archive_errors(
+    monkeypatch: pytest.MonkeyPatch, worker_ctx: dict[str, Any], tmp_path: Path
+) -> None:
+    camera = await _make_camera(worker_ctx)
+    clip = await _make_local_clip(worker_ctx, camera, tmp_path)
+    async with worker_ctx["sessionmaker"]() as session:
+        await update_storage_integration_settings(
+            session,
+            StorageIntegrationSettingsUpdate(auto_archive_backend=StorageBackend.S3),
+            get_settings().encryption_key,
+        )
+    monkeypatch.setattr("app.integrations.archive.build_s3_client", lambda *_a, **_kw: None)
+
+    result = await auto_archive_clip_job(worker_ctx, str(clip.id))
     assert result.startswith("failed:")
 
 
