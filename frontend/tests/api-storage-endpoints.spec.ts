@@ -78,6 +78,7 @@ describe("storage integration settings endpoints", () => {
       google_drive_enabled: false,
       onedrive_enabled: false,
       auto_archive_backend: "s3",
+      auto_archive_after_days: 0,
     });
     expect(mock.mock.calls[0]?.[0]).toBe("/api/settings/storage-integrations");
     expect((mock.mock.calls[0]?.[1] as RequestInit).method).toBe("PUT");

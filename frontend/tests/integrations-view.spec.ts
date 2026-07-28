@@ -48,6 +48,7 @@ const baseSettings = {
   onedrive_connected: false,
   onedrive_folder_path: null,
   auto_archive_backend: "local" as const,
+  auto_archive_after_days: 0,
 };
 
 beforeEach(() => {
@@ -172,6 +173,7 @@ describe("IntegrationsView configure forms", () => {
       google_drive_enabled: true,
       google_drive_client_id: "existing-drive-client",
       auto_archive_backend: "google_drive",
+      auto_archive_after_days: 5,
     });
     mockedUpdate.mockResolvedValue({ ...baseSettings, s3_enabled: true, s3_bucket: "my-bucket" });
     const wrapper = await mountView();
@@ -195,6 +197,7 @@ describe("IntegrationsView configure forms", () => {
         google_drive_enabled: true,
         google_drive_client_id: "existing-drive-client",
         auto_archive_backend: "google_drive",
+        auto_archive_after_days: 5,
       }),
     );
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: "success" }));

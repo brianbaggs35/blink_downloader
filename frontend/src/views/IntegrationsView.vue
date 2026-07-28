@@ -254,6 +254,7 @@ async function saveProvider(key: ProviderKey): Promise<void> {
       onedrive_folder_path:
         key === "onedrive" ? onedriveFolderPath.value || null : current.value.onedrive_folder_path,
       auto_archive_backend: current.value.auto_archive_backend,
+      auto_archive_after_days: current.value.auto_archive_after_days,
     });
     resetFormsFromCurrent();
     toast.add({ severity: "success", summary: "Integration saved", life: 2500 });
