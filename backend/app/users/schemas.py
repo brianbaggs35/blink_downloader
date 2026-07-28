@@ -31,6 +31,7 @@ class SetupRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=12, max_length=128)
     display_name: str = Field(default="", max_length=120)
+    timezone: str = "UTC"
 
 
 class SetupStatus(BaseModel):

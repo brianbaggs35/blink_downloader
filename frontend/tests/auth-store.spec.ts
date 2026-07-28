@@ -105,6 +105,7 @@ describe("auth store actions", () => {
       email: "admin@example.com",
       password: "p".repeat(12),
       display_name: "Brian",
+      timezone: "UTC",
     });
     expect(mockedSetup).toHaveBeenCalled();
     expect(store.initialized).toBe(true);

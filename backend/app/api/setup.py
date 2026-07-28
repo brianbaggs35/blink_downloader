@@ -59,6 +59,7 @@ async def run_setup(
                 email=payload.email,
                 password=payload.password,
                 display_name=payload.display_name,
+                timezone=payload.timezone,
                 is_superuser=True,
                 is_verified=True,
             ),

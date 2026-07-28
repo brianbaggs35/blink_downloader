@@ -32,7 +32,7 @@ describe("api endpoints", () => {
 
   it("runSetup POSTs the payload", async () => {
     const mock = capture(jsonResponse(fakeUser, 201));
-    await runSetup({ email: "a@b.com", password: "p".repeat(12), display_name: "A" });
+    await runSetup({ email: "a@b.com", password: "p".repeat(12), display_name: "A", timezone: "UTC" });
     expect(mock.mock.calls[0]?.[0]).toBe("/api/setup");
     expect((mock.mock.calls[0]?.[1] as RequestInit).method).toBe("POST");
   });
