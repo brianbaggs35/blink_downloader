@@ -23,6 +23,7 @@ function summary(overrides: Partial<StorageSummaryResponse> = {}): StorageSummar
     by_backend: [],
     total_clips: 0,
     total_bytes: 0,
+    local_quota_bytes: null,
     ...overrides,
   };
 }
