@@ -38,6 +38,9 @@ export type StorageIntegrationSettingsUpdate =
   components["schemas"]["StorageIntegrationSettingsUpdate"];
 export type StorageTestResult = components["schemas"]["StorageTestResult"];
 export type StorageTestResponse = components["schemas"]["StorageTestResponse"];
+export type CloudProvider = "s3" | "google_drive" | "onedrive";
+export type CloudFolderEntry = components["schemas"]["CloudFolderEntry"];
+export type CloudBrowseResponse = components["schemas"]["CloudBrowseResponse"];
 export type BackendStorageSummary = components["schemas"]["BackendStorageSummary"];
 export type StorageSummaryResponse = components["schemas"]["StorageSummaryResponse"];
 export type TemporaryLinkResponse = components["schemas"]["TemporaryLinkResponse"];
@@ -341,6 +344,26 @@ export function updateStorageIntegrationSettings(
 
 export function testStorageIntegrations(): Promise<StorageTestResponse> {
   return api<StorageTestResponse>("/settings/storage-integrations/test", { method: "POST" });
+}
+
+export function browseCloudFolders(
+  provider: CloudProvider,
+  parent?: string,
+): Promise<CloudBrowseResponse> {
+  return api<CloudBrowseResponse>(
+    `/settings/storage-integrations/${provider}/browse${queryString({ parent })}`,
+  );
+}
+
+export function createCloudFolder(
+  provider: CloudProvider,
+  parentId: string | null,
+  name: string,
+): Promise<CloudBrowseResponse> {
+  return api<CloudBrowseResponse>(`/settings/storage-integrations/${provider}/browse`, {
+    method: "POST",
+    json: { parent_id: parentId, name },
+  });
 }
 
 /** Browser-navigation URLs (the backend responds with a 302 to the

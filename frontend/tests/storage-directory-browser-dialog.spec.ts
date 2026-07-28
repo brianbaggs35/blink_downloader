@@ -164,6 +164,25 @@ describe("StorageDirectoryBrowserDialog", () => {
     ).toBe("not writable");
   });
 
+  it("falls back to a generic error for a non-API folder creation failure", async () => {
+    mockedCreate.mockRejectedValue(new TypeError("down"));
+    mountDialog({ visible: true, initialPath: "/data/clips" });
+    await flushPromises();
+
+    const nameInput = modal().querySelector(
+      '[data-testid="storage-browse-new-folder-name"]',
+    ) as HTMLInputElement;
+    nameInput.value = "nope";
+    nameInput.dispatchEvent(new Event("input"));
+    await flushPromises();
+    modal().querySelector("form")!.dispatchEvent(new Event("submit", { cancelable: true }));
+    await flushPromises();
+
+    expect(
+      modal().querySelector('[data-testid="storage-browse-create-error"]')?.textContent?.trim(),
+    ).toBe("Could not create this folder.");
+  });
+
   it("Select emits the current path and closes", async () => {
     const wrapper = mountDialog({ visible: true, initialPath: "/data/clips" });
     await flushPromises();
