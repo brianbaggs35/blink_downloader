@@ -17,6 +17,7 @@ test("every admin tab is reachable directly via ?tab=, with About last", async (
     "Alerts",
     "Live View",
     "Security Feed",
+    "Archived",
     "About",
   ]);
 

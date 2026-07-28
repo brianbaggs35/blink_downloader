@@ -62,6 +62,20 @@ test("Alerts panel enables Discord and saves a webhook URL", async ({ page }) =>
   await expect(page.getByText("Alert settings saved")).toBeVisible();
 });
 
+test("Archived panel warns when the selected destination isn't connected yet, and links to Integrations", async ({
+  page,
+}) => {
+  await page.getByRole("tab", { name: "Archived" }).click();
+  await expect(page.getByTestId("auto-archive-backend")).toBeVisible();
+
+  await page.getByTestId("auto-archive-backend").click();
+  await page.getByRole("option", { name: "Google Drive" }).click();
+  await expect(page.getByTestId("archived-not-ready-warning")).toBeVisible();
+
+  await page.getByTestId("archived-go-to-integrations").click();
+  await expect(page.getByRole("heading", { name: "Integrations", exact: true })).toBeVisible();
+});
+
 test("Vehicles panel lists the seeded cameras to protect", async ({ page }) => {
   await page.getByRole("tab", { name: "Vehicles" }).click();
   const frontDoorCard = page.locator('[data-testid^="vehicle-card-"]', {
