@@ -5,15 +5,27 @@ vi.mock("@/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api")>()),
   browseCloudFolders: vi.fn(),
   createCloudFolder: vi.fn(),
+  renameCloudFolder: vi.fn(),
+  deleteCloudFolder: vi.fn(),
 }));
 
-import { browseCloudFolders, createCloudFolder } from "@/api";
+const confirmRequire = vi.fn();
+vi.mock("primevue/useconfirm", () => ({ useConfirm: () => ({ require: confirmRequire }) }));
+
+import {
+  browseCloudFolders,
+  createCloudFolder,
+  deleteCloudFolder,
+  renameCloudFolder,
+} from "@/api";
 import { ApiError } from "@/api/client";
 import CloudFolderBrowserDialog from "@/components/CloudFolderBrowserDialog.vue";
 import { makePinia, mountGlobal } from "./helpers";
 
 const mockedBrowse = vi.mocked(browseCloudFolders);
 const mockedCreate = vi.mocked(createCloudFolder);
+const mockedRename = vi.mocked(renameCloudFolder);
+const mockedDelete = vi.mocked(deleteCloudFolder);
 
 function response(entries: Array<{ id: string; name: string }>) {
   return { folders: entries };
@@ -218,6 +230,161 @@ describe("CloudFolderBrowserDialog", () => {
     expect(
       modal().querySelector('[data-testid="cloud-browse-create-error"]')?.textContent?.trim(),
     ).toBe("Could not create this folder.");
+  });
+
+  it("rename shows an inline input pre-filled with the current name", async () => {
+    mountDialog({ visible: true });
+    await flushPromises();
+    (modal().querySelector('[data-testid="cloud-browse-rename-Clips"]') as HTMLElement).click();
+    await flushPromises();
+    const input = modal().querySelector(
+      '[data-testid="cloud-browse-rename-input-Clips"]',
+    ) as HTMLInputElement;
+    expect(input.value).toBe("Clips");
+    expect(modal().querySelector('[data-testid="cloud-browse-entry-Clips"]')).toBeNull();
+  });
+
+  it("cancelling a rename restores the plain entry", async () => {
+    mountDialog({ visible: true });
+    await flushPromises();
+    (modal().querySelector('[data-testid="cloud-browse-rename-Clips"]') as HTMLElement).click();
+    await flushPromises();
+    (
+      modal().querySelector('[data-testid="cloud-browse-rename-cancel-Clips"]') as HTMLElement
+    ).click();
+    await flushPromises();
+    expect(modal().querySelector('[data-testid="cloud-browse-entry-Clips"]')).toBeTruthy();
+    expect(mockedRename).not.toHaveBeenCalled();
+  });
+
+  it("confirming a rename saves the new name and reloads the current level", async () => {
+    mockedRename.mockResolvedValue(undefined);
+    mockedBrowse.mockResolvedValueOnce(response([{ id: "clips-id", name: "Clips" }]));
+    mockedBrowse.mockResolvedValueOnce(response([{ id: "clips-id", name: "Archive" }]));
+    mountDialog({ visible: true });
+    await flushPromises();
+    (modal().querySelector('[data-testid="cloud-browse-rename-Clips"]') as HTMLElement).click();
+    await flushPromises();
+    const input = modal().querySelector(
+      '[data-testid="cloud-browse-rename-input-Clips"]',
+    ) as HTMLInputElement;
+    input.value = "Archive";
+    input.dispatchEvent(new Event("input"));
+    await flushPromises();
+    modal().querySelector('[data-testid="cloud-browse-rename-input-Clips"]')?.closest("form")
+      ?.dispatchEvent(new Event("submit", { cancelable: true }));
+    await flushPromises();
+
+    expect(mockedRename).toHaveBeenCalledWith("s3", "clips-id", "Archive");
+    expect(entryNames()).toEqual(["Archive"]);
+  });
+
+  it("shows an error message when a rename fails", async () => {
+    mockedRename.mockRejectedValue(new ApiError(400, "already exists"));
+    mountDialog({ visible: true });
+    await flushPromises();
+    (modal().querySelector('[data-testid="cloud-browse-rename-Clips"]') as HTMLElement).click();
+    await flushPromises();
+    modal().querySelector('[data-testid="cloud-browse-rename-input-Clips"]')?.closest("form")
+      ?.dispatchEvent(new Event("submit", { cancelable: true }));
+    await flushPromises();
+    expect(
+      modal().querySelector('[data-testid="cloud-browse-action-error"]')?.textContent?.trim(),
+    ).toBe("already exists");
+  });
+
+  it("falls back to a generic error for a non-API rename failure", async () => {
+    mockedRename.mockRejectedValue(new TypeError("down"));
+    mountDialog({ visible: true });
+    await flushPromises();
+    (modal().querySelector('[data-testid="cloud-browse-rename-Clips"]') as HTMLElement).click();
+    await flushPromises();
+    modal().querySelector('[data-testid="cloud-browse-rename-input-Clips"]')?.closest("form")
+      ?.dispatchEvent(new Event("submit", { cancelable: true }));
+    await flushPromises();
+    expect(
+      modal().querySelector('[data-testid="cloud-browse-action-error"]')?.textContent?.trim(),
+    ).toBe("Could not rename this folder.");
+  });
+
+  it("delete asks for confirmation naming the folder, with S3-specific empty-only wording", async () => {
+    mountDialog({ visible: true, provider: "s3" });
+    await flushPromises();
+    (modal().querySelector('[data-testid="cloud-browse-delete-Clips"]') as HTMLElement).click();
+    await flushPromises();
+    const options = confirmRequire.mock.calls.at(-1)?.[0] as { header: string; message: string };
+    expect(options.header).toBe("Delete folder");
+    expect(options.message).toContain("Clips");
+    expect(options.message).toContain("empty");
+  });
+
+  it("delete mentions the trash/recycle bin for Google Drive and OneDrive", async () => {
+    mountDialog({ visible: true, provider: "google_drive", providerLabel: "Google Drive" });
+    await flushPromises();
+    (modal().querySelector('[data-testid="cloud-browse-delete-Clips"]') as HTMLElement).click();
+    await flushPromises();
+    const options = confirmRequire.mock.calls.at(-1)?.[0] as { message: string };
+    expect(options.message).toContain("trash");
+  });
+
+  it("confirming delete removes the folder and reloads the current level", async () => {
+    mockedDelete.mockResolvedValue(undefined);
+    mockedBrowse.mockResolvedValueOnce(response([{ id: "clips-id", name: "Clips" }]));
+    mockedBrowse.mockResolvedValueOnce(response([]));
+    mountDialog({ visible: true });
+    await flushPromises();
+    (modal().querySelector('[data-testid="cloud-browse-delete-Clips"]') as HTMLElement).click();
+    await flushPromises();
+    const options = confirmRequire.mock.calls.at(-1)?.[0] as { accept: () => void };
+    options.accept();
+    await flushPromises();
+
+    expect(mockedDelete).toHaveBeenCalledWith("s3", "clips-id");
+    expect(modal().querySelector('[data-testid="cloud-browse-entry-Clips"]')).toBeNull();
+  });
+
+  it("shows an error message when delete fails", async () => {
+    mockedDelete.mockRejectedValue(new ApiError(400, "not empty"));
+    mountDialog({ visible: true });
+    await flushPromises();
+    (modal().querySelector('[data-testid="cloud-browse-delete-Clips"]') as HTMLElement).click();
+    await flushPromises();
+    const options = confirmRequire.mock.calls.at(-1)?.[0] as { accept: () => void };
+    options.accept();
+    await flushPromises();
+    expect(
+      modal().querySelector('[data-testid="cloud-browse-action-error"]')?.textContent?.trim(),
+    ).toBe("not empty");
+  });
+
+  it("falls back to a generic error for a non-API delete failure", async () => {
+    mockedDelete.mockRejectedValue(new TypeError("down"));
+    mountDialog({ visible: true });
+    await flushPromises();
+    (modal().querySelector('[data-testid="cloud-browse-delete-Clips"]') as HTMLElement).click();
+    await flushPromises();
+    const options = confirmRequire.mock.calls.at(-1)?.[0] as { accept: () => void };
+    options.accept();
+    await flushPromises();
+    expect(
+      modal().querySelector('[data-testid="cloud-browse-action-error"]')?.textContent?.trim(),
+    ).toBe("Could not delete this folder.");
+  });
+
+  it("reopening clears any leftover rename/delete action error", async () => {
+    mockedDelete.mockRejectedValue(new ApiError(400, "not empty"));
+    const wrapper = mountDialog({ visible: true });
+    await flushPromises();
+    (modal().querySelector('[data-testid="cloud-browse-delete-Clips"]') as HTMLElement).click();
+    await flushPromises();
+    (confirmRequire.mock.calls.at(-1)?.[0] as { accept: () => void }).accept();
+    await flushPromises();
+    expect(modal().querySelector('[data-testid="cloud-browse-action-error"]')).toBeTruthy();
+
+    await wrapper.setProps({ visible: false });
+    await wrapper.setProps({ visible: true });
+    await flushPromises();
+    expect(modal().querySelector('[data-testid="cloud-browse-action-error"]')).toBeFalsy();
   });
 
   it("Select at the root emits an empty id and path, and closes", async () => {

@@ -5,15 +5,27 @@ vi.mock("@/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api")>()),
   browseStorageDirectories: vi.fn(),
   createStorageDirectory: vi.fn(),
+  renameStorageDirectory: vi.fn(),
+  deleteStorageDirectory: vi.fn(),
 }));
 
-import { browseStorageDirectories, createStorageDirectory } from "@/api";
+const confirmRequire = vi.fn();
+vi.mock("primevue/useconfirm", () => ({ useConfirm: () => ({ require: confirmRequire }) }));
+
+import {
+  browseStorageDirectories,
+  createStorageDirectory,
+  deleteStorageDirectory,
+  renameStorageDirectory,
+} from "@/api";
 import { ApiError } from "@/api/client";
 import StorageDirectoryBrowserDialog from "@/components/StorageDirectoryBrowserDialog.vue";
 import { makePinia, mountGlobal } from "./helpers";
 
 const mockedBrowse = vi.mocked(browseStorageDirectories);
 const mockedCreate = vi.mocked(createStorageDirectory);
+const mockedRename = vi.mocked(renameStorageDirectory);
+const mockedDelete = vi.mocked(deleteStorageDirectory);
 
 function response(path: string, parentPath: string | null, names: string[]) {
   return {
@@ -181,6 +193,151 @@ describe("StorageDirectoryBrowserDialog", () => {
     expect(
       modal().querySelector('[data-testid="storage-browse-create-error"]')?.textContent?.trim(),
     ).toBe("Could not create this folder.");
+  });
+
+  it("rename shows an inline input pre-filled with the current name", async () => {
+    mountDialog({ visible: true, initialPath: "/data/clips" });
+    await flushPromises();
+    (modal().querySelector('[data-testid="storage-browse-rename-garage"]') as HTMLElement).click();
+    await flushPromises();
+    const input = modal().querySelector(
+      '[data-testid="storage-browse-rename-input-garage"]',
+    ) as HTMLInputElement;
+    expect(input.value).toBe("garage");
+    expect(modal().querySelector('[data-testid="storage-browse-entry-garage"]')).toBeNull();
+  });
+
+  it("cancelling a rename restores the plain entry", async () => {
+    mountDialog({ visible: true, initialPath: "/data/clips" });
+    await flushPromises();
+    (modal().querySelector('[data-testid="storage-browse-rename-garage"]') as HTMLElement).click();
+    await flushPromises();
+    (
+      modal().querySelector('[data-testid="storage-browse-rename-cancel-garage"]') as HTMLElement
+    ).click();
+    await flushPromises();
+    expect(modal().querySelector('[data-testid="storage-browse-entry-garage"]')).toBeTruthy();
+    expect(mockedRename).not.toHaveBeenCalled();
+  });
+
+  it("confirming a rename saves the new name and refreshes the listing", async () => {
+    mockedRename.mockResolvedValue(response("/data/clips", "/data", ["driveway", "carport"]));
+    mountDialog({ visible: true, initialPath: "/data/clips" });
+    await flushPromises();
+    (modal().querySelector('[data-testid="storage-browse-rename-garage"]') as HTMLElement).click();
+    await flushPromises();
+    const input = modal().querySelector(
+      '[data-testid="storage-browse-rename-input-garage"]',
+    ) as HTMLInputElement;
+    input.value = "carport";
+    input.dispatchEvent(new Event("input"));
+    await flushPromises();
+    modal().querySelector('[data-testid="storage-browse-rename-input-garage"]')?.closest("form")
+      ?.dispatchEvent(new Event("submit", { cancelable: true }));
+    await flushPromises();
+
+    expect(mockedRename).toHaveBeenCalledWith("/data/clips/garage", "carport");
+    expect(
+      [...modal().querySelectorAll("[data-testid^='storage-browse-entry-']")].map((el) =>
+        el.textContent?.trim(),
+      ),
+    ).toEqual(["driveway", "carport"]);
+  });
+
+  it("shows an error message when a rename fails", async () => {
+    mockedRename.mockRejectedValue(new ApiError(400, "not empty"));
+    mountDialog({ visible: true, initialPath: "/data/clips" });
+    await flushPromises();
+    (modal().querySelector('[data-testid="storage-browse-rename-garage"]') as HTMLElement).click();
+    await flushPromises();
+    modal().querySelector('[data-testid="storage-browse-rename-input-garage"]')?.closest("form")
+      ?.dispatchEvent(new Event("submit", { cancelable: true }));
+    await flushPromises();
+    expect(
+      modal().querySelector('[data-testid="storage-browse-action-error"]')?.textContent?.trim(),
+    ).toBe("not empty");
+  });
+
+  it("falls back to a generic error for a non-API rename failure", async () => {
+    mockedRename.mockRejectedValue(new TypeError("down"));
+    mountDialog({ visible: true, initialPath: "/data/clips" });
+    await flushPromises();
+    (modal().querySelector('[data-testid="storage-browse-rename-garage"]') as HTMLElement).click();
+    await flushPromises();
+    modal().querySelector('[data-testid="storage-browse-rename-input-garage"]')?.closest("form")
+      ?.dispatchEvent(new Event("submit", { cancelable: true }));
+    await flushPromises();
+    expect(
+      modal().querySelector('[data-testid="storage-browse-action-error"]')?.textContent?.trim(),
+    ).toBe("Could not rename this folder.");
+  });
+
+  it("delete asks for confirmation naming the folder", async () => {
+    mountDialog({ visible: true, initialPath: "/data/clips" });
+    await flushPromises();
+    (modal().querySelector('[data-testid="storage-browse-delete-garage"]') as HTMLElement).click();
+    await flushPromises();
+    const options = confirmRequire.mock.calls.at(-1)?.[0] as { header: string; message: string };
+    expect(options.header).toBe("Delete folder");
+    expect(options.message).toContain("garage");
+  });
+
+  it("confirming delete removes the folder and refreshes the listing", async () => {
+    mockedDelete.mockResolvedValue(response("/data/clips", "/data", ["driveway"]));
+    mountDialog({ visible: true, initialPath: "/data/clips" });
+    await flushPromises();
+    (modal().querySelector('[data-testid="storage-browse-delete-garage"]') as HTMLElement).click();
+    await flushPromises();
+    const options = confirmRequire.mock.calls.at(-1)?.[0] as { accept: () => void };
+    options.accept();
+    await flushPromises();
+
+    expect(mockedDelete).toHaveBeenCalledWith("/data/clips/garage");
+    expect(modal().querySelector('[data-testid="storage-browse-entry-garage"]')).toBeNull();
+  });
+
+  it("shows an error message when delete fails", async () => {
+    mockedDelete.mockRejectedValue(new ApiError(400, "not empty"));
+    mountDialog({ visible: true, initialPath: "/data/clips" });
+    await flushPromises();
+    (modal().querySelector('[data-testid="storage-browse-delete-garage"]') as HTMLElement).click();
+    await flushPromises();
+    const options = confirmRequire.mock.calls.at(-1)?.[0] as { accept: () => void };
+    options.accept();
+    await flushPromises();
+    expect(
+      modal().querySelector('[data-testid="storage-browse-action-error"]')?.textContent?.trim(),
+    ).toBe("not empty");
+  });
+
+  it("falls back to a generic error for a non-API delete failure", async () => {
+    mockedDelete.mockRejectedValue(new TypeError("down"));
+    mountDialog({ visible: true, initialPath: "/data/clips" });
+    await flushPromises();
+    (modal().querySelector('[data-testid="storage-browse-delete-garage"]') as HTMLElement).click();
+    await flushPromises();
+    const options = confirmRequire.mock.calls.at(-1)?.[0] as { accept: () => void };
+    options.accept();
+    await flushPromises();
+    expect(
+      modal().querySelector('[data-testid="storage-browse-action-error"]')?.textContent?.trim(),
+    ).toBe("Could not delete this folder.");
+  });
+
+  it("reopening clears any leftover rename/delete action error", async () => {
+    mockedDelete.mockRejectedValue(new ApiError(400, "not empty"));
+    const wrapper = mountDialog({ visible: true, initialPath: "/data/clips" });
+    await flushPromises();
+    (modal().querySelector('[data-testid="storage-browse-delete-garage"]') as HTMLElement).click();
+    await flushPromises();
+    (confirmRequire.mock.calls.at(-1)?.[0] as { accept: () => void }).accept();
+    await flushPromises();
+    expect(modal().querySelector('[data-testid="storage-browse-action-error"]')).toBeTruthy();
+
+    await wrapper.setProps({ visible: false });
+    await wrapper.setProps({ visible: true, initialPath: "/data/clips" });
+    await flushPromises();
+    expect(modal().querySelector('[data-testid="storage-browse-action-error"]')).toBeFalsy();
   });
 
   it("Select emits the current path and closes", async () => {

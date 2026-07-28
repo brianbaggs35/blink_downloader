@@ -4,11 +4,13 @@ import {
   archiveClips,
   browseCloudFolders,
   createCloudFolder,
+  deleteCloudFolder,
   getClipTemporaryLink,
   getStorageIntegrationSettings,
   getStorageSummary,
   googleDriveOAuthStartUrl,
   onedriveOAuthStartUrl,
+  renameCloudFolder,
   restoreClips,
   testStorageIntegrations,
   updateStorageIntegrationSettings,
@@ -129,6 +131,25 @@ describe("storage integration settings endpoints", () => {
     await createCloudFolder("s3", null, "New");
     const init = mock.mock.calls[0]?.[1] as RequestInit;
     expect(JSON.parse(init.body as string)).toEqual({ parent_id: null, name: "New" });
+  });
+
+  it("renameCloudFolder PATCHes the folder id and new name", async () => {
+    const mock = capture(new Response(null, { status: 204 }));
+    await renameCloudFolder("google_drive", "folder-id", "Renamed");
+    expect(mock.mock.calls[0]?.[0]).toBe("/api/settings/storage-integrations/google_drive/browse");
+    const init = mock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body as string)).toEqual({ id: "folder-id", new_name: "Renamed" });
+  });
+
+  it("deleteCloudFolder DELETEs with the folder id as a query param", async () => {
+    const mock = capture(new Response(null, { status: 204 }));
+    await deleteCloudFolder("s3", "folder-id");
+    expect(mock.mock.calls[0]?.[0]).toBe(
+      "/api/settings/storage-integrations/s3/browse?folder_id=folder-id",
+    );
+    const init = mock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.method).toBe("DELETE");
   });
 });
 
