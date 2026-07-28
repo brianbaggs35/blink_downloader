@@ -9,11 +9,15 @@ class StorageSettingsRead(BaseModel):
     storage_dir: str
     is_default: bool
     """True when no override is set and this reflects BLINK_STORAGE_DIR."""
+    local_storage_quota_bytes: int | None
+    """An admin-set budget for local disk usage, or null for unlimited -
+    informational only (see get_storage_summary), never enforced."""
 
 
 class StorageSettingsUpdate(BaseModel):
     storage_dir: str | None = None
     """An absolute path, or null to fall back to BLINK_STORAGE_DIR."""
+    local_storage_quota_bytes: int | None = Field(default=None, gt=0)
 
     @field_validator("storage_dir")
     @classmethod

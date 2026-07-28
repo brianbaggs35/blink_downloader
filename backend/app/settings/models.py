@@ -7,7 +7,7 @@ lookup — see :func:`app.settings.service.get_app_settings`.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, Text, func
+from sqlalchemy import BigInteger, DateTime, Integer, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -21,6 +21,10 @@ class AppSettings(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     storage_dir: Mapped[str | None] = mapped_column(Text)
+    # BigInteger (not Integer, unlike file_size_bytes elsewhere) - a quota is
+    # meant to express whole-disk budgets like "500 GB", which overflows a
+    # 32-bit column almost immediately. Null means unlimited.
+    local_storage_quota_bytes: Mapped[int | None] = mapped_column(BigInteger)
     # All three null by default (falls back to the BLINK_-prefixed env var in
     # app.config.Settings) - overridable at runtime without a redeploy, same
     # null-means-default convention as storage_dir above.

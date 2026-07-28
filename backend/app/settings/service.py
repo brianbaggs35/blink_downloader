@@ -26,6 +26,16 @@ async def set_storage_dir(session: AsyncSession, storage_dir: str | None) -> App
     return row
 
 
+async def set_local_storage_quota_bytes(
+    session: AsyncSession, quota_bytes: int | None
+) -> AppSettings:
+    row = await get_app_settings(session)
+    row.local_storage_quota_bytes = quota_bytes
+    await session.commit()
+    await session.refresh(row)
+    return row
+
+
 async def resolve_storage_dir(session: AsyncSession, settings: Settings) -> Path:
     """The effective clip storage root: DB override, else the env default."""
     row = await get_app_settings(session)

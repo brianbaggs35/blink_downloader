@@ -2181,6 +2181,8 @@ export interface components {
             /** Onedrive Folder Path */
             onedrive_folder_path: string | null;
             auto_archive_backend: components["schemas"]["StorageBackend"];
+            /** Auto Archive After Days */
+            auto_archive_after_days: number;
         };
         /** StorageIntegrationSettingsUpdate */
         StorageIntegrationSettingsUpdate: {
@@ -2223,6 +2225,11 @@ export interface components {
             onedrive_folder_path?: string | null;
             /** @default local */
             auto_archive_backend: components["schemas"]["StorageBackend"];
+            /**
+             * Auto Archive After Days
+             * @default 0
+             */
+            auto_archive_after_days: number;
         };
         /** StorageSettingsRead */
         StorageSettingsRead: {
@@ -2230,11 +2237,15 @@ export interface components {
             storage_dir: string;
             /** Is Default */
             is_default: boolean;
+            /** Local Storage Quota Bytes */
+            local_storage_quota_bytes: number | null;
         };
         /** StorageSettingsUpdate */
         StorageSettingsUpdate: {
             /** Storage Dir */
             storage_dir?: string | null;
+            /** Local Storage Quota Bytes */
+            local_storage_quota_bytes?: number | null;
         };
         /** StorageSummaryResponse */
         StorageSummaryResponse: {
@@ -2244,6 +2255,8 @@ export interface components {
             total_clips: number;
             /** Total Bytes */
             total_bytes: number;
+            /** Local Quota Bytes */
+            local_quota_bytes: number | null;
         };
         /** StorageTestResponse */
         StorageTestResponse: {
