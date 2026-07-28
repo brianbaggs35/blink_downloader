@@ -1,5 +1,6 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import Checkbox from "primevue/checkbox";
+import DatePicker from "primevue/datepicker";
 import InputNumber from "primevue/inputnumber";
 import ToggleSwitch from "primevue/toggleswitch";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -118,10 +119,8 @@ describe("SettingsAlertsPanel loading", () => {
       .element as HTMLTextAreaElement;
     expect(toAddresses.value).toBe("a@example.com, b@example.com");
 
-    const start = wrapper.find('[data-testid="quiet-hours-start"]').element as HTMLInputElement;
-    expect(start.value).toBe("22:00");
-    const end = wrapper.find('[data-testid="quiet-hours-end"]').element as HTMLInputElement;
-    expect(end.value).toBe("07:00");
+    expect(byTestId(wrapper, DatePicker, "quiet-hours-start").props("modelValue")).toBe("22:00");
+    expect(byTestId(wrapper, DatePicker, "quiet-hours-end").props("modelValue")).toBe("07:00");
 
     const discordKey = wrapper.find('[data-testid="discord-webhook"] input')
       .element as HTMLInputElement;
@@ -271,8 +270,8 @@ describe("SettingsAlertsPanel save", () => {
       "update:modelValue",
       false,
     );
-    await wrapper.find('[data-testid="quiet-hours-start"]').setValue("23:00");
-    await wrapper.find('[data-testid="quiet-hours-end"]').setValue("06:00");
+    await byTestId(wrapper, DatePicker, "quiet-hours-start").vm.$emit("update:modelValue", "23:00");
+    await byTestId(wrapper, DatePicker, "quiet-hours-end").vm.$emit("update:modelValue", "06:00");
     await byTestId(wrapper, InputNumber, "dedup-window").vm.$emit("update:modelValue", 30);
     await flushPromises();
 

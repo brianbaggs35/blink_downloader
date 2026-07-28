@@ -4,11 +4,13 @@ import Dialog from "primevue/dialog";
 import InputText from "primevue/inputtext";
 import Message from "primevue/message";
 import Password from "primevue/password";
+import Skeleton from "primevue/skeleton";
 import Tag from "primevue/tag";
 import { useToast } from "primevue/usetoast";
 import { computed, onMounted, ref } from "vue";
 
 import { ApiError } from "@/api";
+import { useDeleteConfirm } from "@/composables/useDeleteConfirm";
 import { useFormatting } from "@/composables/useFormatting";
 import { useAuthStore } from "@/stores/auth";
 import { useBlinkStore } from "@/stores/blink";
@@ -17,6 +19,7 @@ const auth = useAuthStore();
 const blink = useBlinkStore();
 const toast = useToast();
 const { formatDateTime } = useFormatting();
+const { confirmDelete } = useDeleteConfirm();
 
 const username = ref("");
 const password = ref("");
@@ -31,7 +34,6 @@ const verifying = ref(false);
 
 const syncing = ref(false);
 const unlinking = ref(false);
-const unlinkConfirmOpen = ref(false);
 
 const statusError = ref("");
 
@@ -111,11 +113,20 @@ async function syncNow(): Promise<void> {
   }
 }
 
-async function confirmUnlink(): Promise<void> {
+function confirmUnlink(): void {
+  confirmDelete({
+    header: "Unlink Blink account?",
+    message:
+      "This stops syncing and removes stored cameras and clips from this app. Nothing is deleted from your Blink account itself.",
+    acceptLabel: "Unlink",
+    onAccept: () => void performUnlink(),
+  });
+}
+
+async function performUnlink(): Promise<void> {
   unlinking.value = true;
   try {
     await blink.unlink();
-    unlinkConfirmOpen.value = false;
     toast.add({ severity: "success", summary: "Blink account unlinked", life: 2500 });
   } catch (caught) {
     toast.add({
@@ -141,12 +152,12 @@ async function confirmUnlink(): Promise<void> {
 
     <div
       v-if="blink.loading && !blink.status"
-      class="panel-body"
       data-testid="blink-loading"
     >
-      <p class="muted">
-        Checking status…
-      </p>
+      <Skeleton
+        height="80px"
+        border-radius="8px"
+      />
     </div>
 
     <div
@@ -214,8 +225,9 @@ async function confirmUnlink(): Promise<void> {
           icon="pi pi-unlink"
           severity="danger"
           text
+          :loading="unlinking"
           data-testid="open-unlink-confirm"
-          @click="unlinkConfirmOpen = true"
+          @click="confirmUnlink"
         />
       </div>
     </div>
@@ -317,35 +329,6 @@ async function confirmUnlink(): Promise<void> {
           />
         </div>
       </form>
-    </Dialog>
-
-    <Dialog
-      v-model:visible="unlinkConfirmOpen"
-      header="Unlink Blink account?"
-      modal
-      :style="{ width: '28rem' }"
-      :breakpoints="{ '640px': '92vw' }"
-      data-testid="unlink-modal"
-    >
-      <p>
-        This stops syncing and removes stored cameras and clips from this app. Nothing is
-        deleted from your Blink account itself.
-      </p>
-      <div class="panel-actions">
-        <Button
-          label="Cancel"
-          severity="secondary"
-          outlined
-          @click="unlinkConfirmOpen = false"
-        />
-        <Button
-          label="Unlink"
-          severity="danger"
-          :loading="unlinking"
-          data-testid="confirm-unlink"
-          @click="confirmUnlink"
-        />
-      </div>
     </Dialog>
   </article>
 </template>
