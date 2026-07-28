@@ -24,6 +24,15 @@ test("Live View's compare mode stacks panels instead of sitting side-by-side", a
   expect(await columnCount(stage)).toBe(1);
 });
 
+test("the Storage page's backend cards collapse to a single column on a phone", async ({
+  page,
+}) => {
+  await page.goto("/storage");
+  const grid = page.getByTestId("backend-grid");
+  await expect(grid).toBeVisible();
+  expect(await columnCount(grid)).toBe(1);
+});
+
 test("the hamburger is the way into navigation - the desktop sidebar is not shown", async ({
   page,
 }) => {

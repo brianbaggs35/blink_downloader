@@ -10,6 +10,7 @@ test("every primary nav destination actually navigates there", async ({ page }) 
     ["Status", "Status"],
     ["Live View", "Live View"],
     ["Storage", "Storage"],
+    ["Integrations", "Integrations"],
     ["AI", /^AI$/],
     ["AI Usage", "AI Usage"],
     ["Vehicles", "Vehicles"],

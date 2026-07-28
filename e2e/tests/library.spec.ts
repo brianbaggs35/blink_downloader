@@ -48,5 +48,9 @@ test("selecting clips reveals the bulk action bar", async ({ page }) => {
   await expect(page.getByTestId("bulk-bar")).toBeVisible();
   await expect(page.getByTestId("bulk-download")).toBeVisible();
   await expect(page.getByTestId("bulk-analyze")).toBeVisible();
+  // Restore is always offered (clips already local are just a no-op on the
+  // backend); Archive only once a cloud backend is actually connected - see
+  // integrations.spec.ts for that flow end-to-end.
+  await expect(page.getByTestId("bulk-restore")).toBeVisible();
   await expect(page.getByTestId("bulk-delete")).toBeVisible();
 });
