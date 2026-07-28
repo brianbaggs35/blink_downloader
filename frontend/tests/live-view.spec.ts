@@ -75,11 +75,11 @@ afterEach(() => {
   Reflect.deleteProperty(URL, "revokeObjectURL");
 });
 
-async function mountView() {
+async function mountView(isAdmin = true) {
   const router = makeRouter();
   await router.push("/live");
   const pinia = makePinia();
-  useAuthStore().user = { ...fakeUser, is_superuser: true };
+  useAuthStore().user = { ...fakeUser, is_superuser: isAdmin };
   const wrapper = mount(LiveView, {
     global: mountGlobal(pinia, router),
     attachTo: document.body,
@@ -426,5 +426,30 @@ describe("LiveView screenshot", () => {
 
     await wrapper.find('[data-testid="primary-screenshot"]').trigger("click");
     expect(wrapper.find('[data-testid="live-view-load-error"]').exists()).toBe(false);
+  });
+});
+
+describe("LiveView admin-only actions", () => {
+  it("hides forced Refresh and Save clip from a viewer, keeping Screenshot", async () => {
+    const wrapper = await mountView(false);
+    expect(wrapper.find('[data-testid="primary-refresh"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="primary-save-clip"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="primary-screenshot"]').exists()).toBe(true);
+  });
+
+  it("hides the same actions on the compare-mode secondary panel for a viewer", async () => {
+    const wrapper = await mountView(false);
+    await wrapper.find('[data-testid="toggle-compare"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="secondary-refresh"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="secondary-save-clip"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="secondary-screenshot"]').exists()).toBe(true);
+  });
+
+  it("shows all three actions for an admin", async () => {
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="primary-refresh"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="primary-save-clip"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="primary-screenshot"]').exists()).toBe(true);
   });
 });
