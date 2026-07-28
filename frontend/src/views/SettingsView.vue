@@ -30,6 +30,7 @@ import SettingsLiveViewPanel from "@/components/SettingsLiveViewPanel.vue";
 import SettingsSecurityFeedPanel from "@/components/SettingsSecurityFeedPanel.vue";
 import SettingsUsersPanel from "@/components/SettingsUsersPanel.vue";
 import SettingsVehiclesPanel from "@/components/SettingsVehiclesPanel.vue";
+import StorageDirectoryBrowserDialog from "@/components/StorageDirectoryBrowserDialog.vue";
 import { useTheme } from "@/composables/useTheme";
 import { useAuthStore } from "@/stores/auth";
 
@@ -191,6 +192,11 @@ const storageDir = ref("");
 const storageIsDefault = ref(true);
 const savingStorage = ref(false);
 const storageError = ref("");
+const storageBrowseOpen = ref(false);
+
+function applyBrowsedStorageDir(path: string): void {
+  storageDir.value = path;
+}
 
 onMounted(async () => {
   if (auth.user?.is_superuser) {
@@ -435,12 +441,22 @@ async function saveBlinkSyncSettings(): Promise<void> {
             <div class="panel-body">
               <label class="field">
                 <span class="field-label">Clip storage directory</span>
-                <InputText
-                  v-model="storageDir"
-                  placeholder="/data/clips"
-                  fluid
-                  data-testid="storage-dir"
-                />
+                <div class="storage-dir-row">
+                  <InputText
+                    v-model="storageDir"
+                    placeholder="/data/clips"
+                    fluid
+                    data-testid="storage-dir"
+                  />
+                  <Button
+                    label="Browse"
+                    icon="pi pi-folder-open"
+                    severity="secondary"
+                    outlined
+                    data-testid="storage-dir-browse"
+                    @click="storageBrowseOpen = true"
+                  />
+                </div>
               </label>
               <p class="muted">
                 {{ storageIsDefault ? "Using the default from server configuration." : "Custom location." }}
@@ -464,6 +480,12 @@ async function saveBlinkSyncSettings(): Promise<void> {
               </div>
             </div>
           </article>
+
+          <StorageDirectoryBrowserDialog
+            v-model:visible="storageBrowseOpen"
+            :initial-path="storageDir || undefined"
+            @select="applyBrowsedStorageDir"
+          />
 
           <article
             v-if="auth.user?.is_superuser"
@@ -697,6 +719,16 @@ async function saveBlinkSyncSettings(): Promise<void> {
   margin: 0;
   font-size: 0.82rem;
   color: var(--p-red-500);
+}
+
+.storage-dir-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.storage-dir-row :deep(.p-inputtext) {
+  flex: 1;
 }
 
 .panel-actions {

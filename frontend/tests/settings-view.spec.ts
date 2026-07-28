@@ -14,6 +14,8 @@ vi.mock("@/api", async (importOriginal) => ({
   getBlinkStatus: vi.fn(),
   getStorageSettings: vi.fn(),
   updateStorageSettings: vi.fn(),
+  browseStorageDirectories: vi.fn(),
+  createStorageDirectory: vi.fn(),
   getBlinkSyncSettings: vi.fn(),
   updateBlinkSyncSettings: vi.fn(),
 }));
@@ -24,6 +26,7 @@ vi.mock("primevue/usetoast", () => ({
 }));
 
 import {
+  browseStorageDirectories,
   getBlinkStatus,
   getBlinkSyncSettings,
   getStorageSettings,
@@ -36,6 +39,7 @@ const mockedUpdate = vi.mocked(updateMe);
 const mockedBlinkStatus = vi.mocked(getBlinkStatus);
 const mockedGetStorage = vi.mocked(getStorageSettings);
 const mockedUpdateStorage = vi.mocked(updateStorageSettings);
+const mockedBrowseDirs = vi.mocked(browseStorageDirectories);
 const mockedGetBlinkSync = vi.mocked(getBlinkSyncSettings);
 const mockedUpdateBlinkSync = vi.mocked(updateBlinkSyncSettings);
 
@@ -255,6 +259,54 @@ describe("SettingsView storage", () => {
     );
     const input = wrapper.find('[data-testid="storage-dir"]').element as HTMLInputElement;
     expect(input.value).toBe("/mnt/new");
+  });
+
+  it("Browse opens the directory browser dialog, seeded with the current path", async () => {
+    mockedGetStorage.mockResolvedValue({ storage_dir: "/mnt/clips", is_default: false });
+    mockedBrowseDirs.mockResolvedValue({
+      path: "/mnt/clips",
+      parent_path: "/mnt",
+      directories: [],
+    });
+    const wrapper = mountSettings();
+    await flushPromises();
+    try {
+      await wrapper.find('[data-testid="storage-dir-browse"]').trigger("click");
+      await flushPromises();
+      expect(mockedBrowseDirs).toHaveBeenCalledWith("/mnt/clips");
+      expect(
+        document.body.querySelector('[data-testid="storage-browse-modal"]'),
+      ).toBeTruthy();
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
+  it("selecting a folder in the browser dialog fills in the storage directory field", async () => {
+    mockedGetStorage.mockResolvedValue({ storage_dir: "/mnt/clips", is_default: false });
+    mockedBrowseDirs.mockResolvedValue({
+      path: "/mnt/archive",
+      parent_path: "/mnt",
+      directories: [],
+    });
+    const wrapper = mountSettings();
+    await flushPromises();
+    try {
+      await wrapper.find('[data-testid="storage-dir-browse"]').trigger("click");
+      await flushPromises();
+      (
+        document.body.querySelector(
+          '[data-testid="storage-browse-select"]',
+        ) as HTMLElement
+      ).click();
+      await flushPromises();
+
+      const input = wrapper.find('[data-testid="storage-dir"]').element as HTMLInputElement;
+      expect(input.value).toBe("/mnt/archive");
+      expect(document.body.querySelector('[data-testid="storage-browse-modal"]')).toBeFalsy();
+    } finally {
+      wrapper.unmount();
+    }
   });
 
   it("sends null when clearing the directory back to the default", async () => {

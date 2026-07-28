@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  browseStorageDirectories,
   bulkDeleteClips,
+  createStorageDirectory,
   deleteClip,
   downloadClipsAsZip,
   getBlinkStatus,
@@ -239,6 +241,29 @@ describe("settings endpoints", () => {
     const init = mock.mock.calls[0]?.[1] as RequestInit;
     expect(init.method).toBe("PATCH");
     expect(JSON.parse(init.body as string)).toEqual({ storage_dir: "/mnt/clips" });
+  });
+
+  it("browseStorageDirectories GETs /settings/storage/browse with no query when path is omitted", async () => {
+    const mock = capture(jsonResponse({ path: "/data/clips", parent_path: "/data", directories: [] }));
+    await browseStorageDirectories();
+    expect(mock.mock.calls[0]?.[0]).toBe("/api/settings/storage/browse");
+  });
+
+  it("browseStorageDirectories GETs with a path query string", async () => {
+    const mock = capture(jsonResponse({ path: "/mnt", parent_path: "/", directories: [] }));
+    await browseStorageDirectories("/mnt");
+    expect(mock.mock.calls[0]?.[0]).toBe("/api/settings/storage/browse?path=%2Fmnt");
+  });
+
+  it("createStorageDirectory POSTs the parent path and name", async () => {
+    const mock = capture(
+      jsonResponse({ path: "/data/clips/new", parent_path: "/data/clips", directories: [] }),
+    );
+    await createStorageDirectory("/data/clips", "new");
+    expect(mock.mock.calls[0]?.[0]).toBe("/api/settings/storage/browse");
+    const init = mock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ parent_path: "/data/clips", name: "new" });
   });
 
   it("getBlinkSyncSettings GETs /settings/blink-sync", async () => {

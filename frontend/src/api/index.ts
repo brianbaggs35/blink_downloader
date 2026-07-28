@@ -28,6 +28,9 @@ export type BulkActionResponse = components["schemas"]["BulkActionResponse"];
 
 export type StorageSettingsRead = components["schemas"]["StorageSettingsRead"];
 export type StorageSettingsUpdate = components["schemas"]["StorageSettingsUpdate"];
+export type StorageBrowseEntry = components["schemas"]["StorageBrowseEntry"];
+export type StorageBrowseResponse = components["schemas"]["StorageBrowseResponse"];
+export type StorageCreateFolderRequest = components["schemas"]["StorageCreateFolderRequest"];
 
 export type StorageBackend = components["schemas"]["StorageBackend"];
 export type StorageIntegrationSettingsRead = components["schemas"]["StorageIntegrationSettingsRead"];
@@ -309,6 +312,18 @@ export function updateStorageSettings(
   body: StorageSettingsUpdate,
 ): Promise<StorageSettingsRead> {
   return api<StorageSettingsRead>("/settings/storage", { method: "PATCH", json: body });
+}
+
+export function browseStorageDirectories(path?: string): Promise<StorageBrowseResponse> {
+  return api<StorageBrowseResponse>(`/settings/storage/browse${queryString({ path })}`);
+}
+
+export function createStorageDirectory(
+  parentPath: string,
+  name: string,
+): Promise<StorageBrowseResponse> {
+  const body: StorageCreateFolderRequest = { parent_path: parentPath, name };
+  return api<StorageBrowseResponse>("/settings/storage/browse", { method: "POST", json: body });
 }
 
 export function getStorageIntegrationSettings(): Promise<StorageIntegrationSettingsRead> {
