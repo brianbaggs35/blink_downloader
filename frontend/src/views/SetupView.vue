@@ -3,6 +3,7 @@ import Button from "primevue/button";
 import InputText from "primevue/inputtext";
 import Message from "primevue/message";
 import Password from "primevue/password";
+import Select from "primevue/select";
 import Skeleton from "primevue/skeleton";
 import Step from "primevue/step";
 import StepList from "primevue/steplist";
@@ -14,9 +15,10 @@ import ToggleSwitch from "primevue/toggleswitch";
 import { reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 
-import { ApiError, listCameras, updateCamera } from "@/api";
+import { ApiError, getStorageSettings, listCameras, updateCamera, updateStorageSettings } from "@/api";
 import BlinkAccountPanel from "@/components/BlinkAccountPanel.vue";
 import AuthLayout from "@/components/AuthLayout.vue";
+import StorageDirectoryBrowserDialog from "@/components/StorageDirectoryBrowserDialog.vue";
 import { useAuthStore } from "@/stores/auth";
 import { useBlinkStore } from "@/stores/blink";
 
@@ -41,6 +43,15 @@ const confirm = ref("");
 const accountError = ref("");
 const creatingAccount = ref(false);
 
+// "UTC" is a valid Intl timeZone but, oddly, isn't in the IANA-backed
+// supportedValuesOf() enumeration - add it explicitly so it's selectable.
+const timezones = ["UTC", ...Intl.supportedValuesOf("timeZone")];
+// Pre-select the browser's own timezone rather than defaulting new accounts
+// to UTC - resolvedOptions().timeZone is always a real IANA zone, but the
+// membership check is cheap insurance against relying on that everywhere.
+const detectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const timezone = ref(timezones.includes(detectedTimezone) ? detectedTimezone : "UTC");
+
 async function createAccount(): Promise<void> {
   accountError.value = "";
   if (password.value.length < MIN_PASSWORD_LENGTH) {
@@ -57,8 +68,9 @@ async function createAccount(): Promise<void> {
       email: email.value,
       password: password.value,
       display_name: displayName.value,
+      timezone: timezone.value,
     });
-    activeStep.value = "2";
+    void enterStorageStep();
   } catch (caught) {
     accountError.value =
       caught instanceof ApiError
@@ -69,7 +81,48 @@ async function createAccount(): Promise<void> {
   }
 }
 
-// ------------------------------------------------------------- step 3
+// ------------------------------------------------------------- step 2
+
+const storageDir = ref("");
+const storageBrowserOpen = ref(false);
+const storageError = ref("");
+const savingStorageDir = ref(false);
+
+async function enterStorageStep(): Promise<void> {
+  activeStep.value = "2";
+  try {
+    storageDir.value = (await getStorageSettings()).storage_dir;
+  } catch (caught) {
+    storageError.value =
+      caught instanceof ApiError ? caught.message : "Could not load storage settings.";
+  }
+}
+
+function openStorageBrowser(): void {
+  storageError.value = "";
+  storageBrowserOpen.value = true;
+}
+
+async function selectStorageDir(path: string): Promise<void> {
+  storageError.value = "";
+  savingStorageDir.value = true;
+  try {
+    storageDir.value = (
+      await updateStorageSettings({ storage_dir: path, local_storage_quota_bytes: null })
+    ).storage_dir;
+  } catch (caught) {
+    storageError.value =
+      caught instanceof ApiError ? caught.message : "Could not update the storage folder.";
+  } finally {
+    savingStorageDir.value = false;
+  }
+}
+
+function enterBlinkStep(): void {
+  activeStep.value = "3";
+}
+
+// ------------------------------------------------------------- step 4
 
 const cameras = ref<CameraRead[]>([]);
 const discoveringCameras = ref(false);
@@ -103,7 +156,7 @@ async function discoverCameras(): Promise<void> {
 }
 
 function enterReviewStep(): void {
-  activeStep.value = "3";
+  activeStep.value = "4";
   if (!discoveryStarted && blink.isLinked) {
     discoveryStarted = true;
     void discoverCameras();
@@ -146,9 +199,12 @@ function finish(): void {
           Account
         </Step>
         <Step value="2">
-          Blink
+          Storage
         </Step>
         <Step value="3">
+          Blink
+        </Step>
+        <Step value="4">
           Review
         </Step>
       </StepList>
@@ -199,6 +255,16 @@ function finish(): void {
                 data-testid="confirm"
               />
             </label>
+            <label class="field">
+              <span class="field-label">Timezone</span>
+              <Select
+                v-model="timezone"
+                :options="timezones"
+                filter
+                fluid
+                data-testid="timezone"
+              />
+            </label>
             <Message
               v-if="accountError"
               severity="error"
@@ -221,16 +287,55 @@ function finish(): void {
 
         <StepPanel value="2">
           <p class="step-intro">
+            Clips download to local disk by default. Pick a different folder now if you'd like,
+            or leave it as-is and change it anytime from the Storage tab.
+          </p>
+          <div class="storage-current">
+            <i
+              class="pi pi-folder"
+              aria-hidden="true"
+            />
+            <span data-testid="setup-storage-dir">{{ storageDir }}</span>
+          </div>
+          <Message
+            v-if="storageError"
+            severity="error"
+            :closable="false"
+            data-testid="setup-storage-error"
+          >
+            {{ storageError }}
+          </Message>
+          <Button
+            label="Browse"
+            icon="pi pi-folder-open"
+            severity="secondary"
+            outlined
+            :loading="savingStorageDir"
+            data-testid="setup-storage-browse"
+            @click="openStorageBrowser"
+          />
+          <div class="step-actions">
+            <Button
+              label="Continue"
+              fluid
+              data-testid="storage-step-continue"
+              @click="enterBlinkStep"
+            />
+          </div>
+        </StepPanel>
+
+        <StepPanel value="3">
+          <p class="step-intro">
             Link the Blink account your cameras and clips come from. You can skip this and do it
             later from Settings if you'd rather.
           </p>
           <!-- Stepper has no lazy-panel option (unlike Tabs) - every StepPanel
-          mounts up front, so this must stay un-mounted until step 2 is
+          mounts up front, so this must stay un-mounted until step 3 is
           actually reached. Mounted from step 1, it would call the
           authenticated getBlinkStatus() while the visitor is still
           anonymous, fail with a 401, and never retry once step 1 logs
           them in - it only fetches once, on mount. -->
-          <BlinkAccountPanel v-if="activeStep === '2'" />
+          <BlinkAccountPanel v-if="activeStep === '3'" />
           <div class="step-actions">
             <Button
               v-if="blink.isLinked"
@@ -251,7 +356,7 @@ function finish(): void {
           </div>
         </StepPanel>
 
-        <StepPanel value="3">
+        <StepPanel value="4">
           <p class="step-intro">
             Here's what we found. You can turn off syncing and AI analysis for any camera you'd
             rather this app ignore — everything works fine with just one camera enabled.
@@ -368,6 +473,12 @@ function finish(): void {
         </StepPanel>
       </StepPanels>
     </Stepper>
+
+    <StorageDirectoryBrowserDialog
+      v-model:visible="storageBrowserOpen"
+      :initial-path="storageDir"
+      @select="selectStorageDir"
+    />
   </AuthLayout>
 </template>
 
@@ -403,6 +514,23 @@ function finish(): void {
 
 .step-actions {
   margin-top: 20px;
+}
+
+.storage-current {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-family: var(--font-mono, monospace);
+  background: var(--p-surface-50);
+  overflow-wrap: anywhere;
+}
+
+.blink-dark .storage-current {
+  background: color-mix(in srgb, var(--p-surface-900) 70%, transparent);
 }
 
 .camera-skeleton {

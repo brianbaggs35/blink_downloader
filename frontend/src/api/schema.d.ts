@@ -2125,6 +2125,11 @@ export interface components {
              * @default
              */
             display_name: string;
+            /**
+             * Timezone
+             * @default UTC
+             */
+            timezone: string;
         };
         /** SetupStatus */
         SetupStatus: {

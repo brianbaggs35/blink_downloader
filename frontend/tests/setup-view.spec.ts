@@ -1,4 +1,5 @@
 import { flushPromises, mount } from "@vue/test-utils";
+import Select from "primevue/select";
 import ToggleSwitch from "primevue/toggleswitch";
 import { describe, expect, it, vi } from "vitest";
 
@@ -15,6 +16,10 @@ vi.mock("@/api", async (importOriginal) => ({
   triggerBlinkSync: vi.fn(),
   listCameras: vi.fn(),
   updateCamera: vi.fn(),
+  getStorageSettings: vi.fn(),
+  updateStorageSettings: vi.fn(),
+  browseStorageDirectories: vi.fn(),
+  createStorageDirectory: vi.fn(),
 }));
 
 const toastAdd = vi.fn();
@@ -23,13 +28,16 @@ vi.mock("primevue/usetoast", () => ({ useToast: () => ({ add: toastAdd }) }));
 import { beforeEach } from "vitest";
 
 import {
+  browseStorageDirectories,
   getBlinkStatus,
   getMe,
+  getStorageSettings,
   listCameras,
   login,
   runSetup,
   triggerBlinkSync,
   updateCamera,
+  updateStorageSettings,
 } from "@/api";
 
 const mockedSetup = vi.mocked(runSetup);
@@ -39,6 +47,9 @@ const mockedBlinkStatus = vi.mocked(getBlinkStatus);
 const mockedSyncNow = vi.mocked(triggerBlinkSync);
 const mockedListCameras = vi.mocked(listCameras);
 const mockedUpdateCamera = vi.mocked(updateCamera);
+const mockedGetStorage = vi.mocked(getStorageSettings);
+const mockedUpdateStorage = vi.mocked(updateStorageSettings);
+const mockedBrowseStorage = vi.mocked(browseStorageDirectories);
 
 function unlinkedStatus() {
   return fakeBlinkStatus();
@@ -53,6 +64,11 @@ beforeEach(() => {
   mockedBlinkStatus.mockResolvedValue(unlinkedStatus());
   mockedSyncNow.mockResolvedValue({ status: "sync_started" });
   mockedListCameras.mockResolvedValue([]);
+  mockedGetStorage.mockResolvedValue({
+    storage_dir: "/data/clips",
+    is_default: true,
+    local_storage_quota_bytes: null,
+  });
 });
 
 async function mountSetup() {
@@ -86,6 +102,11 @@ async function completeAccountStep(wrapper: Awaited<ReturnType<typeof mountSetup
   await fillAccountForm(wrapper, "a-long-enough-password", "a-long-enough-password");
 }
 
+async function completeStorageStep(wrapper: Awaited<ReturnType<typeof mountSetup>>["wrapper"]) {
+  await wrapper.find('[data-testid="storage-step-continue"]').trigger("click");
+  await flushPromises();
+}
+
 describe("SetupView — account step", () => {
   it("rejects short passwords client-side", async () => {
     const { wrapper } = await mountSetup();
@@ -101,17 +122,50 @@ describe("SetupView — account step", () => {
     expect(mockedSetup).not.toHaveBeenCalled();
   });
 
-  it("creates the admin, signs in, and advances to the Blink step", async () => {
+  it("creates the admin, signs in, and advances to the storage step", async () => {
     const { wrapper, router } = await mountSetup();
     await completeAccountStep(wrapper);
-    expect(mockedSetup).toHaveBeenCalledWith({
-      email: "admin@example.com",
-      password: "a-long-enough-password",
-      display_name: "Brian",
-    });
-    expect(wrapper.find('[data-testid="blink-step-skip"]').exists()).toBe(true);
+    expect(mockedSetup).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: "admin@example.com",
+        password: "a-long-enough-password",
+        display_name: "Brian",
+      }),
+    );
+    expect(wrapper.find('[data-testid="setup-storage-browse"]').exists()).toBe(true);
     // Setup itself never navigates the browser away - only "Go to Library" does.
     expect(router.currentRoute.value.name).toBe("setup");
+  });
+
+  it("pre-selects the browser's own detected timezone", async () => {
+    const { wrapper } = await mountSetup();
+    await completeAccountStep(wrapper);
+    expect(mockedSetup).toHaveBeenCalledWith(
+      expect.objectContaining({ timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
+    );
+  });
+
+  it("lets the user override the pre-selected timezone", async () => {
+    const { wrapper } = await mountSetup();
+    wrapper.findComponent(Select).vm.$emit("update:modelValue", "Europe/London");
+    await completeAccountStep(wrapper);
+    expect(mockedSetup).toHaveBeenCalledWith(
+      expect.objectContaining({ timezone: "Europe/London" }),
+    );
+  });
+
+  it("falls back to UTC if the detected timezone isn't in the known list", async () => {
+    const spy = vi.spyOn(Intl, "DateTimeFormat");
+    spy.mockReturnValue({
+      resolvedOptions: () => ({ timeZone: "Not/A/RealZone" }),
+    } as unknown as Intl.DateTimeFormat);
+    try {
+      const { wrapper } = await mountSetup();
+      await completeAccountStep(wrapper);
+      expect(mockedSetup).toHaveBeenCalledWith(expect.objectContaining({ timezone: "UTC" }));
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("surfaces API errors verbatim", async () => {
@@ -131,10 +185,107 @@ describe("SetupView — account step", () => {
   });
 });
 
+describe("SetupView — storage step", () => {
+  it("shows the current storage folder", async () => {
+    mockedGetStorage.mockResolvedValue({
+      storage_dir: "/mnt/clips",
+      is_default: false,
+      local_storage_quota_bytes: null,
+    });
+    const { wrapper } = await mountSetup();
+    await completeAccountStep(wrapper);
+    expect(wrapper.find('[data-testid="setup-storage-dir"]').text()).toBe("/mnt/clips");
+  });
+
+  it("shows an inline error if loading storage settings fails", async () => {
+    mockedGetStorage.mockRejectedValue(new ApiError(500, "boom"));
+    const { wrapper } = await mountSetup();
+    await completeAccountStep(wrapper);
+    expect(wrapper.find('[data-testid="setup-storage-error"]').text()).toBe("boom");
+  });
+
+  it("falls back to a generic error for a non-API storage load failure", async () => {
+    mockedGetStorage.mockRejectedValue(new TypeError("down"));
+    const { wrapper } = await mountSetup();
+    await completeAccountStep(wrapper);
+    expect(wrapper.find('[data-testid="setup-storage-error"]').text()).toBe(
+      "Could not load storage settings.",
+    );
+  });
+
+  it("browses, selects a folder, and saves it immediately", async () => {
+    mockedBrowseStorage.mockResolvedValue({
+      path: "/data/clips",
+      parent_path: "/data",
+      directories: [],
+    });
+    mockedUpdateStorage.mockResolvedValue({
+      storage_dir: "/data/clips/onboarding",
+      is_default: false,
+      local_storage_quota_bytes: null,
+    });
+    const { wrapper } = await mountSetup();
+    await completeAccountStep(wrapper);
+    await wrapper.find('[data-testid="setup-storage-browse"]').trigger("click");
+    await flushPromises();
+    (document.body.querySelector('[data-testid="storage-browse-select"]') as HTMLElement).click();
+    await flushPromises();
+    expect(mockedUpdateStorage).toHaveBeenCalledWith({
+      storage_dir: "/data/clips",
+      local_storage_quota_bytes: null,
+    });
+    expect(wrapper.find('[data-testid="setup-storage-dir"]').text()).toBe(
+      "/data/clips/onboarding",
+    );
+  });
+
+  it("shows an inline error if selecting a folder fails", async () => {
+    mockedBrowseStorage.mockResolvedValue({
+      path: "/data/clips",
+      parent_path: "/data",
+      directories: [],
+    });
+    mockedUpdateStorage.mockRejectedValue(new ApiError(400, "not writable"));
+    const { wrapper } = await mountSetup();
+    await completeAccountStep(wrapper);
+    await wrapper.find('[data-testid="setup-storage-browse"]').trigger("click");
+    await flushPromises();
+    (document.body.querySelector('[data-testid="storage-browse-select"]') as HTMLElement).click();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="setup-storage-error"]').text()).toBe("not writable");
+  });
+
+  it("falls back to a generic error for a non-API folder save failure", async () => {
+    mockedBrowseStorage.mockResolvedValue({
+      path: "/data/clips",
+      parent_path: "/data",
+      directories: [],
+    });
+    mockedUpdateStorage.mockRejectedValue(new TypeError("down"));
+    const { wrapper } = await mountSetup();
+    await completeAccountStep(wrapper);
+    await wrapper.find('[data-testid="setup-storage-browse"]').trigger("click");
+    await flushPromises();
+    (document.body.querySelector('[data-testid="storage-browse-select"]') as HTMLElement).click();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="setup-storage-error"]').text()).toBe(
+      "Could not update the storage folder.",
+    );
+  });
+
+  it("Continue advances to the Blink step without requiring a folder change", async () => {
+    const { wrapper } = await mountSetup();
+    await completeAccountStep(wrapper);
+    await completeStorageStep(wrapper);
+    expect(wrapper.find('[data-testid="blink-step-skip"]').exists()).toBe(true);
+  });
+});
+
 describe("SetupView — Blink + review steps", () => {
   it("advances to review without a linked Blink account and shows the unlinked message", async () => {
     const { wrapper } = await mountSetup();
     await completeAccountStep(wrapper);
+    await completeStorageStep(wrapper);
     await wrapper.find('[data-testid="blink-step-skip"]').trigger("click");
     await flushPromises();
     expect(wrapper.find('[data-testid="review-no-blink"]').exists()).toBe(true);
@@ -144,6 +295,7 @@ describe("SetupView — Blink + review steps", () => {
   it("shows Skip for now (not Continue) before Blink is linked, and vice versa once it is", async () => {
     const { wrapper } = await mountSetup();
     await completeAccountStep(wrapper);
+    await completeStorageStep(wrapper);
     expect(wrapper.find('[data-testid="blink-step-skip"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="blink-step-continue"]').exists()).toBe(false);
   });
@@ -163,6 +315,7 @@ describe("SetupView — Blink + review steps", () => {
     ]);
     const { wrapper } = await mountSetup();
     await completeAccountStep(wrapper);
+    await completeStorageStep(wrapper);
     await wrapper.find('[data-testid="blink-step-continue"]').trigger("click");
     await flushPromises();
 
@@ -174,6 +327,7 @@ describe("SetupView — Blink + review steps", () => {
     mockedBlinkStatus.mockResolvedValue(linkedStatus());
     const { wrapper } = await mountSetup();
     await completeAccountStep(wrapper);
+    await completeStorageStep(wrapper);
     expect(wrapper.find('[data-testid="blink-step-continue"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="blink-step-skip"]').exists()).toBe(false);
   });
@@ -193,6 +347,7 @@ describe("SetupView — Blink + review steps", () => {
     mockedUpdateCamera.mockResolvedValue({ ...camera, enabled: false });
     const { wrapper } = await mountSetup();
     await completeAccountStep(wrapper);
+    await completeStorageStep(wrapper);
     await wrapper.find('[data-testid="blink-step-continue"]').trigger("click");
     await flushPromises();
 
@@ -208,6 +363,7 @@ describe("SetupView — Blink + review steps", () => {
     try {
       const { wrapper } = await mountSetup();
       await completeAccountStep(wrapper);
+      await completeStorageStep(wrapper);
       await wrapper.find('[data-testid="blink-step-continue"]').trigger("click");
       await vi.runAllTimersAsync();
       expect(wrapper.find('[data-testid="review-no-cameras"]').exists()).toBe(true);
@@ -221,6 +377,7 @@ describe("SetupView — Blink + review steps", () => {
     mockedListCameras.mockRejectedValue(new ApiError(500, "Could not reach the server."));
     const { wrapper } = await mountSetup();
     await completeAccountStep(wrapper);
+    await completeStorageStep(wrapper);
     await wrapper.find('[data-testid="blink-step-continue"]').trigger("click");
     await flushPromises();
     expect(wrapper.find('[data-testid="review-cameras-error"]').text()).toBe(
@@ -233,6 +390,7 @@ describe("SetupView — Blink + review steps", () => {
     mockedListCameras.mockRejectedValue(new TypeError("network down"));
     const { wrapper } = await mountSetup();
     await completeAccountStep(wrapper);
+    await completeStorageStep(wrapper);
     await wrapper.find('[data-testid="blink-step-continue"]').trigger("click");
     await flushPromises();
     expect(wrapper.find('[data-testid="review-cameras-error"]').text()).toBe(
@@ -247,6 +405,7 @@ describe("SetupView — Blink + review steps", () => {
     try {
       const { wrapper } = await mountSetup();
       await completeAccountStep(wrapper);
+      await completeStorageStep(wrapper);
       await wrapper.find('[data-testid="blink-step-continue"]').trigger("click");
       await vi.runAllTimersAsync();
       mockedSyncNow.mockClear();
@@ -261,6 +420,7 @@ describe("SetupView — Blink + review steps", () => {
   it("finishes setup and lands on the Library", async () => {
     const { wrapper, router } = await mountSetup();
     await completeAccountStep(wrapper);
+    await completeStorageStep(wrapper);
     await wrapper.find('[data-testid="blink-step-skip"]').trigger("click");
     await flushPromises();
     await wrapper.find('[data-testid="finish-setup"]').trigger("click");

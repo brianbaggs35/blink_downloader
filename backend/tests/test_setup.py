@@ -25,6 +25,7 @@ async def test_setup_creates_admin(client: AsyncClient, app: FastAPI) -> None:
     assert body["is_superuser"] is True
     assert body["is_verified"] is True
     assert body["display_name"] == "Brian"
+    assert body["timezone"] == "UTC"
     assert "password" not in body
     assert "hashed_password" not in body
 
@@ -35,6 +36,19 @@ async def test_setup_creates_admin(client: AsyncClient, app: FastAPI) -> None:
         user = (await session.execute(select(User))).scalar_one()
     assert user.hashed_password.startswith("$argon2id$")
     assert ADMIN_PASSWORD not in user.hashed_password
+
+
+async def test_setup_saves_the_chosen_timezone(client: AsyncClient) -> None:
+    response = await client.post(
+        "/api/setup",
+        json={
+            "email": ADMIN_EMAIL,
+            "password": ADMIN_PASSWORD,
+            "timezone": "America/New_York",
+        },
+    )
+    assert response.status_code == 201
+    assert response.json()["timezone"] == "America/New_York"
 
 
 async def test_setup_runs_only_once(admin_client: AsyncClient) -> None:
