@@ -233,9 +233,19 @@ function finish(): void {
           <BlinkAccountPanel v-if="activeStep === '2'" />
           <div class="step-actions">
             <Button
+              v-if="blink.isLinked"
               label="Continue"
               fluid
               data-testid="blink-step-continue"
+              @click="enterReviewStep"
+            />
+            <Button
+              v-else
+              label="Skip for now"
+              severity="secondary"
+              outlined
+              fluid
+              data-testid="blink-step-skip"
               @click="enterReviewStep"
             />
           </div>

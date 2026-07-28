@@ -109,7 +109,7 @@ describe("SetupView — account step", () => {
       password: "a-long-enough-password",
       display_name: "Brian",
     });
-    expect(wrapper.find('[data-testid="blink-step-continue"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="blink-step-skip"]').exists()).toBe(true);
     // Setup itself never navigates the browser away - only "Go to Library" does.
     expect(router.currentRoute.value.name).toBe("setup");
   });
@@ -135,10 +135,17 @@ describe("SetupView — Blink + review steps", () => {
   it("advances to review without a linked Blink account and shows the unlinked message", async () => {
     const { wrapper } = await mountSetup();
     await completeAccountStep(wrapper);
-    await wrapper.find('[data-testid="blink-step-continue"]').trigger("click");
+    await wrapper.find('[data-testid="blink-step-skip"]').trigger("click");
     await flushPromises();
     expect(wrapper.find('[data-testid="review-no-blink"]').exists()).toBe(true);
     expect(mockedSyncNow).not.toHaveBeenCalled();
+  });
+
+  it("shows Skip for now (not Continue) before Blink is linked, and vice versa once it is", async () => {
+    const { wrapper } = await mountSetup();
+    await completeAccountStep(wrapper);
+    expect(wrapper.find('[data-testid="blink-step-skip"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="blink-step-continue"]').exists()).toBe(false);
   });
 
   it("discovers and lists cameras when Blink is already linked", async () => {
@@ -161,6 +168,14 @@ describe("SetupView — Blink + review steps", () => {
 
     expect(mockedSyncNow).toHaveBeenCalledOnce();
     expect(wrapper.find('[data-testid="review-camera-list"]').text()).toContain("Front Door");
+  });
+
+  it("shows Continue (not Skip) once Blink is linked", async () => {
+    mockedBlinkStatus.mockResolvedValue(linkedStatus());
+    const { wrapper } = await mountSetup();
+    await completeAccountStep(wrapper);
+    expect(wrapper.find('[data-testid="blink-step-continue"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="blink-step-skip"]').exists()).toBe(false);
   });
 
   it("toggles a camera's enabled state from the review step", async () => {
@@ -246,7 +261,7 @@ describe("SetupView — Blink + review steps", () => {
   it("finishes setup and lands on the Library", async () => {
     const { wrapper, router } = await mountSetup();
     await completeAccountStep(wrapper);
-    await wrapper.find('[data-testid="blink-step-continue"]').trigger("click");
+    await wrapper.find('[data-testid="blink-step-skip"]').trigger("click");
     await flushPromises();
     await wrapper.find('[data-testid="finish-setup"]').trigger("click");
     await flushPromises();
