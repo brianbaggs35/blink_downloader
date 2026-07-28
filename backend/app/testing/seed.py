@@ -163,7 +163,7 @@ async def _seed_demo_data(session: AsyncSession) -> None:
         session.add(clip)
         await session.flush()
         if downloaded:
-            path = storage.clip_path(camera.id, clip.id)
+            path = storage.clip_path(camera.id, clip.id, recorded_at)
             await storage.write(path, clip_bytes)
             clip.storage_path = str(path)
             clip.downloaded_at = recorded_at + timedelta(seconds=30)

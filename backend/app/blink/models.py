@@ -118,6 +118,12 @@ class Clip(Base):
     file_size_bytes: Mapped[int | None] = mapped_column()
     duration_seconds: Mapped[float | None] = mapped_column()
     thumbnail_generated: Mapped[bool] = mapped_column(default=False, server_default="false")
+    # Recorded once, at generation time - unlike storage_path this is never
+    # overwritten by archiving (thumbnails always stay local regardless of
+    # where the clip video itself lives), and null for clips downloaded
+    # before this column existed, whose thumbnail lives at the pre-migration
+    # flat location instead (see LocalClipStorage.legacy_thumbnail_path).
+    thumbnail_path: Mapped[str | None] = mapped_column(Text)
 
     raw_metadata: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(

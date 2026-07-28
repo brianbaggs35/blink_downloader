@@ -74,7 +74,7 @@ async def download_clip(ctx: dict[Any, Any], clip_id: str, auto_analyze: bool = 
 
         storage_root = await resolve_storage_dir(session, settings)
         storage = get_clip_storage(storage_root)
-        clip_path = storage.clip_path(camera.id, clip.id)
+        clip_path = storage.clip_path(camera.id, clip.id, clip.recorded_at)
         try:
             size = await storage.write(clip_path, data)
         except StorageError as exc:
@@ -89,9 +89,10 @@ async def download_clip(ctx: dict[Any, Any], clip_id: str, auto_analyze: bool = 
 
         try:
             clip.duration_seconds = await probe_duration_seconds(clip_path)
-            clip.thumbnail_generated = await generate_thumbnail(
-                clip_path, storage.thumbnail_path(camera.id, clip.id)
-            )
+            thumb_path = storage.thumbnail_path(camera.id, clip.id, clip.recorded_at)
+            clip.thumbnail_generated = await generate_thumbnail(clip_path, thumb_path)
+            if clip.thumbnail_generated:
+                clip.thumbnail_path = str(thumb_path)
         except FfmpegError as exc:
             # The clip itself downloaded fine; a broken ffmpeg install should
             # not make that look like a failed job.

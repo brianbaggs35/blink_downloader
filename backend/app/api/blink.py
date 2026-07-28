@@ -8,6 +8,7 @@ account-management rights.
 import json
 import uuid
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -248,8 +249,14 @@ async def unlink_account(
     )
     for clip in clips:
         try:
-            await storage.delete(storage.clip_path(clip.camera_id, clip.id))
-            await storage.delete(storage.thumbnail_path(clip.camera_id, clip.id))
+            # By the clip's own persisted paths, never a recompute - see
+            # app.api.clips._delete_one's docstring for why.
+            if clip.storage_path:
+                await storage.delete(Path(clip.storage_path))
+            thumb_path = clip.thumbnail_path or str(
+                storage.legacy_thumbnail_path(clip.camera_id, clip.id)
+            )
+            await storage.delete(Path(thumb_path))
         except StorageError as exc:
             # Unlinking should never get stuck behind one bad file; the DB
             # row still goes away and the orphaned file can be cleaned up

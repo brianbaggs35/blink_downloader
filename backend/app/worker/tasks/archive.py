@@ -69,7 +69,6 @@ async def archive_clip_job(ctx: dict[Any, Any], clip_id: str, backend: str) -> s
             await archive_clip(
                 session,
                 clip,
-                clip.camera_id,
                 StorageBackend(backend),
                 settings.encryption_key,
                 storage,
@@ -106,7 +105,6 @@ async def auto_archive_clip_job(ctx: dict[Any, Any], clip_id: str) -> str:
             await archive_clip(
                 session,
                 clip,
-                clip.camera_id,
                 row.auto_archive_backend,
                 settings.encryption_key,
                 storage,
@@ -135,7 +133,7 @@ async def restore_clip_job(ctx: dict[Any, Any], clip_id: str) -> str:
             return "clip_not_found"
         storage = get_clip_storage(await resolve_storage_dir(session, settings))
         try:
-            await restore_clip(session, clip, clip.camera_id, settings.encryption_key, storage)
+            await restore_clip(session, clip, settings.encryption_key, storage)
         except ArchiveError as exc:
             logger.warning("restore.failed", clip_id=clip_id, error=str(exc))
             return f"failed: {exc}"
