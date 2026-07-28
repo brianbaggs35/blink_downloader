@@ -5,18 +5,38 @@ vi.mock("@/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api")>()),
   getStorageSummary: vi.fn(),
   getStorageIntegrationSettings: vi.fn(),
+  getStorageSettings: vi.fn(),
+  updateStorageSettings: vi.fn(),
+  updateStorageIntegrationSettings: vi.fn(),
+  browseStorageDirectories: vi.fn(),
+  createStorageDirectory: vi.fn(),
+  browseCloudFolders: vi.fn(),
+  createCloudFolder: vi.fn(),
 }));
 
-import { getStorageIntegrationSettings, getStorageSummary } from "@/api";
+import {
+  browseCloudFolders,
+  browseStorageDirectories,
+  getStorageIntegrationSettings,
+  getStorageSettings,
+  getStorageSummary,
+  updateStorageIntegrationSettings,
+  updateStorageSettings,
+} from "@/api";
 import { ApiError } from "@/api/client";
 import { useAuthStore } from "@/stores/auth";
 import StorageView from "@/views/StorageView.vue";
 import { fakeStorageIntegrationSettings, fakeUser, makePinia, makeRouter, mountGlobal } from "./helpers";
 
-import type { StorageSummaryResponse } from "@/api";
+import type { StorageIntegrationSettingsRead, StorageSettingsRead, StorageSummaryResponse } from "@/api";
 
 const mockedSummary = vi.mocked(getStorageSummary);
 const mockedIntegrationSettings = vi.mocked(getStorageIntegrationSettings);
+const mockedStorageSettings = vi.mocked(getStorageSettings);
+const mockedUpdateStorageSettings = vi.mocked(updateStorageSettings);
+const mockedUpdateIntegrationSettings = vi.mocked(updateStorageIntegrationSettings);
+const mockedBrowseStorage = vi.mocked(browseStorageDirectories);
+const mockedBrowseCloud = vi.mocked(browseCloudFolders);
 
 function summary(overrides: Partial<StorageSummaryResponse> = {}): StorageSummaryResponse {
   return {
@@ -24,6 +44,15 @@ function summary(overrides: Partial<StorageSummaryResponse> = {}): StorageSummar
     total_clips: 0,
     total_bytes: 0,
     local_quota_bytes: null,
+    ...overrides,
+  };
+}
+
+function localSettings(overrides: Partial<StorageSettingsRead> = {}): StorageSettingsRead {
+  return {
+    storage_dir: "/data/clips",
+    is_default: true,
+    local_storage_quota_bytes: null,
     ...overrides,
   };
 }
@@ -39,6 +68,7 @@ async function mountView(isAdmin = true) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockedIntegrationSettings.mockResolvedValue(fakeStorageIntegrationSettings());
+  mockedStorageSettings.mockResolvedValue(localSettings());
 });
 
 describe("StorageView loading", () => {
@@ -143,10 +173,11 @@ describe("StorageView admin-only connection status", () => {
     expect(wrapper.find('[data-testid="backend-status-onedrive"]').text()).toBe("Not connected");
   });
 
-  it("does not request integration settings or show connection chrome for a viewer", async () => {
+  it("does not request integration or storage settings, or show connection chrome, for a viewer", async () => {
     mockedSummary.mockResolvedValue(summary());
     const wrapper = await mountView(false);
     expect(mockedIntegrationSettings).not.toHaveBeenCalled();
+    expect(mockedStorageSettings).not.toHaveBeenCalled();
     expect(wrapper.find('[data-testid="backend-status-s3"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="backend-connect-s3"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="auto-archive-summary"]').exists()).toBe(false);
@@ -238,9 +269,16 @@ describe("StorageView connected-folder display", () => {
     expect(wrapper.find('[data-testid="backend-folder-onedrive"]').text()).toBe("BlinkClips");
   });
 
-  it("never shows a folder line for local disk", async () => {
+  it("shows the current local storage folder for an admin", async () => {
     mockedSummary.mockResolvedValue(summary());
+    mockedStorageSettings.mockResolvedValue(localSettings({ storage_dir: "/mnt/clips" }));
     const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="backend-folder-local"]').text()).toBe("/mnt/clips");
+  });
+
+  it("shows no local folder line for a viewer (no storage settings loaded)", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    const wrapper = await mountView(false);
     expect(wrapper.find('[data-testid="backend-folder-local"]').exists()).toBe(false);
   });
 
@@ -257,6 +295,322 @@ describe("StorageView connected-folder display", () => {
     mockedSummary.mockResolvedValue(summary());
     const wrapper = await mountView(false);
     expect(wrapper.find('[data-testid="backend-folder-s3"]').exists()).toBe(false);
+  });
+});
+
+describe("StorageView quota gauge", () => {
+  it("shows no gauge when no quota is set", async () => {
+    mockedSummary.mockResolvedValue(
+      summary({ by_backend: [{ backend: "local", clip_count: 1, total_bytes: 3072 }] }),
+    );
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="storage-quota-gauge"]').exists()).toBe(false);
+  });
+
+  it("shows usage text and percent when a quota is set, colored green under the warning threshold", async () => {
+    mockedSummary.mockResolvedValue(
+      summary({
+        by_backend: [{ backend: "local", clip_count: 1, total_bytes: 3072 }],
+        local_quota_bytes: 10240,
+      }),
+    );
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="storage-quota-gauge"]').text()).toContain(
+      "3.0 KB of 10.0 KB used",
+    );
+    expect(wrapper.find('[data-testid="storage-quota-percent"]').text()).toBe("30%");
+    const meter = wrapper.findComponent({ name: "MeterGroup" });
+    expect(meter.props("value")).toEqual([
+      { label: "Used", value: 3072, color: "var(--p-green-500)" },
+    ]);
+    expect(meter.props("max")).toBe(10240);
+  });
+
+  it("colors the gauge yellow at the warning threshold", async () => {
+    mockedSummary.mockResolvedValue(
+      summary({
+        by_backend: [{ backend: "local", clip_count: 1, total_bytes: 7680 }],
+        local_quota_bytes: 10240,
+      }),
+    );
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="storage-quota-percent"]').text()).toBe("75%");
+    expect(wrapper.findComponent({ name: "MeterGroup" }).props("value")).toEqual([
+      { label: "Used", value: 7680, color: "var(--p-yellow-500)" },
+    ]);
+  });
+
+  it("colors the gauge red at the critical threshold and caps the percent at 100", async () => {
+    mockedSummary.mockResolvedValue(
+      summary({
+        by_backend: [{ backend: "local", clip_count: 1, total_bytes: 20480 }],
+        local_quota_bytes: 10240,
+      }),
+    );
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="storage-quota-percent"]').text()).toBe("100%");
+    expect(wrapper.findComponent({ name: "MeterGroup" }).props("value")).toEqual([
+      { label: "Used", value: 20480, color: "var(--p-red-500)" },
+    ]);
+  });
+});
+
+describe("StorageView local folder browsing", () => {
+  it("shows a Browse action for local disk but no Connect action", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="backend-browse-local"]').exists()).toBe(true);
+  });
+
+  it("hides the Browse action for a viewer", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    const wrapper = await mountView(false);
+    expect(wrapper.find('[data-testid="backend-browse-local"]').exists()).toBe(false);
+  });
+
+  it("selects a local folder and saves it immediately, echoing the current quota", async () => {
+    mockedSummary.mockResolvedValue(summary({ local_quota_bytes: 500 }));
+    mockedBrowseStorage.mockResolvedValue({ path: "/data/clips", parent_path: "/data", directories: [] });
+    mockedUpdateStorageSettings.mockResolvedValue(
+      localSettings({ storage_dir: "/data/clips/2026", local_storage_quota_bytes: 500 }),
+    );
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="backend-browse-local"]').trigger("click");
+    await flushPromises();
+    (document.body.querySelector('[data-testid="storage-browse-select"]') as HTMLElement).click();
+    await flushPromises();
+    expect(mockedUpdateStorageSettings).toHaveBeenCalledWith({
+      storage_dir: "/data/clips",
+      local_storage_quota_bytes: 500,
+    });
+    expect(wrapper.find('[data-testid="backend-folder-local"]').text()).toBe("/data/clips/2026");
+  });
+
+  it("shows an inline error when saving the local folder fails", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedBrowseStorage.mockResolvedValue({ path: "/data/clips", parent_path: "/data", directories: [] });
+    mockedUpdateStorageSettings.mockRejectedValue(new ApiError(400, "not writable"));
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="backend-browse-local"]').trigger("click");
+    await flushPromises();
+    (document.body.querySelector('[data-testid="storage-browse-select"]') as HTMLElement).click();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="backend-folder-error-local"]').text()).toBe("not writable");
+  });
+
+  it("falls back to a generic error for a non-API local folder save failure", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedBrowseStorage.mockResolvedValue({ path: "/data/clips", parent_path: "/data", directories: [] });
+    mockedUpdateStorageSettings.mockRejectedValue(new TypeError("down"));
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="backend-browse-local"]').trigger("click");
+    await flushPromises();
+    (document.body.querySelector('[data-testid="storage-browse-select"]') as HTMLElement).click();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="backend-folder-error-local"]').text()).toBe(
+      "Could not update the storage folder.",
+    );
+  });
+});
+
+function connectedIntegrationSettings(
+  overrides: Partial<StorageIntegrationSettingsRead> = {},
+): StorageIntegrationSettingsRead {
+  return fakeStorageIntegrationSettings({
+    s3_enabled: true,
+    s3_credentials_set: true,
+    google_drive_enabled: true,
+    google_drive_connected: true,
+    onedrive_enabled: true,
+    onedrive_connected: true,
+    ...overrides,
+  });
+}
+
+describe("StorageView cloud folder browsing", () => {
+  it("shows Browse only for a connected cloud backend, Connect otherwise", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="backend-browse-s3"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="backend-connect-s3"]').exists()).toBe(true);
+
+    mockedIntegrationSettings.mockResolvedValue(connectedIntegrationSettings());
+    const connectedWrapper = await mountView();
+    expect(connectedWrapper.find('[data-testid="backend-browse-s3"]').exists()).toBe(true);
+    expect(connectedWrapper.find('[data-testid="backend-connect-s3"]').exists()).toBe(false);
+  });
+
+  it("selects an S3 folder and saves the prefix, preserving every other setting", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedIntegrationSettings.mockResolvedValue(
+      connectedIntegrationSettings({
+        google_drive_client_id: "existing-drive-client",
+        auto_archive_backend: "google_drive",
+        auto_archive_after_days: 5,
+      }),
+    );
+    mockedBrowseCloud.mockResolvedValue({ folders: [{ id: "clips", name: "Clips" }] });
+    mockedUpdateIntegrationSettings.mockResolvedValue(connectedIntegrationSettings());
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="backend-browse-s3"]').trigger("click");
+    await flushPromises();
+    (
+      document.body.querySelector('[data-testid="cloud-browse-entry-Clips"]') as HTMLElement
+    ).click();
+    await flushPromises();
+    (document.body.querySelector('[data-testid="cloud-browse-select"]') as HTMLElement).click();
+    await flushPromises();
+    expect(mockedUpdateIntegrationSettings).toHaveBeenCalledWith({
+      s3_enabled: true,
+      s3_bucket: null,
+      s3_region: null,
+      s3_prefix: "clips/",
+      s3_access_key_id: null,
+      s3_secret_access_key: null,
+      google_drive_enabled: true,
+      google_drive_client_id: "existing-drive-client",
+      google_drive_client_secret: null,
+      google_drive_folder_id: null,
+      onedrive_enabled: true,
+      onedrive_client_id: null,
+      onedrive_client_secret: null,
+      onedrive_folder_path: null,
+      auto_archive_backend: "google_drive",
+      auto_archive_after_days: 5,
+    });
+  });
+
+  it("selects the S3 bucket root and saves a null prefix", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedIntegrationSettings.mockResolvedValue(connectedIntegrationSettings());
+    mockedBrowseCloud.mockResolvedValue({ folders: [] });
+    mockedUpdateIntegrationSettings.mockResolvedValue(connectedIntegrationSettings());
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="backend-browse-s3"]').trigger("click");
+    await flushPromises();
+    (document.body.querySelector('[data-testid="cloud-browse-select"]') as HTMLElement).click();
+    await flushPromises();
+    expect(mockedUpdateIntegrationSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ s3_prefix: null }),
+    );
+  });
+
+  it("selects a Google Drive folder and saves the folder id directly", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedIntegrationSettings.mockResolvedValue(connectedIntegrationSettings());
+    mockedBrowseCloud.mockResolvedValue({ folders: [{ id: "drive-folder-id-1", name: "Backups" }] });
+    mockedUpdateIntegrationSettings.mockResolvedValue(connectedIntegrationSettings());
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="backend-browse-google_drive"]').trigger("click");
+    await flushPromises();
+    (
+      document.body.querySelector('[data-testid="cloud-browse-entry-Backups"]') as HTMLElement
+    ).click();
+    await flushPromises();
+    (document.body.querySelector('[data-testid="cloud-browse-select"]') as HTMLElement).click();
+    await flushPromises();
+    expect(mockedUpdateIntegrationSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ google_drive_folder_id: "drive-folder-id-1" }),
+    );
+  });
+
+  it("falls back to null for a Google Drive root selection", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedIntegrationSettings.mockResolvedValue(connectedIntegrationSettings());
+    mockedBrowseCloud.mockResolvedValue({ folders: [] });
+    mockedUpdateIntegrationSettings.mockResolvedValue(connectedIntegrationSettings());
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="backend-browse-google_drive"]').trigger("click");
+    await flushPromises();
+    (document.body.querySelector('[data-testid="cloud-browse-select"]') as HTMLElement).click();
+    await flushPromises();
+    expect(mockedUpdateIntegrationSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ google_drive_folder_id: null }),
+    );
+  });
+
+  it("selects a OneDrive folder and saves the composed breadcrumb path", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedIntegrationSettings.mockResolvedValue(connectedIntegrationSettings());
+    mockedBrowseCloud.mockResolvedValueOnce({ folders: [{ id: "opaque-1", name: "BlinkClips" }] });
+    mockedBrowseCloud.mockResolvedValueOnce({ folders: [{ id: "opaque-2", name: "2026" }] });
+    mockedUpdateIntegrationSettings.mockResolvedValue(connectedIntegrationSettings());
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="backend-browse-onedrive"]').trigger("click");
+    await flushPromises();
+    (
+      document.body.querySelector('[data-testid="cloud-browse-entry-BlinkClips"]') as HTMLElement
+    ).click();
+    await flushPromises();
+    (document.body.querySelector('[data-testid="cloud-browse-entry-2026"]') as HTMLElement).click();
+    await flushPromises();
+    (document.body.querySelector('[data-testid="cloud-browse-select"]') as HTMLElement).click();
+    await flushPromises();
+    expect(mockedUpdateIntegrationSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ onedrive_folder_path: "BlinkClips/2026" }),
+    );
+  });
+
+  it("falls back to null for a OneDrive root selection", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedIntegrationSettings.mockResolvedValue(connectedIntegrationSettings());
+    mockedBrowseCloud.mockResolvedValue({ folders: [] });
+    mockedUpdateIntegrationSettings.mockResolvedValue(connectedIntegrationSettings());
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="backend-browse-onedrive"]').trigger("click");
+    await flushPromises();
+    (document.body.querySelector('[data-testid="cloud-browse-select"]') as HTMLElement).click();
+    await flushPromises();
+    expect(mockedUpdateIntegrationSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ onedrive_folder_path: null }),
+    );
+  });
+
+  it("shows an inline error under the right backend card when saving a cloud folder fails", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedIntegrationSettings.mockResolvedValue(connectedIntegrationSettings());
+    mockedBrowseCloud.mockResolvedValue({ folders: [] });
+    mockedUpdateIntegrationSettings.mockRejectedValue(new ApiError(400, "bucket is full"));
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="backend-browse-s3"]').trigger("click");
+    await flushPromises();
+    (document.body.querySelector('[data-testid="cloud-browse-select"]') as HTMLElement).click();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="backend-folder-error-s3"]').text()).toBe("bucket is full");
+    expect(wrapper.find('[data-testid="backend-folder-error-google_drive"]').exists()).toBe(false);
+  });
+
+  it("falls back to a generic error for a non-API cloud folder save failure", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedIntegrationSettings.mockResolvedValue(connectedIntegrationSettings());
+    mockedBrowseCloud.mockResolvedValue({ folders: [] });
+    mockedUpdateIntegrationSettings.mockRejectedValue(new TypeError("down"));
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="backend-browse-s3"]').trigger("click");
+    await flushPromises();
+    (document.body.querySelector('[data-testid="cloud-browse-select"]') as HTMLElement).click();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="backend-folder-error-s3"]').text()).toBe(
+      "Could not save this folder.",
+    );
+  });
+
+  it("clears the previous provider's error once a different provider is opened", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedIntegrationSettings.mockResolvedValue(connectedIntegrationSettings());
+    mockedBrowseCloud.mockResolvedValue({ folders: [] });
+    mockedUpdateIntegrationSettings.mockRejectedValueOnce(new ApiError(400, "bucket is full"));
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="backend-browse-s3"]').trigger("click");
+    await flushPromises();
+    (document.body.querySelector('[data-testid="cloud-browse-select"]') as HTMLElement).click();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="backend-folder-error-s3"]').exists()).toBe(true);
+
+    mockedUpdateIntegrationSettings.mockResolvedValue(connectedIntegrationSettings());
+    await wrapper.find('[data-testid="backend-browse-google_drive"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="backend-folder-error-s3"]').exists()).toBe(false);
   });
 });
 
