@@ -10,6 +10,8 @@ vi.mock("@/api", async (importOriginal) => ({
   getStorageIntegrationSettings: vi.fn(),
   updateStorageIntegrationSettings: vi.fn(),
   testStorageIntegrations: vi.fn(),
+  browseCloudFolders: vi.fn(),
+  createCloudFolder: vi.fn(),
 }));
 
 const toastAdd = vi.fn();
@@ -18,6 +20,7 @@ vi.mock("primevue/usetoast", () => ({
 }));
 
 import {
+  browseCloudFolders,
   getStorageIntegrationSettings,
   testStorageIntegrations,
   updateStorageIntegrationSettings,
@@ -26,6 +29,7 @@ import {
 const mockedGet = vi.mocked(getStorageIntegrationSettings);
 const mockedUpdate = vi.mocked(updateStorageIntegrationSettings);
 const mockedTest = vi.mocked(testStorageIntegrations);
+const mockedBrowse = vi.mocked(browseCloudFolders);
 
 const baseSettings = {
   s3_enabled: false,
@@ -465,6 +469,124 @@ describe("IntegrationsView test connections", () => {
     await flushPromises();
     expect(toastAdd).toHaveBeenCalledWith(
       expect.objectContaining({ severity: "error", detail: "Unexpected error." }),
+    );
+  });
+});
+
+function connectedSettings() {
+  return {
+    ...baseSettings,
+    s3_enabled: true,
+    s3_credentials_set: true,
+    google_drive_enabled: true,
+    google_drive_connected: true,
+    onedrive_enabled: true,
+    onedrive_connected: true,
+  };
+}
+
+describe("IntegrationsView cloud folder browsing", () => {
+  it("disables the Browse button until the provider is connected", async () => {
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="integration-configure-s3"]').trigger("click");
+    expect(wrapper.find('[data-testid="s3-browse"]').attributes("disabled")).toBeDefined();
+  });
+
+  it("browses and fills the S3 prefix from the selected folder's id", async () => {
+    mockedGet.mockResolvedValue(connectedSettings());
+    mockedBrowse.mockResolvedValue({ folders: [{ id: "clips", name: "Clips" }] });
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="integration-configure-s3"]').trigger("click");
+    expect(wrapper.find('[data-testid="s3-browse"]').attributes("disabled")).toBeUndefined();
+
+    await wrapper.find('[data-testid="s3-browse"]').trigger("click");
+    await flushPromises();
+    expect(mockedBrowse).toHaveBeenCalledWith("s3", undefined);
+
+    (
+      document.body.querySelector('[data-testid="cloud-browse-entry-Clips"]') as HTMLElement
+    ).click();
+    await flushPromises();
+    (document.body.querySelector('[data-testid="cloud-browse-select"]') as HTMLElement).click();
+    await flushPromises();
+
+    expect((wrapper.find('[data-testid="s3-prefix"]').element as HTMLInputElement).value).toBe(
+      "clips/",
+    );
+  });
+
+  it("selecting the S3 bucket root (no subfolder) clears the prefix", async () => {
+    mockedGet.mockResolvedValue(connectedSettings());
+    mockedBrowse.mockResolvedValue({ folders: [] });
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="integration-configure-s3"]').trigger("click");
+    await wrapper.find('[data-testid="s3-prefix"]').setValue("existing/");
+    await wrapper.find('[data-testid="s3-browse"]').trigger("click");
+    await flushPromises();
+
+    (document.body.querySelector('[data-testid="cloud-browse-select"]') as HTMLElement).click();
+    await flushPromises();
+
+    expect((wrapper.find('[data-testid="s3-prefix"]').element as HTMLInputElement).value).toBe("");
+  });
+
+  it("browses and fills the Google Drive folder id directly (it's a real, stable Drive id)", async () => {
+    mockedGet.mockResolvedValue(connectedSettings());
+    mockedBrowse.mockResolvedValue({ folders: [{ id: "drive-folder-id-1", name: "Backups" }] });
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="integration-configure-google_drive"]').trigger("click");
+    await wrapper.find('[data-testid="drive-browse"]').trigger("click");
+    await flushPromises();
+
+    (
+      document.body.querySelector('[data-testid="cloud-browse-entry-Backups"]') as HTMLElement
+    ).click();
+    await flushPromises();
+    (document.body.querySelector('[data-testid="cloud-browse-select"]') as HTMLElement).click();
+    await flushPromises();
+
+    expect(
+      (wrapper.find('[data-testid="drive-folder-id"]').element as HTMLInputElement).value,
+    ).toBe("drive-folder-id-1");
+  });
+
+  it("browses and fills the OneDrive folder path as a composed breadcrumb path, not the opaque id", async () => {
+    mockedGet.mockResolvedValue(connectedSettings());
+    mockedBrowse.mockResolvedValueOnce({ folders: [{ id: "opaque-1", name: "BlinkClips" }] });
+    mockedBrowse.mockResolvedValueOnce({ folders: [{ id: "opaque-2", name: "2026" }] });
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="integration-configure-onedrive"]').trigger("click");
+    await wrapper.find('[data-testid="onedrive-browse"]').trigger("click");
+    await flushPromises();
+
+    (
+      document.body.querySelector('[data-testid="cloud-browse-entry-BlinkClips"]') as HTMLElement
+    ).click();
+    await flushPromises();
+    (document.body.querySelector('[data-testid="cloud-browse-entry-2026"]') as HTMLElement).click();
+    await flushPromises();
+    (document.body.querySelector('[data-testid="cloud-browse-select"]') as HTMLElement).click();
+    await flushPromises();
+
+    expect(
+      (wrapper.find('[data-testid="onedrive-folder-path"]').element as HTMLInputElement).value,
+    ).toBe("BlinkClips/2026");
+  });
+
+  it("Cancel in the cloud browser leaves the field unchanged", async () => {
+    mockedGet.mockResolvedValue(connectedSettings());
+    mockedBrowse.mockResolvedValue({ folders: [] });
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="integration-configure-s3"]').trigger("click");
+    await wrapper.find('[data-testid="s3-prefix"]').setValue("existing/");
+    await wrapper.find('[data-testid="s3-browse"]').trigger("click");
+    await flushPromises();
+
+    (document.body.querySelector('[data-testid="cloud-browse-cancel"]') as HTMLElement).click();
+    await flushPromises();
+
+    expect((wrapper.find('[data-testid="s3-prefix"]').element as HTMLInputElement).value).toBe(
+      "existing/",
     );
   });
 });

@@ -6,6 +6,7 @@ import { createPinia } from "pinia";
 import ConfirmationService from "primevue/confirmationservice";
 import PrimeVue from "primevue/config";
 import ToastService from "primevue/toastservice";
+import Tooltip from "primevue/tooltip";
 import { createApp } from "vue";
 
 import App from "./App.vue";
@@ -21,4 +22,5 @@ createApp(App)
   .use(PrimeVue, primeVueOptions)
   .use(ToastService)
   .use(ConfirmationService)
+  .directive("tooltip", Tooltip)
   .mount("#app");

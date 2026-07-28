@@ -2,6 +2,7 @@ import { createPinia, setActivePinia, type Pinia } from "pinia";
 import ConfirmationService from "primevue/confirmationservice";
 import PrimeVue from "primevue/config";
 import ToastService from "primevue/toastservice";
+import Tooltip from "primevue/tooltip";
 import { createMemoryHistory, createRouter, type Router } from "vue-router";
 
 import { routes } from "@/router";
@@ -22,6 +23,7 @@ export function makePinia(): Pinia {
 export function mountGlobal(pinia: Pinia, router?: Router) {
   return {
     plugins: [pinia, PrimeVue, ToastService, ConfirmationService, ...(router ? [router] : [])],
+    directives: { tooltip: Tooltip },
   };
 }
 

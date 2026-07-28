@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   archiveClips,
+  browseCloudFolders,
+  createCloudFolder,
   getClipTemporaryLink,
   getStorageIntegrationSettings,
   getStorageSummary,
@@ -96,6 +98,37 @@ describe("storage integration settings endpoints", () => {
 
   it("onedriveOAuthStartUrl builds the connect URL", () => {
     expect(onedriveOAuthStartUrl()).toBe("/api/settings/storage-integrations/onedrive/oauth/start");
+  });
+
+  it("browseCloudFolders GETs the provider's browse endpoint with no parent", async () => {
+    const mock = capture(jsonResponse({ folders: [] }));
+    await browseCloudFolders("s3");
+    expect(mock.mock.calls[0]?.[0]).toBe("/api/settings/storage-integrations/s3/browse");
+    expect((mock.mock.calls[0]?.[1] as RequestInit | undefined)?.method ?? "GET").toBe("GET");
+  });
+
+  it("browseCloudFolders includes the parent as a query param when given", async () => {
+    const mock = capture(jsonResponse({ folders: [{ id: "sub", name: "Sub" }] }));
+    await browseCloudFolders("google_drive", "parent-id");
+    expect(mock.mock.calls[0]?.[0]).toBe(
+      "/api/settings/storage-integrations/google_drive/browse?parent=parent-id",
+    );
+  });
+
+  it("createCloudFolder POSTs the parent id and name", async () => {
+    const mock = capture(jsonResponse({ folders: [{ id: "new-id", name: "New" }] }));
+    await createCloudFolder("onedrive", "parent-id", "New");
+    expect(mock.mock.calls[0]?.[0]).toBe("/api/settings/storage-integrations/onedrive/browse");
+    const init = mock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ parent_id: "parent-id", name: "New" });
+  });
+
+  it("createCloudFolder sends a null parent id for a root-level folder", async () => {
+    const mock = capture(jsonResponse({ folders: [{ id: "new-id", name: "New" }] }));
+    await createCloudFolder("s3", null, "New");
+    const init = mock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(init.body as string)).toEqual({ parent_id: null, name: "New" });
   });
 });
 

@@ -61,6 +61,9 @@ function navigateInto(entry: StorageBrowseEntry): void {
 }
 
 function navigateUp(): void {
+  // The template also disables the Up button once there's no parent, so
+  // this only ever guards against a stale/synthetic click, never a real one.
+  /* v8 ignore next 3 */
   if (parentPath.value) {
     void loadPath(parentPath.value);
   }

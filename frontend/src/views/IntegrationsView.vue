@@ -21,6 +21,7 @@ import {
   testStorageIntegrations,
   updateStorageIntegrationSettings,
 } from "@/api";
+import CloudFolderBrowserDialog from "@/components/CloudFolderBrowserDialog.vue";
 import EmptyState from "@/components/EmptyState.vue";
 import PageHeader from "@/components/PageHeader.vue";
 
@@ -297,6 +298,35 @@ function connectOAuthProvider(key: "google_drive" | "onedrive"): void {
 
 const helpOpenFor = ref<ProviderKey | null>(null);
 const redirectOrigin = window.location.origin;
+
+// ------------------------------------------------------------ cloud browse
+
+const cloudBrowseFor = ref<ProviderKey | null>(null);
+// Kept separate from cloudBrowseFor (which drives :visible and goes back to
+// null on close) so the dialog's own header/provider don't blank out mid
+// fade-out transition - it only ever changes on open, never on close.
+const cloudBrowseProvider = ref<ProviderKey>("s3");
+// Non-null: cloudBrowseProvider is always one of the three ProviderKey
+// literals and INTEGRATIONS exhaustively covers all three, so find() always
+// succeeds - a ?? fallback here would just be unreachable dead code.
+const cloudBrowseLabel = computed(
+  () => INTEGRATIONS.find((i) => i.key === cloudBrowseProvider.value)!.name,
+);
+
+function openCloudBrowser(key: ProviderKey): void {
+  cloudBrowseFor.value = key;
+  cloudBrowseProvider.value = key;
+}
+
+function onCloudFolderSelected(payload: { id: string; path: string }): void {
+  if (cloudBrowseProvider.value === "s3") {
+    s3Prefix.value = payload.id ? `${payload.id}/` : "";
+  } else if (cloudBrowseProvider.value === "google_drive") {
+    driveFolderId.value = payload.id;
+  } else {
+    onedriveFolderPath.value = payload.path;
+  }
+}
 </script>
 
 <template>
@@ -456,12 +486,26 @@ const redirectOrigin = window.location.origin;
             </label>
             <label class="field">
               <span class="field-label">Key prefix (optional)</span>
-              <InputText
-                v-model="s3Prefix"
-                placeholder="blink-clips/"
-                fluid
-                data-testid="s3-prefix"
-              />
+              <div class="field-with-action">
+                <InputText
+                  v-model="s3Prefix"
+                  placeholder="blink-clips/"
+                  fluid
+                  data-testid="s3-prefix"
+                />
+                <Button
+                  v-tooltip.top="
+                    isConnected('s3') ? 'Browse folders' : 'Save and connect S3 first'
+                  "
+                  icon="pi pi-folder-open"
+                  severity="secondary"
+                  outlined
+                  :disabled="!isConnected('s3')"
+                  aria-label="Browse S3 folders"
+                  data-testid="s3-browse"
+                  @click="openCloudBrowser('s3')"
+                />
+              </div>
             </label>
             <label class="field">
               <span class="field-label">Access key ID</span>
@@ -543,12 +587,28 @@ const redirectOrigin = window.location.origin;
             </label>
             <label class="field">
               <span class="field-label">Folder ID (optional)</span>
-              <InputText
-                v-model="driveFolderId"
-                placeholder="Uploads to My Drive's root if left blank"
-                fluid
-                data-testid="drive-folder-id"
-              />
+              <div class="field-with-action">
+                <InputText
+                  v-model="driveFolderId"
+                  placeholder="Uploads to My Drive's root if left blank"
+                  fluid
+                  data-testid="drive-folder-id"
+                />
+                <Button
+                  v-tooltip.top="
+                    isConnected('google_drive')
+                      ? 'Browse folders'
+                      : 'Connect Google Drive first'
+                  "
+                  icon="pi pi-folder-open"
+                  severity="secondary"
+                  outlined
+                  :disabled="!isConnected('google_drive')"
+                  aria-label="Browse Google Drive folders"
+                  data-testid="drive-browse"
+                  @click="openCloudBrowser('google_drive')"
+                />
+              </div>
             </label>
             <Button
               label="Connect with Google"
@@ -605,12 +665,26 @@ const redirectOrigin = window.location.origin;
             </label>
             <label class="field">
               <span class="field-label">Folder path (optional)</span>
-              <InputText
-                v-model="onedriveFolderPath"
-                placeholder="BlinkClips"
-                fluid
-                data-testid="onedrive-folder-path"
-              />
+              <div class="field-with-action">
+                <InputText
+                  v-model="onedriveFolderPath"
+                  placeholder="BlinkClips"
+                  fluid
+                  data-testid="onedrive-folder-path"
+                />
+                <Button
+                  v-tooltip.top="
+                    isConnected('onedrive') ? 'Browse folders' : 'Connect OneDrive first'
+                  "
+                  icon="pi pi-folder-open"
+                  severity="secondary"
+                  outlined
+                  :disabled="!isConnected('onedrive')"
+                  aria-label="Browse OneDrive folders"
+                  data-testid="onedrive-browse"
+                  @click="openCloudBrowser('onedrive')"
+                />
+              </div>
             </label>
             <Button
               label="Connect with Microsoft"
@@ -710,6 +784,14 @@ const redirectOrigin = window.location.origin;
         <li>Click "Connect with Microsoft" and approve access on Microsoft's own sign-in screen.</li>
       </ol>
     </Dialog>
+
+    <CloudFolderBrowserDialog
+      :visible="cloudBrowseFor !== null"
+      :provider="cloudBrowseProvider"
+      :provider-label="cloudBrowseLabel"
+      @update:visible="cloudBrowseFor = null"
+      @select="onCloudFolderSelected"
+    />
   </section>
 </template>
 
@@ -725,6 +807,16 @@ const redirectOrigin = window.location.origin;
 .search {
   flex: 1;
   min-width: 220px;
+}
+
+.field-with-action {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.field-with-action :deep(.p-inputtext) {
+  flex: 1;
 }
 
 .grid {
