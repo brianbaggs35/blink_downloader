@@ -153,13 +153,19 @@ class _FakeCloudClient:
         created_id: str = "new-1",
         raise_on_list: bool = False,
         raise_on_create: bool = False,
+        raise_on_rename: bool = False,
+        raise_on_delete: bool = False,
     ) -> None:
         self.folders = folders or []
         self.created_id = created_id
         self.raise_on_list = raise_on_list
         self.raise_on_create = raise_on_create
+        self.raise_on_rename = raise_on_rename
+        self.raise_on_delete = raise_on_delete
         self.list_calls: list[str | None] = []
         self.create_calls: list[tuple[str | None, str]] = []
+        self.rename_calls: list[tuple[str, str]] = []
+        self.delete_calls: list[str] = []
 
     async def list_folders(self, parent: str | None = None) -> list[tuple[str, str]]:
         self.list_calls.append(parent)
@@ -172,6 +178,16 @@ class _FakeCloudClient:
         if self.raise_on_create:
             raise CloudStorageError("could not create folder")
         return self.created_id
+
+    async def rename_folder(self, folder_id: str, new_name: str) -> None:
+        self.rename_calls.append((folder_id, new_name))
+        if self.raise_on_rename:
+            raise CloudStorageError("could not rename folder")
+
+    async def delete_folder(self, folder_id: str) -> None:
+        self.delete_calls.append(folder_id)
+        if self.raise_on_delete:
+            raise CloudStorageError("could not delete folder")
 
 
 async def test_browse_requires_admin(viewer_client: AsyncClient) -> None:
@@ -344,6 +360,111 @@ async def test_create_folder_s3_at_the_bucket_root(
     )
     assert response.status_code == 201
     assert fake.create_calls == ["New"]
+
+
+async def test_rename_folder_requires_admin(viewer_client: AsyncClient) -> None:
+    response = await viewer_client.patch(
+        "/api/settings/storage-integrations/google_drive/browse",
+        json={"id": "f1", "new_name": "Renamed"},
+    )
+    assert response.status_code == 403
+
+
+async def test_rename_folder_rejects_an_unrecognized_provider(admin_client: AsyncClient) -> None:
+    response = await admin_client.patch(
+        "/api/settings/storage-integrations/dropbox/browse",
+        json={"id": "f1", "new_name": "Renamed"},
+    )
+    assert response.status_code == 422
+
+
+async def test_rename_folder_when_the_provider_is_not_connected(admin_client: AsyncClient) -> None:
+    response = await admin_client.patch(
+        "/api/settings/storage-integrations/onedrive/browse",
+        json={"id": "f1", "new_name": "Renamed"},
+    )
+    assert response.status_code == 400
+    assert "isn't connected yet" in response.json()["detail"]
+
+
+async def test_rename_folder_rejects_a_blank_new_name(admin_client: AsyncClient) -> None:
+    response = await admin_client.patch(
+        "/api/settings/storage-integrations/onedrive/browse",
+        json={"id": "f1", "new_name": ""},
+    )
+    assert response.status_code == 422
+
+
+async def test_rename_folder_succeeds(
+    monkeypatch: pytest.MonkeyPatch, admin_client: AsyncClient
+) -> None:
+    fake = _FakeCloudClient()
+    monkeypatch.setattr("app.api.integrations.build_google_drive_client", lambda *_a, **_kw: fake)
+    response = await admin_client.patch(
+        "/api/settings/storage-integrations/google_drive/browse",
+        json={"id": "f1", "new_name": "Renamed"},
+    )
+    assert response.status_code == 204
+    assert fake.rename_calls == [("f1", "Renamed")]
+
+
+async def test_rename_folder_wraps_provider_errors(
+    monkeypatch: pytest.MonkeyPatch, admin_client: AsyncClient
+) -> None:
+    fake = _FakeCloudClient(raise_on_rename=True)
+    monkeypatch.setattr("app.api.integrations.build_s3_client", lambda *_a, **_kw: fake)
+    response = await admin_client.patch(
+        "/api/settings/storage-integrations/s3/browse",
+        json={"id": "clips/garage", "new_name": "driveway"},
+    )
+    assert response.status_code == 400
+    assert "could not rename folder" in response.json()["detail"]
+
+
+async def test_delete_folder_requires_admin(viewer_client: AsyncClient) -> None:
+    response = await viewer_client.delete(
+        "/api/settings/storage-integrations/google_drive/browse", params={"folder_id": "f1"}
+    )
+    assert response.status_code == 403
+
+
+async def test_delete_folder_rejects_an_unrecognized_provider(admin_client: AsyncClient) -> None:
+    response = await admin_client.delete(
+        "/api/settings/storage-integrations/dropbox/browse", params={"folder_id": "f1"}
+    )
+    assert response.status_code == 422
+
+
+async def test_delete_folder_when_the_provider_is_not_connected(admin_client: AsyncClient) -> None:
+    response = await admin_client.delete(
+        "/api/settings/storage-integrations/onedrive/browse", params={"folder_id": "f1"}
+    )
+    assert response.status_code == 400
+    assert "isn't connected yet" in response.json()["detail"]
+
+
+async def test_delete_folder_succeeds(
+    monkeypatch: pytest.MonkeyPatch, admin_client: AsyncClient
+) -> None:
+    fake = _FakeCloudClient()
+    monkeypatch.setattr("app.api.integrations.build_onedrive_client", lambda *_a, **_kw: fake)
+    response = await admin_client.delete(
+        "/api/settings/storage-integrations/onedrive/browse", params={"folder_id": "f1"}
+    )
+    assert response.status_code == 204
+    assert fake.delete_calls == ["f1"]
+
+
+async def test_delete_folder_wraps_provider_errors(
+    monkeypatch: pytest.MonkeyPatch, admin_client: AsyncClient
+) -> None:
+    fake = _FakeCloudClient(raise_on_delete=True)
+    monkeypatch.setattr("app.api.integrations.build_s3_client", lambda *_a, **_kw: fake)
+    response = await admin_client.delete(
+        "/api/settings/storage-integrations/s3/browse", params={"folder_id": "clips/garage"}
+    )
+    assert response.status_code == 400
+    assert "could not delete folder" in response.json()["detail"]
 
 
 # ------------------------------------------------------------ google drive

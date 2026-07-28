@@ -31,6 +31,7 @@ from app.settings.schemas import (
     StorageBrowseEntry,
     StorageBrowseResponse,
     StorageCreateFolderRequest,
+    StorageRenameFolderRequest,
     StorageSettingsRead,
     StorageSettingsUpdate,
 )
@@ -126,6 +127,62 @@ async def create_storage_directory(
         )
     logger.info("settings.storage_dir_folder_created", path=str(new_path))
     return await _list_directory(str(new_path))
+
+
+@router.patch("/storage/browse", response_model=StorageBrowseResponse)
+async def rename_storage_directory(
+    payload: StorageRenameFolderRequest,
+    _user: Annotated[object, Depends(current_superuser)],
+) -> StorageBrowseResponse:
+    old_path = Path(payload.path)
+    new_path = old_path.parent / payload.new_name
+
+    def do_rename() -> None:
+        if not old_path.is_dir():
+            msg = f"'{old_path}' does not exist or is not a directory."
+            raise ValueError(msg)
+        if new_path.exists():
+            msg = f"'{new_path}' already exists."
+            raise ValueError(msg)
+        try:
+            old_path.rename(new_path)
+        except OSError as exc:
+            msg = f"Could not rename '{old_path}': {exc}"
+            raise ValueError(msg) from exc
+
+    try:
+        await asyncio.to_thread(do_rename)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    logger.info(
+        "settings.storage_dir_folder_renamed", old_path=str(old_path), new_path=str(new_path)
+    )
+    return await _list_directory(str(old_path.parent))
+
+
+@router.delete("/storage/browse", response_model=StorageBrowseResponse)
+async def delete_storage_directory(
+    _user: Annotated[object, Depends(current_superuser)],
+    path: str,
+) -> StorageBrowseResponse:
+    target = Path(path)
+
+    def do_delete() -> None:
+        if not target.is_dir():
+            msg = f"'{target}' does not exist or is not a directory."
+            raise ValueError(msg)
+        try:
+            target.rmdir()
+        except OSError as exc:
+            msg = f"Could not delete '{target}' - it must be empty first ({exc})."
+            raise ValueError(msg) from exc
+
+    try:
+        await asyncio.to_thread(do_delete)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    logger.info("settings.storage_dir_folder_deleted", path=str(target))
+    return await _list_directory(str(target.parent))
 
 
 def _blink_sync_settings_read(row: AppSettings) -> BlinkSyncSettingsRead:

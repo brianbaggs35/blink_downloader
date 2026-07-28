@@ -233,6 +233,137 @@ async def test_create_folder_rejects_an_unwritable_parent(admin_client: AsyncCli
     assert "Could not create" in response.json()["detail"]
 
 
+# --------------------------------------------------------- rename/delete folder
+
+
+async def test_rename_folder_requires_admin(viewer_client: AsyncClient, tmp_path: Path) -> None:
+    response = await viewer_client.patch(
+        "/api/settings/storage/browse",
+        json={"path": str(tmp_path / "garage"), "new_name": "driveway"},
+    )
+    assert response.status_code == 403
+
+
+async def test_rename_folder_renames_and_returns_the_parents_listing(
+    admin_client: AsyncClient, tmp_path: Path
+) -> None:
+    (tmp_path / "garage").mkdir()
+    response = await admin_client.patch(
+        "/api/settings/storage/browse",
+        json={"path": str(tmp_path / "garage"), "new_name": "driveway"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["path"] == str(tmp_path)
+    names = [entry["name"] for entry in body["directories"]]
+    assert names == ["driveway"]
+    assert not (tmp_path / "garage").exists()
+    assert (tmp_path / "driveway").is_dir()
+
+
+async def test_rename_folder_rejects_a_name_containing_a_path_separator(
+    admin_client: AsyncClient, tmp_path: Path
+) -> None:
+    (tmp_path / "garage").mkdir()
+    response = await admin_client.patch(
+        "/api/settings/storage/browse",
+        json={"path": str(tmp_path / "garage"), "new_name": "../escape"},
+    )
+    assert response.status_code == 422
+
+
+async def test_rename_folder_rejects_a_relative_path(admin_client: AsyncClient) -> None:
+    response = await admin_client.patch(
+        "/api/settings/storage/browse",
+        json={"path": "relative/path", "new_name": "new-name"},
+    )
+    assert response.status_code == 422
+
+
+async def test_rename_folder_rejects_a_nonexistent_source(
+    admin_client: AsyncClient, tmp_path: Path
+) -> None:
+    response = await admin_client.patch(
+        "/api/settings/storage/browse",
+        json={"path": str(tmp_path / "no-such-folder"), "new_name": "new-name"},
+    )
+    assert response.status_code == 400
+    assert "does not exist" in response.json()["detail"]
+
+
+async def test_rename_folder_rejects_a_destination_that_already_exists(
+    admin_client: AsyncClient, tmp_path: Path
+) -> None:
+    (tmp_path / "garage").mkdir()
+    (tmp_path / "driveway").mkdir()
+    response = await admin_client.patch(
+        "/api/settings/storage/browse",
+        json={"path": str(tmp_path / "garage"), "new_name": "driveway"},
+    )
+    assert response.status_code == 400
+    assert "already exists" in response.json()["detail"]
+
+
+async def test_rename_folder_reports_an_os_level_failure(
+    admin_client: AsyncClient, tmp_path: Path
+) -> None:
+    (tmp_path / "garage").mkdir()
+    tmp_path.chmod(0o555)  # read+traverse only - rename() needs write on the parent
+    try:
+        response = await admin_client.patch(
+            "/api/settings/storage/browse",
+            json={"path": str(tmp_path / "garage"), "new_name": "driveway"},
+        )
+        assert response.status_code == 400
+        assert "Could not rename" in response.json()["detail"]
+    finally:
+        tmp_path.chmod(0o755)
+
+
+async def test_delete_folder_requires_admin(viewer_client: AsyncClient, tmp_path: Path) -> None:
+    response = await viewer_client.delete(
+        "/api/settings/storage/browse", params={"path": str(tmp_path / "garage")}
+    )
+    assert response.status_code == 403
+
+
+async def test_delete_folder_deletes_an_empty_folder_and_returns_the_parents_listing(
+    admin_client: AsyncClient, tmp_path: Path
+) -> None:
+    (tmp_path / "garage").mkdir()
+    response = await admin_client.delete(
+        "/api/settings/storage/browse", params={"path": str(tmp_path / "garage")}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["path"] == str(tmp_path)
+    assert body["directories"] == []
+    assert not (tmp_path / "garage").exists()
+
+
+async def test_delete_folder_refuses_a_non_empty_folder(
+    admin_client: AsyncClient, tmp_path: Path
+) -> None:
+    (tmp_path / "garage").mkdir()
+    (tmp_path / "garage" / "clip.mp4").write_text("not actually a clip")
+    response = await admin_client.delete(
+        "/api/settings/storage/browse", params={"path": str(tmp_path / "garage")}
+    )
+    assert response.status_code == 400
+    assert "must be empty" in response.json()["detail"]
+    assert (tmp_path / "garage").exists()
+
+
+async def test_delete_folder_rejects_a_nonexistent_path(
+    admin_client: AsyncClient, tmp_path: Path
+) -> None:
+    response = await admin_client.delete(
+        "/api/settings/storage/browse", params={"path": str(tmp_path / "no-such-folder")}
+    )
+    assert response.status_code == 400
+    assert "does not exist" in response.json()["detail"]
+
+
 # ------------------------------------------------------------- AI settings
 
 
