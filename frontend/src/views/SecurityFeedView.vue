@@ -263,26 +263,26 @@ function lastUpdatedLabel(camera: CameraRead): string {
         <footer class="tile-footer">
           <span class="muted">{{ lastUpdatedLabel(camera) }}</span>
           <div class="tile-actions">
-            <button
+            <Button
               v-if="auth.isAdmin"
-              type="button"
-              class="tile-action"
-              :disabled="snapping[camera.id]"
+              label="Snap"
+              icon="pi pi-camera"
+              text
+              size="small"
+              :loading="snapping[camera.id]"
               :data-testid="`snap-now-${camera.id}`"
               @click="snapNow(camera)"
-            >
-              <i class="pi pi-camera" /> Snap
-            </button>
-            <button
+            />
+            <Button
               v-if="auth.isAdmin"
-              type="button"
-              class="tile-action"
-              :disabled="recording[camera.id]"
+              label="Record"
+              icon="pi pi-video"
+              text
+              size="small"
+              :loading="recording[camera.id]"
               :data-testid="`record-now-${camera.id}`"
               @click="recordClipNow(camera)"
-            >
-              <i class="pi pi-video" /> Record
-            </button>
+            />
           </div>
         </footer>
       </article>
@@ -386,31 +386,5 @@ function lastUpdatedLabel(camera: CameraRead): string {
 .tile-actions {
   display: flex;
   gap: 10px;
-}
-
-.tile-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: none;
-  background: none;
-  padding: 2px 0;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--p-primary-600);
-  cursor: pointer;
-}
-
-.blink-dark .tile-action {
-  color: var(--p-primary-300);
-}
-
-.tile-action:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-.tile-action:hover:not(:disabled) {
-  text-decoration: underline;
 }
 </style>

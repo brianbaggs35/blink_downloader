@@ -193,24 +193,26 @@ async function save(): Promise<void> {
             />
             <span class="camera-name">{{ camera.name }}</span>
             <div class="order-buttons">
-              <button
-                type="button"
-                class="order-button"
+              <Button
+                icon="pi pi-arrow-up"
+                text
+                rounded
+                size="small"
                 :disabled="index === 0"
+                aria-label="Move up"
                 :data-testid="`move-up-${camera.id}`"
                 @click="moveUp(index)"
-              >
-                <i class="pi pi-arrow-up" />
-              </button>
-              <button
-                type="button"
-                class="order-button"
+              />
+              <Button
+                icon="pi pi-arrow-down"
+                text
+                rounded
+                size="small"
                 :disabled="index === selectedCameras.length - 1"
+                aria-label="Move down"
                 :data-testid="`move-down-${camera.id}`"
                 @click="moveDown(index)"
-              >
-                <i class="pi pi-arrow-down" />
-              </button>
+              />
             </div>
           </li>
         </ul>
@@ -377,31 +379,6 @@ async function save(): Promise<void> {
 .order-buttons {
   display: flex;
   gap: 4px;
-}
-
-.order-button {
-  border: none;
-  background: none;
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
-  color: var(--p-surface-500);
-  cursor: pointer;
-}
-
-.order-button:hover:not(:disabled) {
-  background: var(--p-surface-200);
-  color: var(--p-surface-900);
-}
-
-.blink-dark .order-button:hover:not(:disabled) {
-  background: var(--p-surface-700);
-  color: var(--p-surface-0);
-}
-
-.order-button:disabled {
-  opacity: 0.35;
-  cursor: default;
 }
 
 .field {

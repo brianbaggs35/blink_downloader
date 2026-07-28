@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Button from "primevue/button";
 import Message from "primevue/message";
 import Skeleton from "primevue/skeleton";
 import Tag from "primevue/tag";
@@ -175,15 +176,14 @@ function contextChanged(camera: CameraRead): boolean {
           v-if="contextChanged(camera)"
           class="panel-actions"
         >
-          <button
-            type="button"
-            class="save-link"
-            :disabled="savingContext[camera.id]"
+          <Button
+            label="Save context"
+            text
+            size="small"
+            :loading="savingContext[camera.id]"
             :data-testid="`camera-context-save-${camera.id}`"
             @click="saveContext(camera)"
-          >
-            {{ savingContext[camera.id] ? "Saving…" : "Save context" }}
-          </button>
+          />
         </div>
       </article>
     </div>
@@ -289,28 +289,5 @@ function contextChanged(camera: CameraRead): boolean {
 .panel-actions {
   display: flex;
   justify-content: flex-end;
-}
-
-.save-link {
-  border: none;
-  background: none;
-  padding: 4px 0;
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--p-primary-600);
-  cursor: pointer;
-}
-
-.blink-dark .save-link {
-  color: var(--p-primary-300);
-}
-
-.save-link:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-.save-link:hover:not(:disabled) {
-  text-decoration: underline;
 }
 </style>
