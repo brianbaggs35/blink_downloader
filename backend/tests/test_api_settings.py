@@ -66,6 +66,144 @@ async def test_unwritable_path_rejected(admin_client: AsyncClient) -> None:
     assert "not exist or is not writable" in response.json()["detail"]
 
 
+# ------------------------------------------------------------- storage browse
+
+
+async def test_browse_requires_authentication(client: AsyncClient) -> None:
+    response = await client.get("/api/settings/storage/browse")
+    assert response.status_code == 401
+
+
+async def test_browse_requires_admin(viewer_client: AsyncClient) -> None:
+    response = await viewer_client.get("/api/settings/storage/browse")
+    assert response.status_code == 403
+
+
+async def test_browse_lists_subdirectories_sorted_and_excludes_hidden(
+    admin_client: AsyncClient, tmp_path: object
+) -> None:
+    base = tmp_path  # type: ignore[assignment]
+    (base / "garage").mkdir()  # type: ignore[attr-defined]
+    (base / "Attic").mkdir()  # type: ignore[attr-defined]
+    (base / ".hidden").mkdir()  # type: ignore[attr-defined]
+    (base / "a-file.txt").write_text("not a directory")  # type: ignore[attr-defined]
+
+    response = await admin_client.get("/api/settings/storage/browse", params={"path": str(base)})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["path"] == str(base)
+    assert body["parent_path"] == str(base.parent)  # type: ignore[attr-defined]
+    names = [entry["name"] for entry in body["directories"]]
+    assert names == ["Attic", "garage"]
+
+
+async def test_browse_defaults_to_the_current_storage_directory(
+    admin_client: AsyncClient, tmp_path: object
+) -> None:
+    await admin_client.patch("/api/settings/storage", json={"storage_dir": str(tmp_path)})
+    response = await admin_client.get("/api/settings/storage/browse")
+    assert response.status_code == 200
+    assert response.json()["path"] == str(tmp_path)
+
+
+async def test_browse_root_has_no_parent(admin_client: AsyncClient) -> None:
+    response = await admin_client.get("/api/settings/storage/browse", params={"path": "/"})
+    assert response.status_code == 200
+    assert response.json()["parent_path"] is None
+
+
+async def test_browse_rejects_a_nonexistent_path(admin_client: AsyncClient) -> None:
+    response = await admin_client.get(
+        "/api/settings/storage/browse", params={"path": "/no/such/path/here"}
+    )
+    assert response.status_code == 400
+    assert "does not exist" in response.json()["detail"]
+
+
+async def test_browse_rejects_a_file_path(admin_client: AsyncClient, tmp_path: object) -> None:
+    a_file = tmp_path / "not-a-dir.txt"  # type: ignore[operator]
+    a_file.write_text("hello")
+    response = await admin_client.get("/api/settings/storage/browse", params={"path": str(a_file)})
+    assert response.status_code == 400
+
+
+async def test_browse_rejects_a_relative_path(admin_client: AsyncClient) -> None:
+    response = await admin_client.get(
+        "/api/settings/storage/browse", params={"path": "relative/path"}
+    )
+    assert response.status_code == 400
+    assert "not an absolute path" in response.json()["detail"]
+
+
+async def test_browse_rejects_an_unreadable_directory(
+    admin_client: AsyncClient, tmp_path: object
+) -> None:
+    unreadable = tmp_path / "locked"  # type: ignore[operator]
+    unreadable.mkdir()
+    unreadable.chmod(0o000)
+    try:
+        response = await admin_client.get(
+            "/api/settings/storage/browse", params={"path": str(unreadable)}
+        )
+        assert response.status_code == 400
+        assert "No permission" in response.json()["detail"]
+    finally:
+        unreadable.chmod(0o755)
+
+
+async def test_create_folder_requires_admin(viewer_client: AsyncClient, tmp_path: object) -> None:
+    response = await viewer_client.post(
+        "/api/settings/storage/browse",
+        json={"parent_path": str(tmp_path), "name": "new-folder"},
+    )
+    assert response.status_code == 403
+
+
+async def test_create_folder_creates_and_returns_its_own_listing(
+    admin_client: AsyncClient, tmp_path: object
+) -> None:
+    response = await admin_client.post(
+        "/api/settings/storage/browse",
+        json={"parent_path": str(tmp_path), "name": "by-camera"},
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["path"] == str(tmp_path) + "/by-camera"  # type: ignore[operator]
+    assert body["directories"] == []
+
+    followup = await admin_client.get(
+        "/api/settings/storage/browse", params={"path": str(tmp_path)}
+    )
+    assert [entry["name"] for entry in followup.json()["directories"]] == ["by-camera"]
+
+
+async def test_create_folder_rejects_a_name_containing_a_path_separator(
+    admin_client: AsyncClient, tmp_path: object
+) -> None:
+    response = await admin_client.post(
+        "/api/settings/storage/browse",
+        json={"parent_path": str(tmp_path), "name": "../escape"},
+    )
+    assert response.status_code == 422
+
+
+async def test_create_folder_rejects_a_relative_parent_path(admin_client: AsyncClient) -> None:
+    response = await admin_client.post(
+        "/api/settings/storage/browse",
+        json={"parent_path": "relative/path", "name": "new-folder"},
+    )
+    assert response.status_code == 422
+
+
+async def test_create_folder_rejects_an_unwritable_parent(admin_client: AsyncClient) -> None:
+    response = await admin_client.post(
+        "/api/settings/storage/browse",
+        json={"parent_path": "/proc/blink-cannot-write-here", "name": "new-folder"},
+    )
+    assert response.status_code == 400
+    assert "Could not create" in response.json()["detail"]
+
+
 # ------------------------------------------------------------- AI settings
 
 
