@@ -10,18 +10,24 @@ test("every primary nav destination actually navigates there", async ({ page }) 
     ["Status", "Status"],
     ["Live View", "Live View"],
     ["Storage", "Storage"],
-    ["Integrations", "Integrations"],
+    ["Connect", "Integrations"],
     ["AI", /^AI$/],
     ["AI Usage", "AI Usage"],
     ["Vehicles", "Vehicles"],
     ["Biometrics", "Biometrics"],
-    ["Settings", "Settings"],
   ];
   const nav = page.getByRole("navigation", { name: "Primary" });
   for (const [linkName, heading] of destinations) {
     await nav.getByRole("link", { name: linkName, exact: true }).click();
     await expect(page.getByRole("heading", { name: heading, exact: true }).first()).toBeVisible();
   }
+
+  // Settings is an accordion, not a plain link - expand it, then follow one
+  // of its sections in.
+  await page.getByTestId("settings-accordion-trigger").click();
+  await nav.getByRole("link", { name: "General", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+
   await nav.getByRole("link", { name: "Library", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Library", exact: true })).toBeVisible();
 });

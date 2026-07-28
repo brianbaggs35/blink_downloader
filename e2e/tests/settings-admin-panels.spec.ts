@@ -1,4 +1,4 @@
-import { expect, seededCameras, test } from "../fixtures";
+import { expect, openSettingsSection, seededCameras, test } from "../fixtures";
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/settings");
@@ -6,7 +6,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("Cameras panel toggles a camera and saves its security context", async ({ page }) => {
-  await page.getByRole("tab", { name: "Cameras" }).click();
+  await openSettingsSection(page, "Cameras");
   await expect(page.getByTestId("camera-list")).toBeVisible();
   const backyardRow = page.locator('[data-testid^="camera-row-"]', { hasText: seededCameras.backyard });
   await expect(backyardRow).toBeVisible();
@@ -23,7 +23,7 @@ test("Cameras panel toggles a camera and saves its security context", async ({ p
 });
 
 test("Users panel invites a new viewer", async ({ page }) => {
-  await page.getByRole("tab", { name: "Users" }).click();
+  await openSettingsSection(page, "Users");
   await expect(page.getByTestId("user-list")).toBeVisible();
   await page.getByTestId("open-invite").click();
   await expect(page.getByTestId("invite-modal")).toBeVisible();
@@ -39,7 +39,7 @@ test("Users panel invites a new viewer", async ({ page }) => {
 });
 
 test("AI Provider panel toggles analysis on and picks a tier-1 provider", async ({ page }) => {
-  await page.getByRole("tab", { name: "AI Provider" }).click();
+  await openSettingsSection(page, "AI Provider");
   await expect(page.getByTestId("ai-provider-form")).toBeVisible();
 
   await page.getByTestId("tier1-provider").click();
@@ -49,7 +49,7 @@ test("AI Provider panel toggles analysis on and picks a tier-1 provider", async 
 });
 
 test("Alerts panel enables Discord and saves a webhook URL", async ({ page }) => {
-  await page.getByRole("tab", { name: "Alerts" }).click();
+  await openSettingsSection(page, "Alerts");
   await expect(page.getByTestId("alerts-form")).toBeVisible();
 
   // Persistent database, not reseeded between runs - a prior successful run
@@ -65,7 +65,7 @@ test("Alerts panel enables Discord and saves a webhook URL", async ({ page }) =>
 test("Archived panel warns when the selected destination isn't connected yet, and links to Integrations", async ({
   page,
 }) => {
-  await page.getByRole("tab", { name: "Archived" }).click();
+  await openSettingsSection(page, "Archived");
   await expect(page.getByTestId("auto-archive-backend")).toBeVisible();
 
   await page.getByTestId("auto-archive-backend").click();
@@ -77,7 +77,7 @@ test("Archived panel warns when the selected destination isn't connected yet, an
 });
 
 test("Vehicles panel lists the seeded cameras to protect", async ({ page }) => {
-  await page.getByRole("tab", { name: "Vehicles" }).click();
+  await openSettingsSection(page, "Vehicles");
   const frontDoorCard = page.locator('[data-testid^="vehicle-card-"]', {
     hasText: seededCameras.frontDoor,
   });
@@ -87,7 +87,7 @@ test("Vehicles panel lists the seeded cameras to protect", async ({ page }) => {
 test("Vehicles panel: draw a freeform outline on the reference frame, redraw it, and clear it", async ({
   page,
 }) => {
-  await page.getByRole("tab", { name: "Vehicles" }).click();
+  await openSettingsSection(page, "Vehicles");
   const card = page.locator('[data-testid^="vehicle-card-"]', {
     hasText: seededCameras.frontDoor,
   });

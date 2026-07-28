@@ -30,13 +30,22 @@ test("toggles never-mark-suspicious for the seeded person", async ({ page }) => 
   const toggle = page.getByTestId("never-mark-suspicious-toggle").locator("input");
   await toggle.check();
   await expect(toggle).toBeChecked();
+  // The checked state above is v-model's own optimistic UI update, not
+  // proof the PATCH actually landed - the toggle also disables itself for
+  // the duration of that request (PersonDetailPanel.vue's
+  // savingNeverMarkSuspicious), so waiting for it to re-enable is what
+  // actually guarantees the list view (fetched fresh after navigating back)
+  // reflects the change, rather than racing it.
+  await expect(toggle).toBeEnabled();
 
   await page.getByTestId("back-to-people").click();
   await expect(page.getByTestId("trusted-icon")).toBeVisible();
 
   // Leave it as found for any other test that reuses this seeded person.
   await page.getByText(seededPerson.name).click();
-  await page.getByTestId("never-mark-suspicious-toggle").locator("input").uncheck();
+  const cleanupToggle = page.getByTestId("never-mark-suspicious-toggle").locator("input");
+  await cleanupToggle.uncheck();
+  await expect(cleanupToggle).toBeEnabled();
 });
 
 test("opens the add-person dialog", async ({ page }) => {
