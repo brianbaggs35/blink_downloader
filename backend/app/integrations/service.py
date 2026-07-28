@@ -61,6 +61,7 @@ async def update_storage_integration_settings(
     row.onedrive_folder_path = payload.onedrive_folder_path
 
     row.auto_archive_backend = payload.auto_archive_backend
+    row.auto_archive_after_days = payload.auto_archive_after_days
 
     await session.commit()
     await session.refresh(row)

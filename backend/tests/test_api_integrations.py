@@ -43,6 +43,7 @@ async def test_get_defaults(admin_client: AsyncClient) -> None:
     assert body["google_drive_connected"] is False
     assert body["onedrive_connected"] is False
     assert body["auto_archive_backend"] == "local"
+    assert body["auto_archive_after_days"] == 0
 
 
 async def test_put_requires_admin(viewer_client: AsyncClient) -> None:
@@ -56,6 +57,24 @@ async def test_put_sets_the_auto_archive_backend(admin_client: AsyncClient) -> N
     )
     assert response.status_code == 200
     assert response.json()["auto_archive_backend"] == "onedrive"
+
+
+async def test_put_sets_the_auto_archive_delay(admin_client: AsyncClient) -> None:
+    response = await admin_client.put(
+        "/api/settings/storage-integrations", json={"auto_archive_after_days": 14}
+    )
+    assert response.status_code == 200
+    assert response.json()["auto_archive_after_days"] == 14
+
+
+@pytest.mark.parametrize("value", [-1, 366])
+async def test_put_rejects_an_out_of_range_auto_archive_delay(
+    admin_client: AsyncClient, value: int
+) -> None:
+    response = await admin_client.put(
+        "/api/settings/storage-integrations", json={"auto_archive_after_days": value}
+    )
+    assert response.status_code == 422
 
 
 async def test_put_updates_and_never_echoes_secrets(admin_client: AsyncClient) -> None:

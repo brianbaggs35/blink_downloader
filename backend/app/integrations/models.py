@@ -8,7 +8,7 @@ as :class:`app.alerts.models.AlertSettings`.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Text, func
+from sqlalchemy import Boolean, DateTime, Integer, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -63,6 +63,11 @@ class StorageIntegrationSettings(Base):
         default=StorageBackend.LOCAL,
         server_default=StorageBackend.LOCAL.name,
     )
+    # 0 (the default) preserves today's behavior: archive immediately once a
+    # clip is done with local disk. A positive value defers the archive job
+    # by that many days instead, so a clip stays browsable locally for a
+    # while before moving off to auto_archive_backend.
+    auto_archive_after_days: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     # CSRF state for whichever OAuth flow (if any) is currently in progress -
     # a single household admin only ever has one flow in flight at a time,
