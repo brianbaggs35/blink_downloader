@@ -16,8 +16,9 @@ Built on [blinkpy](https://github.com/fronzbot/blinkpy) for Blink API access;
 everything else — accounts, storage, AI, biometrics, events, alerts,
 dashboards — is this application. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 for the overall design, [docs/BIOMETRICS.md](docs/BIOMETRICS.md) for facial
-recognition specifically, and [docs/ROADMAP.md](docs/ROADMAP.md) for what
-lands next.
+recognition specifically, [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md) for
+every `.env` variable, and [docs/ROADMAP.md](docs/ROADMAP.md) for what lands
+next.
 
 ## Facial recognition, and why it never phones home
 
@@ -86,11 +87,19 @@ Requirements: Docker with the compose plugin (Linux, macOS, or Windows;
 Ubuntu Server is a fully supported target).
 
 ```bash
-make secrets        # generates values — paste them into .env
-cp .env.example .env
-make prod           # builds and starts everything: nginx, API, worker,
-                     # Postgres/pgvector, Redis — with HTTPS on :443
+cp .env.example .env   # creates .env from the template - secrets start blank
+make secrets            # prints 4 freshly-generated secret values; paste each
+                         # into the matching .env line it just created
+make prod                # builds and starts everything: nginx, API, worker,
+                          # Postgres/pgvector, Redis — with HTTPS on :443
 ```
+
+The two commands above do different, independent things: `cp` creates the
+file with the right variable names (some already have safe non-secret
+defaults, like the ports below); `make secrets` only *prints* values to your
+terminal — it never writes to `.env` for you — for `BLINK_SECRET_KEY`,
+`BLINK_ENCRYPTION_KEY`, `POSTGRES_PASSWORD`, and `REDIS_PASSWORD`, which you
+then paste in by hand.
 
 First visit walks you through a short setup wizard: create your own admin
 email/password (12 characters minimum — **there is no default username or
@@ -109,8 +118,11 @@ number anywhere. TLS uses a generated self-signed certificate in
 kept readable by the container: `chmod 644 docker/certs/*.pem`).
 
 Production containers run non-root, with a read-only root filesystem,
-`cap_drop: ALL`, and `no-new-privileges` — see
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#security-model) for the full
+`cap_drop: ALL`, and `no-new-privileges`. Clips and biometrics models still
+persist fine: `clips`/`insightface` are separate, explicitly writable named
+Docker volumes, unaffected by the root filesystem's read-only setting — only
+`/tmp` (tmpfs) and those two volumes are writable anywhere in the container.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#security-model) for the full
 security model.
 
 ## Development
@@ -127,16 +139,19 @@ the multi-stage builds are laid out.
 ## Testing & linting
 
 ```bash
-make test           # backend (pytest, 100% coverage gate) + frontend (vitest)
+make test           # backend (pytest) + frontend (vitest), both coverage-gated
 make e2e             # build, seed, and run Playwright end to end, one command
+make e2e-coverage    # same, plus a frontend coverage report (e2e/coverage/)
 make e2e-up          # just bring up the seeded e2e stack and leave it running
 make e2e-test        # run Playwright again against an already-running e2e-up stack
-make lint            # ruff · pyright · bandit · eslint · vue-tsc · hadolint
+make lint            # ruff · pyright · bandit (backend) + eslint · vue-tsc (frontend/e2e)
 ```
 
 `make help` lists every command — one entry point each for production,
-development, and testing, all built on the same images. More detail in
-[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+development, and testing, all built on the same images. Coverage gates sit at
+90% (a floor, not a target — both suites hold ~100% in practice); e2e's
+coverage report has no enforced threshold. More detail, including the full
+command reference, in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ## License
 
