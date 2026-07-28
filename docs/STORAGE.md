@@ -1,9 +1,27 @@
 # Storage: local disk, cloud archiving, and integrations
 
-Clips always download to local disk first (`Settings > General > Storage`,
-`/api/settings/storage`) — that part is unconditional and always was. This
-document covers what's optional on top of it: archiving a clip's video to a
-cloud provider, and the Integrations page that connects one.
+Clips always download to local disk first — that part is unconditional and
+always was. This document covers what's optional on top of it: archiving a
+clip's video to a cloud provider, and the pages involved in setting that up.
+
+## Where things live
+
+Three different places in the UI cooperate here, each with one job:
+
+- **Integrations → Connect** (left nav) — connect a cloud provider: enable
+  it, enter credentials, test the connection. Nothing about *where* clips
+  go lives here.
+- **Storage** tab (left nav) — where clips actually go. Shows usage per
+  backend (with a quota gauge for local disk, if you've set one), and a live
+  folder browser for local disk and each *connected* cloud provider — create,
+  rename, and delete folders, and pick which one new archives upload into.
+  A cloud provider only appears as a folder-pickable option here once it's
+  actually connected on the Integrations page.
+- **Settings > Storage** (`/api/settings/storage`,
+  `/api/settings/storage-integrations`) — the local disk folder (read-only
+  here; change it from the Storage tab), an optional local disk quota, and
+  the archive policy: which backend new downloads move to, and how long to
+  keep them on local disk first.
 
 ## Scope: clip video only
 
@@ -33,15 +51,32 @@ wasted space, not a correctness problem.
 
 ### Auto-archiving new downloads
 
-`Settings > Archived` has a single setting: where a newly-downloaded clip
-should end up. Left at "local disk" (the default), nothing changes. Pointed
-at a cloud provider, every clip is archived automatically right after it
-finishes AI analysis — the video stays on local disk for exactly as long as
-analysis needs to read it (keyframe extraction happens against the local
-file), then gets archived the same way a manual archive action would. If
-automatic analysis is turned off entirely, archiving happens immediately
-after download instead, since no analysis step exists to trigger it
-afterward.
+`Settings > Storage` has two settings that together decide what happens to
+a newly-downloaded clip: which backend it should end up on, and how long to
+leave it on local disk first.
+
+Left at "local disk" (the default), nothing changes — clips just stay put.
+Pointed at a cloud provider (only offered once that provider is actually
+connected), a clip becomes eligible for archiving right after it finishes AI
+analysis — the video stays on local disk for exactly as long as analysis
+needs to read it (keyframe extraction happens against the local file). If
+automatic analysis is turned off entirely, a clip becomes eligible
+immediately after download instead, since no analysis step exists to
+trigger it afterward.
+
+"Days to keep clips locally first" then decides *when* that eligible clip
+actually moves: `0` (the default) archives it right away, the same way a
+manual archive action would; a positive number instead defers the move by
+that many days (enqueued as a delayed background job), so a clip stays
+readily available on local disk for a while before it's pushed off to
+cloud storage.
+
+### Local disk quota
+
+An optional soft budget (`Settings > Storage`, GB) shown as a usage gauge on
+the Storage tab's local disk card — purely informational. Nothing is
+deleted, blocked, or auto-archived because you're over it; it's there so you
+can see at a glance how close you are, not to enforce a limit.
 
 ## Download links: the same trust model, two different mechanisms
 
@@ -69,58 +104,25 @@ the one clip they were minted for).
 ## Connecting a provider
 
 All three providers are configured from the **Integrations** page (left
-nav, under "Archive"). Search and category-filter across integrations
-there; click a card's "Configure" to expand its settings form inline.
+nav): search and category-filter across integrations there, then click a
+card's "Configure" to expand its settings form inline — credentials only,
+plus a per-provider **Test connection** button and a link to the Storage tab
+for picking a folder once you're connected. Each provider also has a
+dedicated setup guide, since account creation, least-privilege scopes, and
+provider-specific gotchas (OAuth consent screen quirks, secret rotation,
+IAM policies) are enough detail to warrant their own document:
 
-### Amazon S3
+- [docs/S3.md](S3.md) — Amazon S3 (static access keys, no OAuth)
+- [docs/GOOGLE_DRIVE.md](GOOGLE_DRIVE.md) — Google Drive (OAuth)
+- [docs/ONEDRIVE.md](ONEDRIVE.md) — Microsoft OneDrive (OAuth)
 
-1. In the AWS Console, create an S3 bucket (any region) to hold archived
-   clips.
-2. Create an IAM user (or role) with a policy granting `s3:PutObject`,
-   `s3:GetObject`, and `s3:DeleteObject` on that bucket. Nothing broader is
-   needed.
-3. Generate an access key for that user.
-4. On the Integrations page, enable S3 and enter the bucket name, region,
-   access key ID, and secret access key, then save. An optional key prefix
-   keeps a shared bucket's clips under e.g. `blink-clips/` instead of the
-   bucket root.
-
-S3 credentials are static (no OAuth dance) — "Save" is the whole connect
-flow. Use "Test all connections" on the Integrations page to confirm the
-bucket is reachable before relying on it.
-
-### Google Drive
-
-1. In the [Google Cloud Console](https://console.cloud.google.com/apis/credentials),
-   create an OAuth 2.0 Client ID of type "Web application".
-2. Add this exact redirect URI to the client (the Integrations page's help
-   dialog shows this with your actual server's hostname filled in):
-   `https://<your-server>/api/settings/storage-integrations/google-drive/oauth/callback`
-3. Enter the Client ID and Client Secret on the Integrations page and save.
-4. Click "Connect with Google" and approve access on Google's own
-   sign-in/consent screen. You'll be redirected back once the connection
-   completes.
-5. An optional Drive folder ID scopes uploads to a specific folder instead
-   of Drive's root.
-
-If you ever need to re-authorize from scratch, revoke the app's access at
-<https://myaccount.google.com/permissions> first — Google only returns a
-refresh token on a consent screen it considers "fresh."
-
-### Microsoft OneDrive
-
-1. In the [Microsoft Entra admin center](https://entra.microsoft.com),
-   register a new application.
-2. Add this exact redirect URI (platform: Web):
-   `https://<your-server>/api/settings/storage-integrations/onedrive/oauth/callback`
-3. Under API permissions, add the delegated `Files.ReadWrite` Microsoft
-   Graph permission.
-4. Create a client secret. Enter the Application (client) ID and the
-   secret's value (not its ID) on the Integrations page and save.
-5. Click "Connect with Microsoft" and approve access on Microsoft's own
-   sign-in screen.
-6. An optional folder path (default `BlinkClips`) scopes uploads to a
-   specific OneDrive folder.
+S3's credentials are static — "Save" is the whole connect flow. Google
+Drive and OneDrive both need an OAuth consent step ("Connect with Google" /
+"Connect with Microsoft") after saving credentials, redirecting to the
+provider's own sign-in screen and back. Either way, once a card shows
+**Connected**, head to the **Storage** tab to pick where its clips actually
+go — the folder browser there can create, rename, and delete folders on
+whichever backend you're browsing, local disk included.
 
 ## Implementation notes
 
