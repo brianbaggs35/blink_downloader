@@ -84,7 +84,7 @@ test("Vehicles panel lists the seeded cameras to protect", async ({ page }) => {
   await expect(frontDoorCard).toBeVisible();
 });
 
-test("Vehicles panel: draw, drag, and clear an outline on the reference frame", async ({
+test("Vehicles panel: draw a freeform outline on the reference frame, redraw it, and clear it", async ({
   page,
 }) => {
   await page.getByRole("tab", { name: "Vehicles" }).click();
@@ -116,47 +116,46 @@ test("Vehicles panel: draw, drag, and clear an outline on the reference frame", 
 
   const svg = card.locator('[data-testid^="outline-svg-"]');
   await expect(svg).toBeVisible();
-  const points = card.locator('[data-testid^="outline-point-"]');
+  const polygon = svg.locator("polygon");
 
-  // Clear whatever points a prior run may have left drawn (but not saved).
+  // Clear whatever outline a prior run may have left drawn (but not saved).
   const clearButton = card.locator('[data-testid^="clear-points-"]');
-  // Same reason: whether points are already drawn depends on prior runs.
+  // Same reason as above: whether one's already drawn depends on prior runs.
   // eslint-disable-next-line playwright/no-conditional-in-test
   if (await clearButton.isEnabled()) {
     await clearButton.click();
   }
   // Confirmed empty (not just "clear was clicked") before drawing anything
   // new - a retry of this same test reuses the same server-side vehicle
-  // row, and asserting the count here (rather than assuming the click
-  // above was synchronous and sufficient) is what actually guarantees the
-  // three clicks below start from zero.
-  await expect(points).toHaveCount(0);
+  // row, and asserting this here (rather than assuming the click above was
+  // synchronous and sufficient) is what actually guarantees the draw below
+  // starts from a clean slate.
+  await expect(polygon).toHaveCount(0);
 
+  // hover({ position }) rather than page.mouse.move(absoluteX, absoluteY):
+  // the reference frame can be taller than the viewport, and mouse.move's
+  // coordinates are absolute page coordinates with no auto-scroll, so a
+  // point past the fold would silently land nowhere. hover() scrolls its
+  // target into view first and position is relative to the (post-scroll)
+  // element itself - same reasoning as locator.click({ position }) below.
   const box = (await svg.boundingBox())!;
-  // locator.click({ position }) rather than page.mouse.click(absoluteX,
-  // absoluteY): the reference frame can be taller than the viewport, and
-  // mouse.click's coordinates are absolute page coordinates with no
-  // auto-scroll, so a point past the fold (like the 80%-down third one)
-  // silently landed nowhere. locator.click scrolls its target into view
-  // first and position is relative to the (post-scroll) element itself.
-  await svg.click({ position: { x: box.width * 0.2, y: box.height * 0.2 } });
-  await expect(points).toHaveCount(1);
-  await svg.click({ position: { x: box.width * 0.8, y: box.height * 0.2 } });
-  await expect(points).toHaveCount(2);
-  await svg.click({ position: { x: box.width * 0.5, y: box.height * 0.8 } });
-  await expect(points).toHaveCount(3);
-
-  const firstPoint = points.first();
-  const beforeCx = await firstPoint.getAttribute("cx");
-  await firstPoint.hover();
+  await svg.hover({ position: { x: box.width * 0.2, y: box.height * 0.2 } });
   await page.mouse.down();
-  await svg.hover({ position: { x: box.width * 0.35, y: box.height * 0.35 } });
+  await svg.hover({ position: { x: box.width * 0.8, y: box.height * 0.2 } });
+  await svg.hover({ position: { x: box.width * 0.5, y: box.height * 0.8 } });
   await page.mouse.up();
 
-  // Dragging repositions the point rather than removing it.
-  await expect(points).toHaveCount(3);
-  await expect(firstPoint).not.toHaveAttribute("cx", beforeCx ?? "");
+  await expect(polygon).toHaveCount(1);
+  const firstOutline = await polygon.getAttribute("points");
+
+  // Drawing a second stroke replaces the first outline entirely, the same
+  // way a lasso tool's next drag replaces its previous selection.
+  await svg.hover({ position: { x: box.width * 0.3, y: box.height * 0.3 } });
+  await page.mouse.down();
+  await svg.hover({ position: { x: box.width * 0.7, y: box.height * 0.7 } });
+  await page.mouse.up();
+  await expect(polygon).not.toHaveAttribute("points", firstOutline ?? "");
 
   await clearButton.click();
-  await expect(points).toHaveCount(0);
+  await expect(polygon).toHaveCount(0);
 });
