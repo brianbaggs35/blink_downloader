@@ -60,6 +60,13 @@ beforeEach(() => {
   mockedBlinkStatus.mockResolvedValue(linkedStatus());
   mockedListCameras.mockResolvedValue([cameraA, cameraB]);
   mockedSettings.mockResolvedValue({ camera_ids: [], columns: 2, refresh_interval_seconds: 20 });
+  // snapNow() creates a real Image() and calls .decode() on it to force a
+  // fresh load before flipping the tile - happy-dom's real decode() attempts
+  // an actual network fetch for the (relative, test-fixture) src, which
+  // fails with a real ECONNREFUSED against its default localhost:3000
+  // origin. Stub it to resolve immediately by default; the "fails to
+  // decode" test below overrides this with a one-time rejection.
+  vi.spyOn(HTMLImageElement.prototype, "decode").mockResolvedValue(undefined);
 });
 
 async function mountView(isAdmin = true) {
