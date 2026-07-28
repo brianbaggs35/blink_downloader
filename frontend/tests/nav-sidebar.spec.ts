@@ -64,7 +64,9 @@ describe("NavSidebar", () => {
 
     const drawer = document.body.querySelector('[data-testid="mobile-nav-drawer"]');
     expect(drawer).toBeTruthy();
-    expect(drawer!.querySelectorAll(".nav-item").length).toBe(11);
+    // Ten top-level links plus the Settings accordion trigger - its nested
+    // sections also carry .nav-item but stay hidden (v-show) until expanded.
+    expect(drawer!.querySelectorAll(".nav-item:not(.nav-subitem)").length).toBe(11);
     expect(drawer!.textContent).toContain(`v${__APP_VERSION__}`);
     useMobileNav().close();
   });

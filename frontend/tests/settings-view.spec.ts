@@ -421,36 +421,10 @@ describe("SettingsView blink sync", () => {
 });
 
 describe("SettingsView tabs", () => {
-  it("shows only the General tab for a non-admin", async () => {
-    const pinia = makePinia();
-    useAuthStore().user = { ...fakeUser, is_superuser: false, timezone: "UTC" };
-    const wrapper = mount(SettingsView, {
-      global: { ...mountGlobal(pinia, makeRouter()), stubs: settingsTabStubs },
-    });
-    await flushPromises();
-    const items = wrapper.findAll('[data-testid^="settings-nav-"]');
-    expect(items.map((i) => i.text())).toEqual(["General", "About"]);
-  });
-
-  it("shows every admin section for a superuser, with About last", async () => {
-    const wrapper = mountSettings();
-    await flushPromises();
-    const items = wrapper.findAll('[data-testid^="settings-nav-"]');
-    expect(items.map((i) => i.text())).toEqual([
-      "General",
-      "Users",
-      "AI Provider",
-      "Biometrics",
-      "Cameras",
-      "Vehicles",
-      "Alerts",
-      "Live View",
-      "Security Feed",
-      "Archived",
-      "About",
-    ]);
-  });
-
+  // Section navigation itself now lives in NavLinks.vue's Settings accordion
+  // (see nav-links.spec.ts) - SettingsView.vue's own job is just rendering
+  // whichever section the ?tab= query names, so these drive it the same way
+  // a real accordion click would: by navigating the route.
   it.each([
     ["users", "stub-users"],
     ["ai", "stub-ai"],
@@ -460,83 +434,17 @@ describe("SettingsView tabs", () => {
     ["alerts", "stub-alerts"],
     ["archived", "stub-archived"],
     ["about", "stub-about"],
-  ])("opens the %s section and mounts its panel, unmounting General", async (value, testId) => {
-    const wrapper = mountSettings();
-    await flushPromises();
-    const navItem = wrapper.find(`[data-testid="settings-nav-${value}"]`);
-    expect(navItem.exists()).toBe(true);
-    await navItem.trigger("click");
+  ])("renders the %s section for its ?tab= value, not General", async (value, testId) => {
+    const pinia = makePinia();
+    useAuthStore().user = { ...fakeUser, timezone: "UTC" };
+    const router = makeRouter();
+    await router.push({ path: "/settings", query: { tab: value } });
+    const wrapper = mount(SettingsView, {
+      global: { ...mountGlobal(pinia, router), stubs: settingsTabStubs },
+    });
     await flushPromises();
     expect(wrapper.find(`[data-testid="${testId}"]`).exists()).toBe(true);
     expect(wrapper.find('[data-testid="display-name"]').exists()).toBe(false);
-  });
-
-  it("marks the active section's nav item", async () => {
-    const wrapper = mountSettings();
-    await flushPromises();
-    const general = wrapper.find('[data-testid="settings-nav-general"]');
-    expect(general.classes()).toContain("active");
-
-    await wrapper.find('[data-testid="settings-nav-users"]').trigger("click");
-    await flushPromises();
-    expect(general.classes()).not.toContain("active");
-    expect(wrapper.find('[data-testid="settings-nav-users"]').classes()).toContain("active");
-  });
-
-  it("exposes a proper ARIA tablist/tab pattern", async () => {
-    const wrapper = mountSettings();
-    await flushPromises();
-    expect(wrapper.find('[data-testid="settings-nav"]').attributes("role")).toBe("tablist");
-    const general = wrapper.find('[data-testid="settings-nav-general"]');
-    expect(general.attributes("role")).toBe("tab");
-    expect(general.attributes("aria-selected")).toBe("true");
-    expect(general.attributes("tabindex")).toBe("0");
-    const users = wrapper.find('[data-testid="settings-nav-users"]');
-    expect(users.attributes("aria-selected")).toBe("false");
-    expect(users.attributes("tabindex")).toBe("-1");
-  });
-
-  it.each([
-    ["ArrowDown", "users"],
-    ["ArrowRight", "users"],
-    ["Home", "general"],
-    ["End", "about"],
-  ])("moves to the %s section on %s from General", async (key, expectedValue) => {
-    const wrapper = mountSettings();
-    await flushPromises();
-    await wrapper.find('[data-testid="settings-nav-general"]').trigger("keydown", { key });
-    await flushPromises();
-    expect(wrapper.find(`[data-testid="settings-nav-${expectedValue}"]`).classes()).toContain(
-      "active",
-    );
-  });
-
-  it("wraps from the last section back to the first on ArrowDown", async () => {
-    const wrapper = mountSettings();
-    await flushPromises();
-    await wrapper.find('[data-testid="settings-nav-about"]').trigger("keydown", {
-      key: "ArrowDown",
-    });
-    await flushPromises();
-    expect(wrapper.find('[data-testid="settings-nav-general"]').classes()).toContain("active");
-  });
-
-  it("moves to the previous section on ArrowUp/ArrowLeft", async () => {
-    const wrapper = mountSettings();
-    await flushPromises();
-    await wrapper.find('[data-testid="settings-nav-users"]').trigger("keydown", {
-      key: "ArrowUp",
-    });
-    await flushPromises();
-    expect(wrapper.find('[data-testid="settings-nav-general"]').classes()).toContain("active");
-  });
-
-  it("ignores keys that aren't part of the tab pattern", async () => {
-    const wrapper = mountSettings();
-    await flushPromises();
-    await wrapper.find('[data-testid="settings-nav-general"]').trigger("keydown", { key: "a" });
-    await flushPromises();
-    expect(wrapper.find('[data-testid="settings-nav-general"]').classes()).toContain("active");
   });
 
   it("opens directly on the tab named in the ?tab= query for an admin", async () => {

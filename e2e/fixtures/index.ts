@@ -3,6 +3,8 @@ import { join } from "node:path";
 
 import { test as base } from "@playwright/test";
 
+import type { Page } from "@playwright/test";
+
 /**
  * Every spec imports `test`/`expect` from here rather than "@playwright/test"
  * directly. Functionally identical unless COVERAGE_DIR is set (only true
@@ -58,6 +60,25 @@ export const seededCameras = {
 export const seededPerson = {
   name: "Alex Demo",
 };
+
+/**
+ * Settings sections live behind the primary nav's Settings accordion, not a
+ * `role="tab"` list - a fresh `page.goto("/settings")` already lands with it
+ * expanded (NavLinks.vue expands automatically whenever the route itself is
+ * "settings"), but this is defensive against a test that reaches Settings
+ * some other way (an in-app link/redirect) instead. Scoped specifically to
+ * the accordion's own children container, not the whole nav - several
+ * section names (Vehicles, Live View, Security Feed) are shared with a
+ * top-level nav destination of the same name, and `getByRole("link")`
+ * against the whole nav would otherwise match both.
+ */
+export async function openSettingsSection(page: Page, name: string): Promise<void> {
+  const children = page.getByTestId("settings-accordion-children");
+  if (!(await children.isVisible())) {
+    await page.getByTestId("settings-accordion-trigger").click();
+  }
+  await children.getByRole("link", { name, exact: true }).click();
+}
 
 export const seededAnalyses = {
   routine: {

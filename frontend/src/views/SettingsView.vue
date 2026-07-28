@@ -7,7 +7,7 @@ import Password from "primevue/password";
 import Select from "primevue/select";
 import SelectButton from "primevue/selectbutton";
 import { useToast } from "primevue/usetoast";
-import { computed, nextTick, onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 
 import {
@@ -43,73 +43,34 @@ const toast = useToast();
 const route = useRoute();
 const { isDark, setDark } = useTheme();
 
-interface SettingsSection {
-  value: string;
-  label: string;
-  icon: string;
-  adminOnly: boolean;
-}
-
-// Order is part of the settings IA: General first (every role lands here),
-// admin-only configuration sections in workflow order, About last (credits/
-// info, not config, open to every role like General).
-const SECTIONS: SettingsSection[] = [
-  { value: "general", label: "General", icon: "pi pi-user", adminOnly: false },
-  { value: "users", label: "Users", icon: "pi pi-users", adminOnly: true },
-  { value: "ai", label: "AI Provider", icon: "pi pi-sparkles", adminOnly: true },
-  { value: "biometrics", label: "Biometrics", icon: "pi pi-id-card", adminOnly: true },
-  { value: "cameras", label: "Cameras", icon: "pi pi-video", adminOnly: true },
-  { value: "vehicles", label: "Vehicles", icon: "pi pi-car", adminOnly: true },
-  { value: "alerts", label: "Alerts", icon: "pi pi-bell", adminOnly: true },
-  { value: "live-view", label: "Live View", icon: "pi pi-eye", adminOnly: true },
-  { value: "security-feed", label: "Security Feed", icon: "pi pi-th-large", adminOnly: true },
-  { value: "archived", label: "Archived", icon: "pi pi-inbox", adminOnly: true },
-  { value: "about", label: "About", icon: "pi pi-info-circle", adminOnly: false },
-];
-
-const visibleSections = computed(() =>
-  SECTIONS.filter((section) => !section.adminOnly || auth.isAdmin),
-);
-
-const requestedTab = typeof route.query.tab === "string" ? route.query.tab : "general";
-const activeTab = ref(
-  visibleSections.value.some((section) => section.value === requestedTab)
-    ? requestedTab
-    : "general",
-);
-
-function selectSection(value: string): void {
-  activeTab.value = value;
-}
-
-// WAI-ARIA tablist pattern, automatic activation: arrow keys both move focus
-// and switch the active section, matching the roving tabindex below. Both
-// axes are handled since the layout itself switches between a vertical
-// sidebar (desktop) and a horizontal scrollable row (mobile).
-function onNavKeydown(event: KeyboardEvent, currentValue: string): void {
-  const sections = visibleSections.value;
-  const index = sections.findIndex((section) => section.value === currentValue);
-  let nextIndex: number | null = null;
-  if (event.key === "ArrowDown" || event.key === "ArrowRight") {
-    nextIndex = (index + 1) % sections.length;
-  } else if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
-    nextIndex = (index - 1 + sections.length) % sections.length;
-  } else if (event.key === "Home") {
-    nextIndex = 0;
-  } else if (event.key === "End") {
-    nextIndex = sections.length - 1;
+// Section navigation itself lives in NavLinks.vue's Settings accordion now -
+// this just reads which one is active from the URL (?tab=x), same deep-link
+// mechanism as before (e.g. SetupView.vue's "Settings -> AI" link). Falls
+// back to General for an unrecognized value, or an admin-only one requested
+// by a non-admin (matching NavLinks' own accordion, which never offers a
+// non-admin an admin-only link in the first place).
+const ADMIN_ONLY_TABS = new Set([
+  "users",
+  "ai",
+  "biometrics",
+  "cameras",
+  "vehicles",
+  "alerts",
+  "live-view",
+  "security-feed",
+  "archived",
+]);
+const VALID_TABS = new Set(["general", "about", ...ADMIN_ONLY_TABS]);
+const activeTab = computed(() => {
+  const requested = route.query.tab;
+  if (typeof requested !== "string" || !VALID_TABS.has(requested)) {
+    return "general";
   }
-  if (nextIndex === null) return;
-  event.preventDefault();
-  // nextIndex is always a bounded array index computed just above, never
-  // external input.
-  // eslint-disable-next-line security/detect-object-injection
-  const nextValue = sections[nextIndex]!.value;
-  activeTab.value = nextValue;
-  void nextTick(() => {
-    document.querySelector<HTMLElement>(`[data-testid="settings-nav-${nextValue}"]`)?.focus();
-  });
-}
+  if (ADMIN_ONLY_TABS.has(requested) && !auth.isAdmin) {
+    return "general";
+  }
+  return requested;
+});
 
 const displayName = ref("");
 const timezone = ref("UTC");
@@ -276,38 +237,7 @@ async function saveBlinkSyncSettings(): Promise<void> {
     />
 
     <div class="settings-layout">
-      <nav
-        class="settings-nav"
-        role="tablist"
-        aria-orientation="vertical"
-        aria-label="Settings sections"
-        data-testid="settings-nav"
-      >
-        <button
-          v-for="section in visibleSections"
-          :key="section.value"
-          type="button"
-          role="tab"
-          class="settings-nav-item"
-          :class="{ active: activeTab === section.value }"
-          :aria-selected="activeTab === section.value"
-          :tabindex="activeTab === section.value ? 0 : -1"
-          :data-testid="`settings-nav-${section.value}`"
-          @click="selectSection(section.value)"
-          @keydown="onNavKeydown($event, section.value)"
-        >
-          <i
-            :class="section.icon"
-            aria-hidden="true"
-          />
-          <span>{{ section.label }}</span>
-        </button>
-      </nav>
-
-      <div
-        class="settings-content"
-        role="tabpanel"
-      >
+      <div class="settings-content">
         <div
           v-if="activeTab === 'general'"
           class="panels"
@@ -570,96 +500,8 @@ async function saveBlinkSyncSettings(): Promise<void> {
 </template>
 
 <style scoped>
-.settings-layout {
-  display: flex;
-  align-items: flex-start;
-  gap: 24px;
-}
-
-.settings-nav {
-  flex-shrink: 0;
-  width: 220px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  position: sticky;
-  top: 0;
-}
-
-.settings-nav-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  border: none;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--p-surface-600);
-  font: inherit;
-  font-size: 0.88rem;
-  font-weight: 500;
-  text-align: left;
-  cursor: pointer;
-  transition:
-    background 0.15s ease,
-    color 0.15s ease;
-}
-
-.blink-dark .settings-nav-item {
-  color: var(--p-surface-400);
-}
-
-.settings-nav-item i {
-  font-size: 0.95rem;
-  width: 1.1rem;
-  text-align: center;
-  flex-shrink: 0;
-}
-
-.settings-nav-item:hover {
-  background: var(--p-surface-100);
-  color: var(--p-surface-900);
-}
-
-.blink-dark .settings-nav-item:hover {
-  background: color-mix(in srgb, var(--p-surface-800) 70%, transparent);
-  color: var(--p-surface-100);
-}
-
-.settings-nav-item.active {
-  background: color-mix(in srgb, var(--p-primary-500) 12%, transparent);
-  color: var(--p-primary-600);
-  font-weight: 600;
-}
-
-.blink-dark .settings-nav-item.active {
-  color: var(--p-primary-300);
-}
-
 .settings-content {
-  flex: 1;
   min-width: 0;
-}
-
-@media (max-width: 768px) {
-  .settings-layout {
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  .settings-nav {
-    position: static;
-    width: 100%;
-    flex-direction: row;
-    overflow-x: auto;
-    padding-bottom: 4px;
-    gap: 6px;
-  }
-
-  .settings-nav-item {
-    flex-shrink: 0;
-    white-space: nowrap;
-  }
 }
 
 .panels {

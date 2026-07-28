@@ -1,13 +1,15 @@
-import { expect, test } from "../fixtures";
+import { expect, openSettingsSection, test } from "../fixtures";
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
 });
 
-test("every admin tab is reachable directly via ?tab=, with About last", async ({ page }) => {
-  const tabs = page.getByRole("tab");
-  await expect(tabs).toHaveText([
+test("every admin section is reachable directly via ?tab=, with About last in the accordion", async ({
+  page,
+}) => {
+  const sections = page.locator('[data-testid="settings-accordion-children"] a');
+  await expect(sections).toHaveText([
     "General",
     "Users",
     "AI Provider",
@@ -32,7 +34,7 @@ test("every admin tab is reachable directly via ?tab=, with About last", async (
 });
 
 test("the About tab credits the project, blinkpy, and the stack", async ({ page }) => {
-  await page.getByRole("tab", { name: "About" }).click();
+  await openSettingsSection(page, "About");
   const repoLink = page.getByTestId("about-repo-link");
   await expect(repoLink).toHaveAttribute("href", "https://github.com/brianbaggs35/blink_downloader");
   const blinkpyLink = page.getByTestId("about-blinkpy-link");
@@ -58,7 +60,7 @@ test("changing the default landing page persists across a reload", async ({ page
 });
 
 test("Live View settings can be changed and saved", async ({ page }) => {
-  await page.getByRole("tab", { name: "Live View" }).click();
+  await openSettingsSection(page, "Live View");
   await expect(page.getByTestId("live-view-settings-form")).toBeVisible();
 
   await page.getByTestId("auto-refresh-default").click();
@@ -75,7 +77,7 @@ test("Live View settings can be changed and saved", async ({ page }) => {
 });
 
 test("Security Feed settings can reorder chosen cameras and save", async ({ page }) => {
-  await page.getByRole("tab", { name: "Security Feed" }).click();
+  await openSettingsSection(page, "Security Feed");
   await expect(page.getByTestId("security-feed-settings-form")).toBeVisible();
 
   await page.getByTestId("security-feed-columns").click();
