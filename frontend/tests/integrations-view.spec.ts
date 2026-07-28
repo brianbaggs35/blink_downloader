@@ -10,8 +10,6 @@ vi.mock("@/api", async (importOriginal) => ({
   getStorageIntegrationSettings: vi.fn(),
   updateStorageIntegrationSettings: vi.fn(),
   testStorageIntegrations: vi.fn(),
-  browseCloudFolders: vi.fn(),
-  createCloudFolder: vi.fn(),
 }));
 
 const toastAdd = vi.fn();
@@ -20,7 +18,6 @@ vi.mock("primevue/usetoast", () => ({
 }));
 
 import {
-  browseCloudFolders,
   getStorageIntegrationSettings,
   testStorageIntegrations,
   updateStorageIntegrationSettings,
@@ -29,7 +26,6 @@ import {
 const mockedGet = vi.mocked(getStorageIntegrationSettings);
 const mockedUpdate = vi.mocked(updateStorageIntegrationSettings);
 const mockedTest = vi.mocked(testStorageIntegrations);
-const mockedBrowse = vi.mocked(browseCloudFolders);
 
 const baseSettings = {
   s3_enabled: false,
@@ -181,7 +177,6 @@ describe("IntegrationsView configure forms", () => {
     await wrapper.find('[data-testid="s3-enabled"]').setValue(true);
     await wrapper.find('[data-testid="s3-bucket"]').setValue("my-bucket");
     await wrapper.find('[data-testid="s3-region"]').setValue("us-east-1");
-    await wrapper.find('[data-testid="s3-prefix"]').setValue("clips/");
     await wrapper.find('[data-testid="s3-access-key"] input').setValue("AKIA123");
     await wrapper.find('[data-testid="s3-secret-key"] input').setValue("shh-its-a-secret");
     await wrapper.find('[data-testid="integration-form-s3"]').trigger("submit.prevent");
@@ -191,7 +186,7 @@ describe("IntegrationsView configure forms", () => {
         s3_enabled: true,
         s3_bucket: "my-bucket",
         s3_region: "us-east-1",
-        s3_prefix: "clips/",
+        s3_prefix: null,
         s3_access_key_id: "AKIA123",
         s3_secret_access_key: "shh-its-a-secret",
         google_drive_enabled: true,
@@ -317,7 +312,6 @@ describe("IntegrationsView configure forms", () => {
     await wrapper.find('[data-testid="onedrive-enabled"]').setValue(true);
     await wrapper.find('[data-testid="onedrive-client-id"]').setValue("od-client");
     await wrapper.find('[data-testid="onedrive-client-secret"] input').setValue("od-secret");
-    await wrapper.find('[data-testid="onedrive-folder-path"]').setValue("BlinkClips");
     await wrapper.find('[data-testid="integration-form-onedrive"]').trigger("submit.prevent");
     await flushPromises();
     expect(mockedUpdate).toHaveBeenCalledWith(
@@ -325,7 +319,7 @@ describe("IntegrationsView configure forms", () => {
         onedrive_enabled: true,
         onedrive_client_id: "od-client",
         onedrive_client_secret: "od-secret",
-        onedrive_folder_path: "BlinkClips",
+        onedrive_folder_path: null,
       }),
     );
   });
@@ -406,14 +400,35 @@ describe("IntegrationsView configure forms", () => {
     const wrapper = await mountView();
     await wrapper.find('[data-testid="integration-configure-google_drive"]').trigger("click");
     await wrapper.find('[data-testid="drive-clear-secret"]').setValue(true);
-    await wrapper.find('[data-testid="drive-folder-id"]').setValue("folder-123");
     await wrapper.find('[data-testid="integration-form-google_drive"]').trigger("submit.prevent");
     await flushPromises();
     expect(mockedUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
         google_drive_client_secret: "",
-        google_drive_folder_id: "folder-123",
+        google_drive_folder_id: null,
       }),
+    );
+  });
+
+  it("shows a hint pointing to the Storage tab for folder selection", async () => {
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="integration-configure-s3"]').trigger("click");
+    expect(wrapper.find('[data-testid="integration-form-s3"]').text()).toContain("Storage tab");
+  });
+
+  it("tests the connection from within an expanded form", async () => {
+    mockedTest.mockResolvedValue({
+      s3: { ok: true, detail: "Connected." },
+      google_drive: null,
+      onedrive: null,
+    });
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="integration-configure-s3"]').trigger("click");
+    await wrapper.find('[data-testid="integration-test-s3"]').trigger("click");
+    await flushPromises();
+    expect(mockedTest).toHaveBeenCalled();
+    expect(wrapper.find('[data-testid="integration-test-result-s3"]').text()).toContain(
+      "Connected.",
     );
   });
 });
@@ -472,124 +487,6 @@ describe("IntegrationsView test connections", () => {
     await flushPromises();
     expect(toastAdd).toHaveBeenCalledWith(
       expect.objectContaining({ severity: "error", detail: "Unexpected error." }),
-    );
-  });
-});
-
-function connectedSettings() {
-  return {
-    ...baseSettings,
-    s3_enabled: true,
-    s3_credentials_set: true,
-    google_drive_enabled: true,
-    google_drive_connected: true,
-    onedrive_enabled: true,
-    onedrive_connected: true,
-  };
-}
-
-describe("IntegrationsView cloud folder browsing", () => {
-  it("disables the Browse button until the provider is connected", async () => {
-    const wrapper = await mountView();
-    await wrapper.find('[data-testid="integration-configure-s3"]').trigger("click");
-    expect(wrapper.find('[data-testid="s3-browse"]').attributes("disabled")).toBeDefined();
-  });
-
-  it("browses and fills the S3 prefix from the selected folder's id", async () => {
-    mockedGet.mockResolvedValue(connectedSettings());
-    mockedBrowse.mockResolvedValue({ folders: [{ id: "clips", name: "Clips" }] });
-    const wrapper = await mountView();
-    await wrapper.find('[data-testid="integration-configure-s3"]').trigger("click");
-    expect(wrapper.find('[data-testid="s3-browse"]').attributes("disabled")).toBeUndefined();
-
-    await wrapper.find('[data-testid="s3-browse"]').trigger("click");
-    await flushPromises();
-    expect(mockedBrowse).toHaveBeenCalledWith("s3", undefined);
-
-    (
-      document.body.querySelector('[data-testid="cloud-browse-entry-Clips"]') as HTMLElement
-    ).click();
-    await flushPromises();
-    (document.body.querySelector('[data-testid="cloud-browse-select"]') as HTMLElement).click();
-    await flushPromises();
-
-    expect((wrapper.find('[data-testid="s3-prefix"]').element as HTMLInputElement).value).toBe(
-      "clips/",
-    );
-  });
-
-  it("selecting the S3 bucket root (no subfolder) clears the prefix", async () => {
-    mockedGet.mockResolvedValue(connectedSettings());
-    mockedBrowse.mockResolvedValue({ folders: [] });
-    const wrapper = await mountView();
-    await wrapper.find('[data-testid="integration-configure-s3"]').trigger("click");
-    await wrapper.find('[data-testid="s3-prefix"]').setValue("existing/");
-    await wrapper.find('[data-testid="s3-browse"]').trigger("click");
-    await flushPromises();
-
-    (document.body.querySelector('[data-testid="cloud-browse-select"]') as HTMLElement).click();
-    await flushPromises();
-
-    expect((wrapper.find('[data-testid="s3-prefix"]').element as HTMLInputElement).value).toBe("");
-  });
-
-  it("browses and fills the Google Drive folder id directly (it's a real, stable Drive id)", async () => {
-    mockedGet.mockResolvedValue(connectedSettings());
-    mockedBrowse.mockResolvedValue({ folders: [{ id: "drive-folder-id-1", name: "Backups" }] });
-    const wrapper = await mountView();
-    await wrapper.find('[data-testid="integration-configure-google_drive"]').trigger("click");
-    await wrapper.find('[data-testid="drive-browse"]').trigger("click");
-    await flushPromises();
-
-    (
-      document.body.querySelector('[data-testid="cloud-browse-entry-Backups"]') as HTMLElement
-    ).click();
-    await flushPromises();
-    (document.body.querySelector('[data-testid="cloud-browse-select"]') as HTMLElement).click();
-    await flushPromises();
-
-    expect(
-      (wrapper.find('[data-testid="drive-folder-id"]').element as HTMLInputElement).value,
-    ).toBe("drive-folder-id-1");
-  });
-
-  it("browses and fills the OneDrive folder path as a composed breadcrumb path, not the opaque id", async () => {
-    mockedGet.mockResolvedValue(connectedSettings());
-    mockedBrowse.mockResolvedValueOnce({ folders: [{ id: "opaque-1", name: "BlinkClips" }] });
-    mockedBrowse.mockResolvedValueOnce({ folders: [{ id: "opaque-2", name: "2026" }] });
-    const wrapper = await mountView();
-    await wrapper.find('[data-testid="integration-configure-onedrive"]').trigger("click");
-    await wrapper.find('[data-testid="onedrive-browse"]').trigger("click");
-    await flushPromises();
-
-    (
-      document.body.querySelector('[data-testid="cloud-browse-entry-BlinkClips"]') as HTMLElement
-    ).click();
-    await flushPromises();
-    (document.body.querySelector('[data-testid="cloud-browse-entry-2026"]') as HTMLElement).click();
-    await flushPromises();
-    (document.body.querySelector('[data-testid="cloud-browse-select"]') as HTMLElement).click();
-    await flushPromises();
-
-    expect(
-      (wrapper.find('[data-testid="onedrive-folder-path"]').element as HTMLInputElement).value,
-    ).toBe("BlinkClips/2026");
-  });
-
-  it("Cancel in the cloud browser leaves the field unchanged", async () => {
-    mockedGet.mockResolvedValue(connectedSettings());
-    mockedBrowse.mockResolvedValue({ folders: [] });
-    const wrapper = await mountView();
-    await wrapper.find('[data-testid="integration-configure-s3"]').trigger("click");
-    await wrapper.find('[data-testid="s3-prefix"]').setValue("existing/");
-    await wrapper.find('[data-testid="s3-browse"]').trigger("click");
-    await flushPromises();
-
-    (document.body.querySelector('[data-testid="cloud-browse-cancel"]') as HTMLElement).click();
-    await flushPromises();
-
-    expect((wrapper.find('[data-testid="s3-prefix"]').element as HTMLInputElement).value).toBe(
-      "existing/",
     );
   });
 });
