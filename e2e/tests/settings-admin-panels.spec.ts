@@ -95,20 +95,28 @@ test("Vehicles panel: draw, drag, and clear an outline on the reference frame", 
 
   // Idempotent either-state handling - this suite runs against a
   // persistent, not-reseeded-between-runs database, so a prior run may
-  // have already captured a reference frame for this camera.
+  // have already captured a reference frame for this camera. Exactly one
+  // of these two buttons renders, never both, never neither - wait for
+  // whichever it is to actually settle before the isVisible() check below,
+  // rather than racing it immediately after the card itself first appears
+  // (isVisible() alone doesn't retry, so a card that's visible-by-text but
+  // hasn't finished its own internal render yet reads as neither present).
   const initialCapture = card.locator('[data-testid^="capture-frame-"]');
+  const recapture = card.locator('[data-testid^="recapture-frame-"]');
+  await expect(initialCapture.or(recapture)).toBeVisible();
   // Which button renders depends on whether a prior, non-reseeded run
   // already captured a frame for this camera, not on anything this test
   // controls.
   // eslint-disable-next-line playwright/no-conditional-in-test
-  if (await initialCapture.isVisible().catch(() => false)) {
+  if (await initialCapture.isVisible()) {
     await initialCapture.click();
   } else {
-    await card.locator('[data-testid^="recapture-frame-"]').click();
+    await recapture.click();
   }
 
   const svg = card.locator('[data-testid^="outline-svg-"]');
   await expect(svg).toBeVisible();
+  const points = card.locator('[data-testid^="outline-point-"]');
 
   // Clear whatever points a prior run may have left drawn (but not saved).
   const clearButton = card.locator('[data-testid^="clear-points-"]');
@@ -117,20 +125,32 @@ test("Vehicles panel: draw, drag, and clear an outline on the reference frame", 
   if (await clearButton.isEnabled()) {
     await clearButton.click();
   }
+  // Confirmed empty (not just "clear was clicked") before drawing anything
+  // new - a retry of this same test reuses the same server-side vehicle
+  // row, and asserting the count here (rather than assuming the click
+  // above was synchronous and sufficient) is what actually guarantees the
+  // three clicks below start from zero.
+  await expect(points).toHaveCount(0);
 
   const box = (await svg.boundingBox())!;
-  await page.mouse.click(box.x + box.width * 0.2, box.y + box.height * 0.2);
-  await page.mouse.click(box.x + box.width * 0.8, box.y + box.height * 0.2);
-  await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.8);
-
-  const points = card.locator('[data-testid^="outline-point-"]');
+  // locator.click({ position }) rather than page.mouse.click(absoluteX,
+  // absoluteY): the reference frame can be taller than the viewport, and
+  // mouse.click's coordinates are absolute page coordinates with no
+  // auto-scroll, so a point past the fold (like the 80%-down third one)
+  // silently landed nowhere. locator.click scrolls its target into view
+  // first and position is relative to the (post-scroll) element itself.
+  await svg.click({ position: { x: box.width * 0.2, y: box.height * 0.2 } });
+  await expect(points).toHaveCount(1);
+  await svg.click({ position: { x: box.width * 0.8, y: box.height * 0.2 } });
+  await expect(points).toHaveCount(2);
+  await svg.click({ position: { x: box.width * 0.5, y: box.height * 0.8 } });
   await expect(points).toHaveCount(3);
 
   const firstPoint = points.first();
   const beforeCx = await firstPoint.getAttribute("cx");
   await firstPoint.hover();
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width * 0.35, box.y + box.height * 0.35, { steps: 5 });
+  await svg.hover({ position: { x: box.width * 0.35, y: box.height * 0.35 } });
   await page.mouse.up();
 
   // Dragging repositions the point rather than removing it.

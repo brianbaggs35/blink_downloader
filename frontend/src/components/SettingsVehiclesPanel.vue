@@ -147,7 +147,20 @@ function unitPointFromEvent(svg: SVGSVGElement, event: MouseEvent): Point | null
   };
 }
 
+// A real drag (see endPointDrag below) typically ends with the mouse
+// released over the SVG background rather than back on the point being
+// dragged, since a drag by definition moved away from its start - and per
+// standard DOM event order (pointerup, then mouseup, then click), the
+// browser follows that release with a native click on whatever's now
+// under the cursor. Left unhandled, that click would reach this handler
+// and add a stray duplicate point right where the drag just dropped one.
+let suppressNextAddPoint = false;
+
 function addPoint(cameraId: string, event: MouseEvent): void {
+  if (suppressNextAddPoint) {
+    suppressNextAddPoint = false;
+    return;
+  }
   const point = unitPointFromEvent(event.currentTarget as SVGSVGElement, event);
   if (!point) {
     return;
@@ -221,6 +234,10 @@ function endPointDrag(cameraId: string): void {
   // same "click a point to remove it" affordance as before dragging existed.
   if (!moved) {
     removePoint(cameraId, index);
+  } else {
+    // See addPoint's own comment - a real drag's trailing native click
+    // must not be treated as "add a new point here".
+    suppressNextAddPoint = true;
   }
 }
 

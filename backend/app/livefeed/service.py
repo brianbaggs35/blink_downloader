@@ -108,6 +108,19 @@ async def get_camera_preview(
     if not force and _is_fresh(camera):
         return Path(camera.preview_path)  # type: ignore[arg-type]  — guarded by _is_fresh
 
+    if settings.disable_blink_network_calls:
+        # No real Blink account exists to actually refresh from (see
+        # Settings.disable_blink_network_calls) - regardless of force or
+        # freshness, the seeded cache (present for every camera) is the only
+        # image that will ever exist. force=False here is deliberate (not a
+        # passthrough of the real `force` param): _stale_cache's own
+        # force-means-"never use a cached file" rule doesn't apply to this
+        # disabled-network-calls path.
+        cached = _stale_cache(camera, force=False)
+        if cached is not None:
+            return cached
+        raise BlinkError("No cached preview available, and live Blink calls are disabled.")
+
     account = await session.get(BlinkAccount, camera.blink_account_id)
     if account is None:  # pragma: no cover — FK guarantees this can't happen
         raise BlinkError("No Blink account linked.")
@@ -150,6 +163,16 @@ async def get_camera_preview(
 
 
 async def record_camera_clip(session: AsyncSession, settings: Settings, camera: Camera) -> None:
+    if settings.disable_blink_network_calls:
+        # No real Blink account exists to actually record against (see
+        # Settings.disable_blink_network_calls) - raises the same class of
+        # error a real failure would (exercising the same request/response
+        # wiring live_view.spec.ts's "saving a clip surfaces the outcome as
+        # a toast" already expects), but - unlike a real failure - never
+        # touches the shared account row, so it can't corrupt the "healthy"
+        # status every other e2e test also reads.
+        raise BlinkError("Live Blink calls are disabled in this environment.")
+
     account = await session.get(BlinkAccount, camera.blink_account_id)
     if account is None:  # pragma: no cover — FK guarantees this can't happen
         raise BlinkError("No Blink account linked.")

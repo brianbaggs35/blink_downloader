@@ -38,6 +38,19 @@ class Settings(BaseSettings):
     like storage_dir."""
 
     blink_sync_interval_seconds: int = 30
+    disable_blink_network_calls: bool = False
+    """Short-circuits every code path that would otherwise make a real call
+    against Blink's cloud API - the worker's automatic on-startup/
+    self-rescheduling sync, camera preview refresh (passive and forced),
+    and record-clip. Only ever set (by the e2e profile's worker/backend
+    services) for the seeded e2e stack, whose Blink account uses bogus
+    credentials that can only ever fail a real call to Blink - e2e's
+    camera/clip fixtures (including a cached preview image per camera) are
+    inserted directly by the seed script, so real Blink connectivity is
+    both pointless and actively harmful there: every failed attempt
+    overwrites the seeded "healthy" account status with a real auth error.
+    The manual "Sync now" button still enqueues on demand regardless of
+    this flag; nothing currently exercises it in e2e."""
     blink_initial_sync_days: int = 1
     blink_auto_analyze_limit: int = 5
     """Cap on how many clips a single sync run auto-queues for AI analysis.

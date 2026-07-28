@@ -320,7 +320,15 @@ describe("SettingsVehiclesPanel drawing the outline", () => {
     expect(wrapper.findAll(`[data-testid^="outline-point-${cameraA.id}-"]`)).toHaveLength(1);
   });
 
-  it("drags a point to reposition it instead of removing it", async () => {
+  it("drags a point to reposition it instead of removing it, and swallows the drag's trailing click", async () => {
+    // A real drag ends with mouseup away from where it started - typically
+    // back over the svg background, not the point itself - and a real
+    // browser follows pointerup/mouseup with a native click there. Without
+    // suppressing it, that click would reach addPoint and add a stray
+    // duplicate point right where the drag just dropped one (this is the
+    // real-browser equivalent of the "swallows a point's own click event"
+    // test above, for the moved-not-removed path instead of the
+    // press-and-release-in-place one).
     mockedCapture.mockResolvedValue(undefined);
     const wrapper = await mountWithFrame();
     const svg = wrapper.find(`[data-testid="outline-svg-${cameraA.id}"]`);
@@ -333,12 +341,34 @@ describe("SettingsVehiclesPanel drawing the outline", () => {
       .trigger("pointerdown", { clientX: 40, clientY: 30 });
     await svg.trigger("pointermove", { clientX: 200, clientY: 150 });
     await svg.trigger("pointerup", { clientX: 200, clientY: 150 });
+    await svg.trigger("click", { clientX: 200, clientY: 150 });
 
     const points = wrapper.findAll(`[data-testid^="outline-point-${cameraA.id}-"]`);
     expect(points).toHaveLength(3);
     const moved = wrapper.find(`[data-testid="outline-point-${cameraA.id}-0"]`);
     expect(moved.attributes("cx")).toBe("50");
     expect(moved.attributes("cy")).toBe("50");
+  });
+
+  it("still adds a point from a plain click right after an in-place (non-drag) press-and-release", async () => {
+    // The suppression flag from a real drag must not leak into unrelated
+    // future clicks - only the one click immediately following a real
+    // (moved=true) drag is swallowed.
+    mockedCapture.mockResolvedValue(undefined);
+    const wrapper = await mountWithFrame();
+    const svg = wrapper.find(`[data-testid="outline-svg-${cameraA.id}"]`);
+    await svg.trigger("click", { clientX: 40, clientY: 30 });
+
+    await wrapper
+      .find(`[data-testid="outline-point-${cameraA.id}-0"]`)
+      .trigger("pointerdown", { clientX: 40, clientY: 30 });
+    await svg.trigger("pointermove", { clientX: 200, clientY: 150 });
+    await svg.trigger("pointerup", { clientX: 200, clientY: 150 });
+    await svg.trigger("click", { clientX: 200, clientY: 150 });
+    expect(wrapper.findAll(`[data-testid^="outline-point-${cameraA.id}-"]`)).toHaveLength(1);
+
+    await svg.trigger("click", { clientX: 360, clientY: 30 });
+    expect(wrapper.findAll(`[data-testid^="outline-point-${cameraA.id}-"]`)).toHaveLength(2);
   });
 
   it("ignores drag movement for a different camera's outline", async () => {

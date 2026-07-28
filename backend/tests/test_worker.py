@@ -28,6 +28,7 @@ from app.worker.tasks.analyze import ANALYZE_JOB_NAME
 from app.worker.tasks.archive import ARCHIVE_CLIP_JOB_NAME, RESTORE_CLIP_JOB_NAME
 from app.worker.tasks.blink_sync import SYNC_JOB_NAME
 from app.worker.tasks.download import DOWNLOAD_JOB_NAME
+from tests.conftest import PlainSettings
 
 
 async def test_heartbeat_writes_expiring_key(redis: Redis) -> None:
@@ -48,6 +49,22 @@ async def test_startup_creates_db_resources_and_kicks_off_sync() -> None:
     assert "engine" in ctx
     assert "sessionmaker" in ctx
     fake_redis.enqueue_job.assert_awaited_once_with(SYNC_JOB_NAME)
+
+    await ctx["engine"].dispose()
+
+
+async def test_startup_skips_the_sync_when_background_sync_is_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.worker.main.get_settings", lambda: PlainSettings(disable_blink_network_calls=True)
+    )
+    fake_redis = AsyncMock()
+    ctx: dict[str, Any] = {"redis": fake_redis}
+
+    await startup(ctx)
+
+    fake_redis.enqueue_job.assert_not_awaited()
 
     await ctx["engine"].dispose()
 
