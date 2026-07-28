@@ -13,7 +13,7 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config as AlembicConfig
 
-from app.testing.seed import seed
+from app.testing.seed import seed, warm_up_biometrics_model
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 
@@ -37,6 +37,11 @@ def main() -> None:
     cfg.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
     command.upgrade(cfg, "head")
     asyncio.run(seed())
+    # Blocking here (rather than after uvicorn starts) means the container's
+    # healthcheck - and so every other e2e-profile service that waits on
+    # `condition: service_healthy` - doesn't go green until this is done,
+    # which is what actually keeps Playwright from racing the cold load.
+    asyncio.run(warm_up_biometrics_model())
     os.execv(sys.executable, UVICORN_ARGV)  # replaces PID 1, no shell  # noqa: S606 # nosec B606
 
 

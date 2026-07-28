@@ -88,3 +88,10 @@ export const seededAnalyses = {
     summary: "A person lingers by the front door for an extended period after dark.",
   },
 };
+
+// One vehicle, on the front door camera, with three proximity events.
+export const seededVehicle = {
+  camera: seededCameras.frontDoor,
+  description: "A silver sedan is normally parked in the driveway overnight.",
+  proximityEventCount: 3,
+};

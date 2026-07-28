@@ -59,13 +59,17 @@ test("configures and saves S3, and the connection reflects on the Storage page a
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Library", exact: true })).toBeVisible();
-  // Archiving needs a clip that's actually downloaded already - the most
-  // recent seeded clip can still be "Downloading…" at the moment a test
-  // happens to run, so pick one that definitely isn't rather than .first().
+  // Archiving needs a clip that's actually downloaded and won't be yanked
+  // out from under it mid-test. The newest clips are seed.py's disposable
+  // batch, deliberately reserved for library.spec.ts's own delete/bulk-delete
+  // tests to consume concurrently - grabbing .first() here would race those
+  // tests over the same clip. .last() (the oldest fixture clip) is never
+  // touched by any delete test, so it's stable to archive here regardless of
+  // what else is running in parallel.
   const downloadedCard = page
     .getByTestId("clip-card")
     .filter({ hasNotText: "Downloading…" })
-    .first();
+    .last();
   await downloadedCard.getByTestId("clip-select").click();
   await expect(page.getByTestId("bulk-archive")).toBeVisible();
   await expect(page.getByTestId("bulk-archive-destination")).toBeVisible();
