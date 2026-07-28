@@ -14,6 +14,9 @@ from app.config import get_settings
 from app.db import get_session
 from app.integrations.cloud import (
     CloudStorageError,
+    GoogleDriveClient,
+    OneDriveClient,
+    S3Client,
     google_drive_authorize_url,
     google_drive_exchange_code,
     onedrive_authorize_url,
@@ -21,6 +24,10 @@ from app.integrations.cloud import (
 )
 from app.integrations.models import StorageIntegrationSettings
 from app.integrations.schemas import (
+    CloudBrowseResponse,
+    CloudCreateFolderRequest,
+    CloudFolderEntry,
+    CloudProvider,
     StorageIntegrationSettingsRead,
     StorageIntegrationSettingsUpdate,
     StorageTestResponse,
@@ -123,6 +130,75 @@ async def test_integrations(
         response.onedrive = await _try(onedrive_client.test_connection)
 
     return response
+
+
+async def _cloud_client_for(
+    provider: CloudProvider, row: StorageIntegrationSettings, encryption_key: str
+) -> S3Client | GoogleDriveClient | OneDriveClient | None:
+    if provider == "s3":
+        return build_s3_client(row, encryption_key)
+    if provider == "google_drive":
+        return build_google_drive_client(row, encryption_key)
+    return build_onedrive_client(row, encryption_key)
+
+
+@router.get("/{provider}/browse", response_model=CloudBrowseResponse)
+async def browse_cloud_folders(
+    provider: CloudProvider,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _user: Annotated[object, Depends(current_superuser)],
+    parent: str | None = None,
+) -> CloudBrowseResponse:
+    row = await get_storage_integration_settings(session)
+    client = await _cloud_client_for(provider, row, get_settings().encryption_key)
+    if client is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{provider.replace('_', ' ').title()} isn't connected yet.",
+        )
+    try:
+        folders = await client.list_folders(parent)
+    except CloudStorageError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return CloudBrowseResponse(
+        folders=[CloudFolderEntry(id=folder_id, name=name) for folder_id, name in folders]
+    )
+
+
+@router.post(
+    "/{provider}/browse", response_model=CloudBrowseResponse, status_code=status.HTTP_201_CREATED
+)
+async def create_cloud_folder(
+    provider: CloudProvider,
+    payload: CloudCreateFolderRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _user: Annotated[object, Depends(current_superuser)],
+) -> CloudBrowseResponse:
+    row = await get_storage_integration_settings(session)
+    client = await _cloud_client_for(provider, row, get_settings().encryption_key)
+    if client is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{provider.replace('_', ' ').title()} isn't connected yet.",
+        )
+    try:
+        if isinstance(client, S3Client):
+            new_path = (
+                f"{payload.parent_id.strip('/')}/{payload.name}"
+                if payload.parent_id
+                else payload.name
+            )
+            new_id = await client.create_folder(new_path)
+            folders = await client.list_folders(payload.parent_id)
+        else:
+            new_id = await client.create_folder(payload.parent_id, payload.name)
+            folders = await client.list_folders(payload.parent_id)
+    except CloudStorageError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    logger.info("integrations.cloud_folder_created", provider=provider, folder_id=new_id)
+    return CloudBrowseResponse(
+        folders=[CloudFolderEntry(id=folder_id, name=name) for folder_id, name in folders]
+    )
 
 
 @router.get("/google-drive/oauth/start")

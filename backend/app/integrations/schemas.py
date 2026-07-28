@@ -3,10 +3,13 @@ Storage tab's archive/restore/summary endpoints."""
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from app.blink.models import StorageBackend
+
+CloudProvider = Literal["s3", "google_drive", "onedrive"]
 
 
 class StorageIntegrationSettingsRead(BaseModel):
@@ -57,6 +60,24 @@ class StorageIntegrationSettingsUpdate(BaseModel):
     onedrive_folder_path: str | None = None
 
     auto_archive_backend: StorageBackend = StorageBackend.LOCAL
+
+
+class CloudFolderEntry(BaseModel):
+    id: str
+    """A real path for S3 (e.g. "clips/2026"), an opaque folder ID for
+    Google Drive/OneDrive - whatever list_folders/create_folder returned
+    (see app.integrations.cloud). Pass back as `parent` to browse into it,
+    or as CloudCreateFolderRequest.parent_id to create a folder inside it."""
+    name: str
+
+
+class CloudBrowseResponse(BaseModel):
+    folders: list[CloudFolderEntry]
+
+
+class CloudCreateFolderRequest(BaseModel):
+    parent_id: str | None = None
+    name: str = Field(min_length=1, max_length=255)
 
 
 class StorageTestResult(BaseModel):
