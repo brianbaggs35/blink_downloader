@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Button from "primevue/button";
+import Checkbox from "primevue/checkbox";
 import InputNumber from "primevue/inputnumber";
 import InputText from "primevue/inputtext";
 import Message from "primevue/message";
@@ -241,11 +242,11 @@ const smtpPasswordPlaceholder = computed(() =>
             v-if="discordWebhookSet"
             class="clear-key"
           >
-            <input
+            <Checkbox
               v-model="discordClearWebhook"
-              type="checkbox"
+              binary
               data-testid="discord-clear-webhook"
-            >
+            />
             Remove the saved webhook on next save
           </label>
         </template>
@@ -277,11 +278,11 @@ const smtpPasswordPlaceholder = computed(() =>
             v-if="slackWebhookSet"
             class="clear-key"
           >
-            <input
+            <Checkbox
               v-model="slackClearWebhook"
-              type="checkbox"
+              binary
               data-testid="slack-clear-webhook"
-            >
+            />
             Remove the saved webhook on next save
           </label>
         </template>
@@ -371,11 +372,11 @@ const smtpPasswordPlaceholder = computed(() =>
             v-if="smtpPasswordSet"
             class="clear-key"
           >
-            <input
+            <Checkbox
               v-model="smtpClearPassword"
-              type="checkbox"
+              binary
               data-testid="smtp-clear-password"
-            >
+            />
             Remove the saved password on next save
           </label>
         </template>

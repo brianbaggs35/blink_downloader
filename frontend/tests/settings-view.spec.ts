@@ -53,7 +53,6 @@ const settingsTabStubs = {
   SettingsAlertsPanel: { template: '<div data-testid="stub-alerts" />' },
   SettingsLiveViewPanel: { template: '<div data-testid="stub-live-view" />' },
   SettingsSecurityFeedPanel: { template: '<div data-testid="stub-security-feed" />' },
-  SettingsStoragePanel: { template: '<div data-testid="stub-storage" />' },
   SettingsAboutPanel: { template: '<div data-testid="stub-about" />' },
 };
 
@@ -296,7 +295,6 @@ describe("SettingsView tabs", () => {
     ["cameras", "stub-cameras"],
     ["vehicles", "stub-vehicles"],
     ["alerts", "stub-alerts"],
-    ["storage", "stub-storage"],
     ["about", "stub-about"],
   ])("renders the %s section for its ?tab= value, not General", async (value, testId) => {
     const pinia = makePinia();

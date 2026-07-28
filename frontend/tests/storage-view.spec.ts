@@ -1,4 +1,6 @@
-import { flushPromises, mount } from "@vue/test-utils";
+import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
+import InputNumber from "primevue/inputnumber";
+import Select from "primevue/select";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/api", async (importOriginal) => ({
@@ -63,6 +65,12 @@ async function mountView(isAdmin = true) {
   const wrapper = mount(StorageView, { global: mountGlobal(pinia, makeRouter()) });
   await flushPromises();
   return wrapper;
+}
+
+function byTestId<T>(wrapper: VueWrapper, component: new () => T, testid: string): VueWrapper<T> {
+  return wrapper
+    .findAllComponents(component as never)
+    .find((c) => c.attributes("data-testid") === testid) as unknown as VueWrapper<T>;
 }
 
 beforeEach(() => {
@@ -299,12 +307,34 @@ describe("StorageView connected-folder display", () => {
 });
 
 describe("StorageView quota gauge", () => {
-  it("shows no gauge when no quota is set", async () => {
+  it("shows an unset message and a 'Set a limit' action when no quota is set", async () => {
     mockedSummary.mockResolvedValue(
       summary({ by_backend: [{ backend: "local", clip_count: 1, total_bytes: 3072 }] }),
     );
     const wrapper = await mountView();
     expect(wrapper.find('[data-testid="storage-quota-gauge"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="storage-quota-unset"]').text()).toBe("No usage limit set.");
+    expect(wrapper.find('[data-testid="edit-storage-quota"]').text()).toBe("Set a limit");
+  });
+
+  it("shows an 'Edit limit' action once a quota is set", async () => {
+    mockedSummary.mockResolvedValue(
+      summary({
+        by_backend: [{ backend: "local", clip_count: 1, total_bytes: 3072 }],
+        local_quota_bytes: 10240,
+      }),
+    );
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="edit-storage-quota"]').text()).toBe("Edit limit");
+  });
+
+  it("hides the quota edit action for a viewer, but still shows the unset message", async () => {
+    mockedSummary.mockResolvedValue(
+      summary({ by_backend: [{ backend: "local", clip_count: 1, total_bytes: 3072 }] }),
+    );
+    const wrapper = await mountView(false);
+    expect(wrapper.find('[data-testid="storage-quota-unset"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="edit-storage-quota"]').exists()).toBe(false);
   });
 
   it("shows usage text and percent when a quota is set, colored green under the warning threshold", async () => {
@@ -352,6 +382,105 @@ describe("StorageView quota gauge", () => {
     expect(wrapper.findComponent({ name: "MeterGroup" }).props("value")).toEqual([
       { label: "Used", value: 20480, color: "var(--p-red-500)" },
     ]);
+  });
+});
+
+describe("StorageView quota editing", () => {
+  it("opens the form pre-filled with the current quota converted to GB", async () => {
+    mockedSummary.mockResolvedValue(summary({ local_quota_bytes: 5 * 1024 ** 3 }));
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="edit-storage-quota"]').trigger("click");
+    expect(byTestId(wrapper, InputNumber, "storage-quota-gb").props("modelValue")).toBe(5);
+  });
+
+  it("opens the form blank when no quota is set", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="edit-storage-quota"]').trigger("click");
+    expect(byTestId(wrapper, InputNumber, "storage-quota-gb").props("modelValue")).toBeNull();
+  });
+
+  it("cancels editing without saving", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="edit-storage-quota"]').trigger("click");
+    await wrapper.find('[data-testid="cancel-storage-quota"]').trigger("click");
+    expect(wrapper.find('[data-testid="storage-quota-form"]').exists()).toBe(false);
+    expect(mockedUpdateStorageSettings).not.toHaveBeenCalled();
+  });
+
+  it("saves the new quota and updates the gauge, echoing a null storage_dir while still on the default", async () => {
+    mockedSummary.mockResolvedValue(
+      summary({ by_backend: [{ backend: "local", clip_count: 1, total_bytes: 1024 ** 3 }] }),
+    );
+    mockedStorageSettings.mockResolvedValue(localSettings({ is_default: true }));
+    mockedUpdateStorageSettings.mockResolvedValue(
+      localSettings({ is_default: true, local_storage_quota_bytes: 10 * 1024 ** 3 }),
+    );
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="edit-storage-quota"]').trigger("click");
+    await byTestId(wrapper, InputNumber, "storage-quota-gb").vm.$emit("update:modelValue", 10);
+    await wrapper.find('[data-testid="storage-quota-form"]').trigger("submit.prevent");
+    await flushPromises();
+    expect(mockedUpdateStorageSettings).toHaveBeenCalledWith({
+      storage_dir: null,
+      local_storage_quota_bytes: 10 * 1024 ** 3,
+    });
+    expect(wrapper.find('[data-testid="storage-quota-form"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="storage-quota-percent"]').text()).toBe("10%");
+  });
+
+  it("echoes the resolved storage_dir back unchanged when it's a custom override", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedStorageSettings.mockResolvedValue(
+      localSettings({ storage_dir: "/mnt/custom", is_default: false }),
+    );
+    mockedUpdateStorageSettings.mockResolvedValue(
+      localSettings({ storage_dir: "/mnt/custom", is_default: false }),
+    );
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="edit-storage-quota"]').trigger("click");
+    await wrapper.find('[data-testid="storage-quota-form"]').trigger("submit.prevent");
+    await flushPromises();
+    expect(mockedUpdateStorageSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ storage_dir: "/mnt/custom" }),
+    );
+  });
+
+  it("sends a null quota when cleared", async () => {
+    mockedSummary.mockResolvedValue(summary({ local_quota_bytes: 5 * 1024 ** 3 }));
+    mockedUpdateStorageSettings.mockResolvedValue(localSettings());
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="edit-storage-quota"]').trigger("click");
+    await byTestId(wrapper, InputNumber, "storage-quota-gb").vm.$emit("update:modelValue", null);
+    await wrapper.find('[data-testid="storage-quota-form"]').trigger("submit.prevent");
+    await flushPromises();
+    expect(mockedUpdateStorageSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ local_storage_quota_bytes: null }),
+    );
+    expect(wrapper.find('[data-testid="storage-quota-unset"]').exists()).toBe(true);
+  });
+
+  it("shows an inline error with the API message when saving fails", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedUpdateStorageSettings.mockRejectedValue(new ApiError(400, "disk full"));
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="edit-storage-quota"]').trigger("click");
+    await wrapper.find('[data-testid="storage-quota-form"]').trigger("submit.prevent");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="storage-quota-error"]').text()).toBe("disk full");
+  });
+
+  it("falls back to a generic inline error for a non-API save failure", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedUpdateStorageSettings.mockRejectedValue(new TypeError("down"));
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="edit-storage-quota"]').trigger("click");
+    await wrapper.find('[data-testid="storage-quota-form"]').trigger("submit.prevent");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="storage-quota-error"]').text()).toBe(
+      "Could not save the quota.",
+    );
   });
 });
 
@@ -639,19 +768,142 @@ describe("StorageView auto-archive summary", () => {
   });
 });
 
-describe("StorageView navigation", () => {
-  it("navigates to Settings > Storage from the auto-archive summary", async () => {
+describe("StorageView auto-archive editing", () => {
+  it("hides the Edit action for a viewer", async () => {
     mockedSummary.mockResolvedValue(summary());
-    const pinia = makePinia();
-    useAuthStore().user = { ...fakeUser, is_superuser: true };
-    const router = makeRouter();
-    const pushSpy = vi.spyOn(router, "push");
-    const wrapper = mount(StorageView, { global: mountGlobal(pinia, router) });
-    await flushPromises();
-    await wrapper.find('[data-testid="storage-go-to-storage-settings"]').trigger("click");
-    expect(pushSpy).toHaveBeenCalledWith({ name: "settings", query: { tab: "storage" } });
+    const wrapper = await mountView(false);
+    expect(wrapper.find('[data-testid="edit-auto-archive"]').exists()).toBe(false);
   });
 
+  it("opens the form pre-filled with the current backend and delay", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedIntegrationSettings.mockResolvedValue(
+      fakeStorageIntegrationSettings({
+        s3_enabled: true,
+        s3_credentials_set: true,
+        auto_archive_backend: "s3",
+        auto_archive_after_days: 14,
+      }),
+    );
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="edit-auto-archive"]').trigger("click");
+    expect(byTestId(wrapper, Select, "auto-archive-backend").props("modelValue")).toBe("s3");
+    expect(byTestId(wrapper, InputNumber, "auto-archive-after-days").props("modelValue")).toBe(14);
+  });
+
+  it("only offers local when no provider is connected, with a hint to connect one", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="edit-auto-archive"]').trigger("click");
+    expect(byTestId(wrapper, Select, "auto-archive-backend").props("options")).toEqual([
+      { label: "Local disk", value: "local" },
+    ]);
+    expect(wrapper.find('[data-testid="storage-no-providers-connected"]').exists()).toBe(true);
+  });
+
+  it("offers every connected provider, and hides the connect-one hint", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedIntegrationSettings.mockResolvedValue(
+      connectedIntegrationSettings({ s3_enabled: true, s3_credentials_set: true }),
+    );
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="edit-auto-archive"]').trigger("click");
+    expect(byTestId(wrapper, Select, "auto-archive-backend").props("options")).toEqual([
+      { label: "Local disk", value: "local" },
+      { label: "Amazon S3", value: "s3" },
+      { label: "Google Drive", value: "google_drive" },
+      { label: "Microsoft OneDrive", value: "onedrive" },
+    ]);
+    expect(wrapper.find('[data-testid="storage-no-providers-connected"]').exists()).toBe(false);
+  });
+
+  it("self-heals a destination that's since been disconnected back to Local", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedIntegrationSettings.mockResolvedValue(
+      fakeStorageIntegrationSettings({ s3_credentials_set: false, auto_archive_backend: "s3" }),
+    );
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="edit-auto-archive"]').trigger("click");
+    expect(byTestId(wrapper, Select, "auto-archive-backend").props("modelValue")).toBe("local");
+  });
+
+  it("cancels editing without saving", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="edit-auto-archive"]').trigger("click");
+    await wrapper.find('[data-testid="cancel-auto-archive"]').trigger("click");
+    expect(wrapper.find('[data-testid="auto-archive-form"]').exists()).toBe(false);
+    expect(mockedUpdateIntegrationSettings).not.toHaveBeenCalled();
+  });
+
+  it("saves the backend and delay, preserving every other setting", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedIntegrationSettings.mockResolvedValue(
+      connectedIntegrationSettings({
+        google_drive_client_id: "existing-drive-client",
+        auto_archive_backend: "local",
+        auto_archive_after_days: 0,
+      }),
+    );
+    mockedUpdateIntegrationSettings.mockResolvedValue(
+      connectedIntegrationSettings({ auto_archive_backend: "s3", auto_archive_after_days: 7 }),
+    );
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="edit-auto-archive"]').trigger("click");
+    await byTestId(wrapper, Select, "auto-archive-backend").vm.$emit("update:modelValue", "s3");
+    await byTestId(wrapper, InputNumber, "auto-archive-after-days").vm.$emit("update:modelValue", 7);
+    await wrapper.find('[data-testid="auto-archive-form"]').trigger("submit.prevent");
+    await flushPromises();
+    expect(mockedUpdateIntegrationSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        google_drive_client_id: "existing-drive-client",
+        auto_archive_backend: "s3",
+        auto_archive_after_days: 7,
+      }),
+    );
+    expect(wrapper.find('[data-testid="auto-archive-form"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="auto-archive-summary"]').text()).toContain(
+      "New downloads auto-archive to Amazon S3.",
+    );
+  });
+
+  it("shows an inline error with the API message when saving fails", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedUpdateIntegrationSettings.mockRejectedValue(new ApiError(400, "nope"));
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="edit-auto-archive"]').trigger("click");
+    await wrapper.find('[data-testid="auto-archive-form"]').trigger("submit.prevent");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="auto-archive-error"]').text()).toBe("nope");
+  });
+
+  it("falls back to a generic inline error for a non-API save failure", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedUpdateIntegrationSettings.mockRejectedValue(new TypeError("down"));
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="edit-auto-archive"]').trigger("click");
+    await wrapper.find('[data-testid="auto-archive-form"]').trigger("submit.prevent");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="auto-archive-error"]').text()).toBe(
+      "Could not save the archive policy.",
+    );
+  });
+
+  it("navigates to Integrations from the connect-one-provider hint", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    const router = makeRouter();
+    const pushSpy = vi.spyOn(router, "push");
+    const pinia = makePinia();
+    useAuthStore().user = { ...fakeUser, is_superuser: true };
+    const wrapper = mount(StorageView, { global: mountGlobal(pinia, router) });
+    await flushPromises();
+    await wrapper.find('[data-testid="edit-auto-archive"]').trigger("click");
+    await wrapper.find('[data-testid="storage-go-to-integrations"]').trigger("click");
+    expect(pushSpy).toHaveBeenCalledWith({ name: "integrations" });
+  });
+});
+
+describe("StorageView navigation", () => {
   it("navigates to Integrations from a backend's Connect action", async () => {
     mockedSummary.mockResolvedValue(summary());
     const pinia = makePinia();

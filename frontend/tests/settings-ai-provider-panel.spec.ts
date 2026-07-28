@@ -1,4 +1,5 @@
-import { flushPromises, mount } from "@vue/test-utils";
+import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
+import Checkbox from "primevue/checkbox";
 import InputNumber from "primevue/inputnumber";
 import Select from "primevue/select";
 import ToggleSwitch from "primevue/toggleswitch";
@@ -66,6 +67,12 @@ beforeEach(() => {
 
 function mountPanel() {
   return mount(SettingsAiProviderPanel, { global: mountGlobal(makePinia()) });
+}
+
+function byTestId<T>(wrapper: VueWrapper, component: new () => T, testid: string): VueWrapper<T> {
+  return wrapper
+    .findAllComponents(component as never)
+    .find((c) => c.attributes("data-testid") === testid) as unknown as VueWrapper<T>;
 }
 
 describe("SettingsAiProviderPanel loading", () => {
@@ -148,7 +155,7 @@ describe("SettingsAiProviderPanel save", () => {
     mockedUpdate.mockResolvedValue({ ...baseSettings, tier1_api_key_set: false });
     const wrapper = mountPanel();
     await flushPromises();
-    await wrapper.find('[data-testid="tier1-clear-key"]').setValue(true);
+    await byTestId(wrapper, Checkbox, "tier1-clear-key").vm.$emit("update:modelValue", true);
     await wrapper.find('[data-testid="ai-provider-form"]').trigger("submit.prevent");
     await flushPromises();
     expect(mockedUpdate).toHaveBeenCalledWith(expect.objectContaining({ tier1_api_key: "" }));
@@ -440,7 +447,7 @@ describe("SettingsAiProviderPanel field edits", () => {
     mockedUpdate.mockResolvedValue(baseSettings);
     const wrapper = mountPanel();
     await flushPromises();
-    await wrapper.find('[data-testid="tier2-clear-key"]').setValue(true);
+    await byTestId(wrapper, Checkbox, "tier2-clear-key").vm.$emit("update:modelValue", true);
     await wrapper.find('[data-testid="ai-provider-form"]').trigger("submit.prevent");
     await flushPromises();
     expect(mockedUpdate).toHaveBeenCalledWith(expect.objectContaining({ tier2_api_key: "" }));

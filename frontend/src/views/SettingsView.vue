@@ -25,7 +25,6 @@ import SettingsBiometricsPanel from "@/components/SettingsBiometricsPanel.vue";
 import SettingsCamerasPanel from "@/components/SettingsCamerasPanel.vue";
 import SettingsLiveViewPanel from "@/components/SettingsLiveViewPanel.vue";
 import SettingsSecurityFeedPanel from "@/components/SettingsSecurityFeedPanel.vue";
-import SettingsStoragePanel from "@/components/SettingsStoragePanel.vue";
 import SettingsUsersPanel from "@/components/SettingsUsersPanel.vue";
 import SettingsVehiclesPanel from "@/components/SettingsVehiclesPanel.vue";
 import { useTheme } from "@/composables/useTheme";
@@ -55,7 +54,6 @@ const ADMIN_ONLY_TABS = new Set([
   "alerts",
   "live-view",
   "security-feed",
-  "storage",
 ]);
 const VALID_TABS = new Set(["general", "about", ...ADMIN_ONLY_TABS]);
 const activeTab = computed(() => {
@@ -393,7 +391,6 @@ async function saveBlinkSyncSettings(): Promise<void> {
         <SettingsAlertsPanel v-else-if="activeTab === 'alerts' && auth.isAdmin" />
         <SettingsLiveViewPanel v-else-if="activeTab === 'live-view' && auth.isAdmin" />
         <SettingsSecurityFeedPanel v-else-if="activeTab === 'security-feed' && auth.isAdmin" />
-        <SettingsStoragePanel v-else-if="activeTab === 'storage' && auth.isAdmin" />
         <SettingsAboutPanel v-else />
       </div>
     </div>

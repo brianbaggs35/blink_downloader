@@ -1,4 +1,6 @@
-import { flushPromises, mount } from "@vue/test-utils";
+import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
+import Checkbox from "primevue/checkbox";
+import ToggleSwitch from "primevue/toggleswitch";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/api/client";
@@ -58,6 +60,12 @@ async function mountView(path = "/integrations") {
   const wrapper = mount(IntegrationsView, { global: mountGlobal(makePinia(), router) });
   await flushPromises();
   return wrapper;
+}
+
+function byTestId<T>(wrapper: VueWrapper, component: new () => T, testid: string): VueWrapper<T> {
+  return wrapper
+    .findAllComponents(component as never)
+    .find((c) => c.attributes("data-testid") === testid) as unknown as VueWrapper<T>;
 }
 
 describe("IntegrationsView loading", () => {
@@ -174,7 +182,7 @@ describe("IntegrationsView configure forms", () => {
     mockedUpdate.mockResolvedValue({ ...baseSettings, s3_enabled: true, s3_bucket: "my-bucket" });
     const wrapper = await mountView();
     await wrapper.find('[data-testid="integration-configure-s3"]').trigger("click");
-    await wrapper.find('[data-testid="s3-enabled"]').setValue(true);
+    await byTestId(wrapper, ToggleSwitch, "s3-enabled").vm.$emit("update:modelValue", true);
     await wrapper.find('[data-testid="s3-bucket"]').setValue("my-bucket");
     await wrapper.find('[data-testid="s3-region"]').setValue("us-east-1");
     await wrapper.find('[data-testid="s3-access-key"] input').setValue("AKIA123");
@@ -208,7 +216,7 @@ describe("IntegrationsView configure forms", () => {
     mockedUpdate.mockResolvedValue(baseSettings);
     const wrapper = await mountView();
     await wrapper.find('[data-testid="integration-configure-s3"]').trigger("click");
-    await wrapper.find('[data-testid="s3-clear-credentials"]').setValue(true);
+    await byTestId(wrapper, Checkbox, "s3-clear-credentials").vm.$emit("update:modelValue", true);
     await wrapper.find('[data-testid="integration-form-s3"]').trigger("submit.prevent");
     await flushPromises();
     expect(mockedUpdate).toHaveBeenCalledWith(
@@ -278,7 +286,7 @@ describe("IntegrationsView configure forms", () => {
     mockedUpdate.mockResolvedValue(baseSettings);
     const wrapper = await mountView();
     await wrapper.find('[data-testid="integration-configure-google_drive"]').trigger("click");
-    await wrapper.find('[data-testid="drive-enabled"]').setValue(true);
+    await byTestId(wrapper, ToggleSwitch, "drive-enabled").vm.$emit("update:modelValue", true);
     await wrapper.find('[data-testid="drive-client-id"]').setValue("gd-client");
     await wrapper.find('[data-testid="drive-client-secret"] input').setValue("gd-secret");
     await wrapper.find('[data-testid="integration-form-google_drive"]').trigger("submit.prevent");
@@ -309,7 +317,7 @@ describe("IntegrationsView configure forms", () => {
     mockedUpdate.mockResolvedValue(baseSettings);
     const wrapper = await mountView();
     await wrapper.find('[data-testid="integration-configure-onedrive"]').trigger("click");
-    await wrapper.find('[data-testid="onedrive-enabled"]').setValue(true);
+    await byTestId(wrapper, ToggleSwitch, "onedrive-enabled").vm.$emit("update:modelValue", true);
     await wrapper.find('[data-testid="onedrive-client-id"]').setValue("od-client");
     await wrapper.find('[data-testid="onedrive-client-secret"] input').setValue("od-secret");
     await wrapper.find('[data-testid="integration-form-onedrive"]').trigger("submit.prevent");
@@ -381,7 +389,7 @@ describe("IntegrationsView configure forms", () => {
     mockedUpdate.mockResolvedValue(baseSettings);
     const wrapper = await mountView();
     await wrapper.find('[data-testid="integration-configure-onedrive"]').trigger("click");
-    await wrapper.find('[data-testid="onedrive-clear-secret"]').setValue(true);
+    await byTestId(wrapper, Checkbox, "onedrive-clear-secret").vm.$emit("update:modelValue", true);
     await wrapper.find('[data-testid="integration-form-onedrive"]').trigger("submit.prevent");
     await flushPromises();
     expect(mockedUpdate).toHaveBeenCalledWith(
@@ -399,7 +407,7 @@ describe("IntegrationsView configure forms", () => {
     mockedUpdate.mockResolvedValue(baseSettings);
     const wrapper = await mountView();
     await wrapper.find('[data-testid="integration-configure-google_drive"]').trigger("click");
-    await wrapper.find('[data-testid="drive-clear-secret"]').setValue(true);
+    await byTestId(wrapper, Checkbox, "drive-clear-secret").vm.$emit("update:modelValue", true);
     await wrapper.find('[data-testid="integration-form-google_drive"]').trigger("submit.prevent");
     await flushPromises();
     expect(mockedUpdate).toHaveBeenCalledWith(

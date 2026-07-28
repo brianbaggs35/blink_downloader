@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import Button from "primevue/button";
+import InputNumber from "primevue/inputnumber";
 import Message from "primevue/message";
 import MeterGroup from "primevue/metergroup";
+import Select from "primevue/select";
 import Skeleton from "primevue/skeleton";
 import Tag from "primevue/tag";
 import { computed, onMounted, ref } from "vue";
@@ -139,6 +141,67 @@ const autoArchiveLabel = computed(() => {
   return `New downloads auto-archive to ${BACKEND_META[integrations.value.auto_archive_backend].label}.`;
 });
 
+// ------------------------------------------------------- auto-archive policy
+
+/** Only offers a cloud provider once it's actually connected - local is
+ * always offered. */
+const autoArchiveBackendOptions = computed(() =>
+  BACKENDS.filter((backend) => backend === "local" || isConnected(backend)).map((backend) => ({
+    // eslint-disable-next-line security/detect-object-injection -- backend is a StorageBackend, not user input
+    label: BACKEND_META[backend].label,
+    value: backend,
+  })),
+);
+
+const editingAutoArchive = ref(false);
+const autoArchiveBackendDraft = ref<StorageBackend>("local");
+const autoArchiveDaysDraft = ref(0);
+const savingAutoArchive = ref(false);
+const autoArchiveError = ref("");
+
+function startEditAutoArchive(): void {
+  // Only reachable once the Auto-archive card's Edit button is visible,
+  // which requires integrations.value to already be loaded (same reasoning
+  // as integrationUpdatePayload below).
+  /* v8 ignore next */
+  const current = integrations.value!;
+  autoArchiveError.value = "";
+  // Self-heals a destination that's since been disconnected (revoked
+  // credentials, deleted app registration, ...) back to Local, rather than
+  // leaving the Select bound to a value that's no longer among its own
+  // options (PrimeVue would just render it blank).
+  autoArchiveBackendDraft.value = autoArchiveBackendOptions.value.some(
+    (option) => option.value === current.auto_archive_backend,
+  )
+    ? current.auto_archive_backend
+    : "local";
+  autoArchiveDaysDraft.value = current.auto_archive_after_days;
+  editingAutoArchive.value = true;
+}
+
+function cancelEditAutoArchive(): void {
+  editingAutoArchive.value = false;
+}
+
+async function saveAutoArchive(): Promise<void> {
+  autoArchiveError.value = "";
+  savingAutoArchive.value = true;
+  try {
+    integrations.value = await updateStorageIntegrationSettings(
+      integrationUpdatePayload({
+        auto_archive_backend: autoArchiveBackendDraft.value,
+        auto_archive_after_days: autoArchiveDaysDraft.value,
+      }),
+    );
+    editingAutoArchive.value = false;
+  } catch (caught) {
+    autoArchiveError.value =
+      caught instanceof ApiError ? caught.message : "Could not save the archive policy.";
+  } finally {
+    savingAutoArchive.value = false;
+  }
+}
+
 // --------------------------------------------------------------- quota gauge
 
 interface QuotaGauge {
@@ -161,6 +224,59 @@ const quotaGauge = computed<QuotaGauge | null>(() => {
         : "var(--p-green-500)";
   return { percent, usedBytes, quotaBytes, meterValue: [{ label: "Used", value: usedBytes, color }] };
 });
+
+const GB_BYTES = 1024 ** 3;
+
+function bytesToGb(bytes: number): number {
+  return Math.round((bytes / GB_BYTES) * 100) / 100;
+}
+
+const editingQuota = ref(false);
+const quotaGbDraft = ref<number | null>(null);
+const savingQuota = ref(false);
+const quotaError = ref("");
+
+function startEditQuota(): void {
+  quotaError.value = "";
+  quotaGbDraft.value = summary.value?.local_quota_bytes
+    ? bytesToGb(summary.value.local_quota_bytes)
+    : null;
+  editingQuota.value = true;
+}
+
+function cancelEditQuota(): void {
+  editingQuota.value = false;
+}
+
+async function saveQuota(): Promise<void> {
+  // Only reachable once the local disk card's quota button is visible,
+  // which requires storageSettings.value to already be loaded (admin-only,
+  // same as the folder path itself).
+  /* v8 ignore next */
+  const current = storageSettings.value!;
+  quotaError.value = "";
+  savingQuota.value = true;
+  try {
+    const quotaBytes = quotaGbDraft.value ? Math.round(quotaGbDraft.value * GB_BYTES) : null;
+    // Echoes storage_dir back exactly as-is (null when still on the
+    // default, the resolved value otherwise) - this only ever changes the
+    // quota, so a save here must never silently pin or reset the folder.
+    storageSettings.value = await updateStorageSettings({
+      storage_dir: current.is_default ? null : current.storage_dir,
+      local_storage_quota_bytes: quotaBytes,
+    });
+    // The gauge reads from summary.value (a separate object returned by a
+    // separate endpoint) - keep it in sync without a full page reload.
+    // Guaranteed set here: it's fetched unconditionally in load(), before
+    // (the admin-only) storageSettings.value that current was read from.
+    summary.value = { ...summary.value!, local_quota_bytes: quotaBytes };
+    editingQuota.value = false;
+  } catch (caught) {
+    quotaError.value = caught instanceof ApiError ? caught.message : "Could not save the quota.";
+  } finally {
+    savingQuota.value = false;
+  }
+}
 
 // -------------------------------------------------------------- local folder
 
@@ -279,10 +395,6 @@ function folderActionError(backend: StorageBackend): string {
   return cloudBrowseProvider.value === backend ? cloudFolderError.value : "";
 }
 
-function goToStorageSettings(): void {
-  void router.push({ name: "settings", query: { tab: "storage" } });
-}
-
 function goToIntegrations(): void {
   void router.push({ name: "integrations" });
 }
@@ -345,22 +457,104 @@ function goToLibrary(): void {
         </article>
       </div>
 
-      <div
+      <article
         v-if="auth.isAdmin"
-        class="auto-archive-row"
-        data-testid="auto-archive-summary"
+        class="policy-card"
+        data-testid="auto-archive-card"
       >
-        <i
-          class="pi pi-info-circle"
-          aria-hidden="true"
-        />
-        <span>{{ autoArchiveLabel }}</span>
-        <a
-          href="#"
-          data-testid="storage-go-to-storage-settings"
-          @click.prevent="goToStorageSettings"
-        >Change this</a>
-      </div>
+        <div class="policy-header">
+          <i
+            class="pi pi-sync"
+            aria-hidden="true"
+          />
+          <div class="policy-heading">
+            <span class="policy-title">Auto-archive policy</span>
+            <span
+              class="policy-summary"
+              data-testid="auto-archive-summary"
+            >{{ autoArchiveLabel }}</span>
+          </div>
+          <Button
+            v-if="!editingAutoArchive"
+            label="Edit"
+            icon="pi pi-pencil"
+            text
+            size="small"
+            data-testid="edit-auto-archive"
+            @click="startEditAutoArchive"
+          />
+        </div>
+
+        <form
+          v-if="editingAutoArchive"
+          class="policy-form"
+          data-testid="auto-archive-form"
+          @submit.prevent="saveAutoArchive"
+        >
+          <label class="field">
+            <span class="field-label">Move older clips to</span>
+            <Select
+              v-model="autoArchiveBackendDraft"
+              :options="autoArchiveBackendOptions"
+              option-label="label"
+              option-value="value"
+              fluid
+              data-testid="auto-archive-backend"
+            />
+          </label>
+          <label class="field">
+            <span class="field-label">Days to keep clips locally first</span>
+            <InputNumber
+              v-model="autoArchiveDaysDraft"
+              :min="0"
+              :max="365"
+              show-buttons
+              fluid
+              data-testid="auto-archive-after-days"
+            />
+          </label>
+          <Message
+            v-if="autoArchiveBackendOptions.length === 1"
+            severity="info"
+            :closable="false"
+            data-testid="storage-no-providers-connected"
+          >
+            No cloud provider is connected yet.
+            <a
+              href="#"
+              data-testid="storage-go-to-integrations"
+              @click.prevent="goToIntegrations"
+            >Connect one</a>
+            to archive clips off this server.
+          </Message>
+          <Message
+            v-if="autoArchiveError"
+            severity="error"
+            :closable="false"
+            data-testid="auto-archive-error"
+          >
+            {{ autoArchiveError }}
+          </Message>
+          <div class="policy-actions">
+            <Button
+              type="button"
+              label="Cancel"
+              severity="secondary"
+              outlined
+              size="small"
+              data-testid="cancel-auto-archive"
+              @click="cancelEditAutoArchive"
+            />
+            <Button
+              type="submit"
+              label="Save"
+              size="small"
+              :loading="savingAutoArchive"
+              data-testid="save-auto-archive"
+            />
+          </div>
+        </form>
+      </article>
 
       <div
         class="grid"
@@ -414,22 +608,90 @@ function goToLibrary(): void {
           </div>
 
           <div
-            v-if="backend === 'local' && quotaGauge"
-            class="quota-gauge"
-            data-testid="storage-quota-gauge"
+            v-if="backend === 'local'"
+            class="quota-section"
+            data-testid="storage-quota-section"
           >
-            <div class="quota-gauge-text">
-              <span>{{ formatFileSize(quotaGauge.usedBytes) }} of
-                {{ formatFileSize(quotaGauge.quotaBytes) }} used</span>
-              <span
-                class="quota-gauge-percent"
-                data-testid="storage-quota-percent"
-              >{{ Math.round(quotaGauge.percent) }}%</span>
-            </div>
-            <MeterGroup
-              :value="quotaGauge.meterValue"
-              :max="quotaGauge.quotaBytes"
-            />
+            <template v-if="!editingQuota">
+              <div
+                v-if="quotaGauge"
+                class="quota-gauge"
+                data-testid="storage-quota-gauge"
+              >
+                <div class="quota-gauge-text">
+                  <span>{{ formatFileSize(quotaGauge.usedBytes) }} of
+                    {{ formatFileSize(quotaGauge.quotaBytes) }} used</span>
+                  <span
+                    class="quota-gauge-percent"
+                    data-testid="storage-quota-percent"
+                  >{{ Math.round(quotaGauge.percent) }}%</span>
+                </div>
+                <MeterGroup
+                  :value="quotaGauge.meterValue"
+                  :max="quotaGauge.quotaBytes"
+                />
+              </div>
+              <p
+                v-else
+                class="quota-unset"
+                data-testid="storage-quota-unset"
+              >
+                No usage limit set.
+              </p>
+              <Button
+                v-if="auth.isAdmin"
+                :label="quotaGauge ? 'Edit limit' : 'Set a limit'"
+                icon="pi pi-pencil"
+                text
+                size="small"
+                data-testid="edit-storage-quota"
+                @click="startEditQuota"
+              />
+            </template>
+            <form
+              v-else
+              class="quota-form"
+              data-testid="storage-quota-form"
+              @submit.prevent="saveQuota"
+            >
+              <label class="field">
+                <span class="field-label">Quota (GB)</span>
+                <InputNumber
+                  v-model="quotaGbDraft"
+                  :min="0.1"
+                  :max-fraction-digits="2"
+                  placeholder="No limit"
+                  fluid
+                  data-testid="storage-quota-gb"
+                />
+              </label>
+              <Message
+                v-if="quotaError"
+                severity="error"
+                :closable="false"
+                data-testid="storage-quota-error"
+              >
+                {{ quotaError }}
+              </Message>
+              <div class="quota-form-actions">
+                <Button
+                  type="button"
+                  label="Cancel"
+                  severity="secondary"
+                  outlined
+                  size="small"
+                  data-testid="cancel-storage-quota"
+                  @click="cancelEditQuota"
+                />
+                <Button
+                  type="submit"
+                  label="Save"
+                  size="small"
+                  :loading="savingQuota"
+                  data-testid="save-storage-quota"
+                />
+              </div>
+            </form>
           </div>
 
           <Button
@@ -531,22 +793,83 @@ function goToLibrary(): void {
   color: var(--p-surface-500);
 }
 
-.auto-archive-row {
+.policy-card {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  padding: 10px 14px;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 20px;
   margin-bottom: 20px;
-  border-radius: 10px;
-  font-size: 0.85rem;
-  color: var(--p-surface-600);
-  background: var(--p-surface-50);
+  border-radius: 14px;
+  border: 1px solid var(--p-surface-200);
+  background: var(--p-surface-0);
 }
 
-.blink-dark .auto-archive-row {
-  color: var(--p-surface-300);
+.blink-dark .policy-card {
+  border-color: var(--p-surface-800);
   background: color-mix(in srgb, var(--p-surface-900) 60%, transparent);
+}
+
+.policy-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.policy-header > i {
+  font-size: 1.1rem;
+  color: var(--p-surface-500);
+}
+
+.policy-heading {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.policy-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.policy-summary {
+  font-size: 0.82rem;
+  color: var(--p-surface-500);
+}
+
+.policy-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--p-surface-200);
+}
+
+.blink-dark .policy-form {
+  border-color: var(--p-surface-800);
+}
+
+.policy-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--p-surface-600);
+}
+
+.blink-dark .field-label {
+  color: var(--p-surface-300);
 }
 
 .backend-card {
@@ -618,6 +941,30 @@ function goToLibrary(): void {
 .backend-stats .stat-label {
   font-size: 0.75rem;
   color: var(--p-surface-500);
+}
+
+.quota-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quota-unset {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--p-surface-500);
+}
+
+.quota-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.quota-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .quota-gauge {

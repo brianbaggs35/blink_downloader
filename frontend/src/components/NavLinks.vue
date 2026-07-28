@@ -80,7 +80,6 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
   { value: "alerts", label: "Alerts", icon: "pi pi-bell", adminOnly: true },
   { value: "live-view", label: "Live View", icon: "pi pi-eye", adminOnly: true },
   { value: "security-feed", label: "Security Feed", icon: "pi pi-th-large", adminOnly: true },
-  { value: "storage", label: "Storage", icon: "pi pi-database", adminOnly: true },
   { value: "about", label: "About", icon: "pi pi-info-circle" },
 ];
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Button from "primevue/button";
+import Checkbox from "primevue/checkbox";
 import InputNumber from "primevue/inputnumber";
 import InputText from "primevue/inputtext";
 import Message from "primevue/message";
@@ -310,11 +311,11 @@ const tier2KeyPlaceholder = computed(() =>
           v-if="tier1.apiKeySet"
           class="clear-key"
         >
-          <input
+          <Checkbox
             v-model="tier1.clearApiKey"
-            type="checkbox"
+            binary
             data-testid="tier1-clear-key"
-          >
+          />
           Remove the saved key on next save
         </label>
         <div class="test-row">
@@ -421,11 +422,11 @@ const tier2KeyPlaceholder = computed(() =>
             v-if="tier2.apiKeySet"
             class="clear-key"
           >
-            <input
+            <Checkbox
               v-model="tier2.clearApiKey"
-              type="checkbox"
+              binary
               data-testid="tier2-clear-key"
-            >
+            />
             Remove the saved key on next save
           </label>
           <div class="test-row">

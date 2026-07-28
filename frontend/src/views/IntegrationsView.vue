@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Button from "primevue/button";
+import Checkbox from "primevue/checkbox";
 import Dialog from "primevue/dialog";
 import IconField from "primevue/iconfield";
 import InputIcon from "primevue/inputicon";
@@ -9,6 +10,7 @@ import Password from "primevue/password";
 import SelectButton from "primevue/selectbutton";
 import Skeleton from "primevue/skeleton";
 import Tag from "primevue/tag";
+import ToggleSwitch from "primevue/toggleswitch";
 import { useToast } from "primevue/usetoast";
 import { computed, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
@@ -450,14 +452,15 @@ const redirectOrigin = window.location.origin;
           </Message>
 
           <template v-if="integration.key === 's3'">
-            <label class="field toggle-field">
-              <input
+            <div class="toggle-row">
+              <ToggleSwitch
                 v-model="s3Enabled"
-                type="checkbox"
                 data-testid="s3-enabled"
-              >
-              Enabled
-            </label>
+              />
+              <p class="toggle-label">
+                Enabled
+              </p>
+            </div>
             <label class="field">
               <span class="field-label">Bucket name</span>
               <InputText
@@ -501,24 +504,25 @@ const redirectOrigin = window.location.origin;
               v-if="current?.s3_credentials_set"
               class="clear-key"
             >
-              <input
+              <Checkbox
                 v-model="s3ClearCredentials"
-                type="checkbox"
+                binary
                 data-testid="s3-clear-credentials"
-              >
+              />
               Remove the saved credentials on next save
             </label>
           </template>
 
           <template v-else-if="integration.key === 'google_drive'">
-            <label class="field toggle-field">
-              <input
+            <div class="toggle-row">
+              <ToggleSwitch
                 v-model="driveEnabled"
-                type="checkbox"
                 data-testid="drive-enabled"
-              >
-              Enabled
-            </label>
+              />
+              <p class="toggle-label">
+                Enabled
+              </p>
+            </div>
             <label class="field">
               <span class="field-label">OAuth client ID</span>
               <InputText
@@ -546,11 +550,11 @@ const redirectOrigin = window.location.origin;
               v-if="current?.google_drive_client_secret_set"
               class="clear-key"
             >
-              <input
+              <Checkbox
                 v-model="driveClientSecretClear"
-                type="checkbox"
+                binary
                 data-testid="drive-clear-secret"
-              >
+              />
               Remove the saved client secret on next save
             </label>
             <Button
@@ -564,14 +568,15 @@ const redirectOrigin = window.location.origin;
           </template>
 
           <template v-else>
-            <label class="field toggle-field">
-              <input
+            <div class="toggle-row">
+              <ToggleSwitch
                 v-model="onedriveEnabled"
-                type="checkbox"
                 data-testid="onedrive-enabled"
-              >
-              Enabled
-            </label>
+              />
+              <p class="toggle-label">
+                Enabled
+              </p>
+            </div>
             <label class="field">
               <span class="field-label">Application (client) ID</span>
               <InputText
@@ -599,11 +604,11 @@ const redirectOrigin = window.location.origin;
               v-if="current?.onedrive_client_secret_set"
               class="clear-key"
             >
-              <input
+              <Checkbox
                 v-model="onedriveClientSecretClear"
-                type="checkbox"
+                binary
                 data-testid="onedrive-clear-secret"
-              >
+              />
               Remove the saved client secret on next save
             </label>
             <Button
@@ -851,11 +856,15 @@ const redirectOrigin = window.location.origin;
   gap: 6px;
 }
 
-.toggle-field {
-  flex-direction: row;
+.toggle-row {
+  display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 0.85rem;
+  gap: 12px;
+}
+
+.toggle-label {
+  margin: 0;
+  font-size: 0.9rem;
   font-weight: 600;
 }
 

@@ -6,22 +6,19 @@ clip's video to a cloud provider, and the pages involved in setting that up.
 
 ## Where things live
 
-Three different places in the UI cooperate here, each with one job:
+Two different places in the UI cooperate here, each with one job:
 
 - **Integrations → Connect** (left nav) — connect a cloud provider: enable
   it, enter credentials, test the connection. Nothing about *where* clips
-  go lives here.
-- **Storage** tab (left nav) — where clips actually go. Shows usage per
-  backend (with a quota gauge for local disk, if you've set one), and a live
+  go, or the auto-archive policy, lives here.
+- **Storage** tab (left nav) — everything about where clips actually live.
+  Usage per backend (with an editable quota gauge for local disk), a live
   folder browser for local disk and each *connected* cloud provider — create,
-  rename, and delete folders, and pick which one new archives upload into.
-  A cloud provider only appears as a folder-pickable option here once it's
+  rename, and delete folders, and pick which one new archives upload into —
+  and the auto-archive policy itself: which backend new downloads move to,
+  and how long to keep them on local disk first. A cloud provider only
+  appears as a folder-pickable/archive-destination option here once it's
   actually connected on the Integrations page.
-- **Settings > Storage** (`/api/settings/storage`,
-  `/api/settings/storage-integrations`) — the local disk folder (read-only
-  here; change it from the Storage tab), an optional local disk quota, and
-  the archive policy: which backend new downloads move to, and how long to
-  keep them on local disk first.
 
 ## Scope: clip video only
 
@@ -51,9 +48,9 @@ wasted space, not a correctness problem.
 
 ### Auto-archiving new downloads
 
-`Settings > Storage` has two settings that together decide what happens to
-a newly-downloaded clip: which backend it should end up on, and how long to
-leave it on local disk first.
+The Storage tab's auto-archive policy card has two settings that together
+decide what happens to a newly-downloaded clip: which backend it should end
+up on, and how long to leave it on local disk first.
 
 Left at "local disk" (the default), nothing changes — clips just stay put.
 Pointed at a cloud provider (only offered once that provider is actually
@@ -73,8 +70,8 @@ cloud storage.
 
 ### Local disk quota
 
-An optional soft budget (`Settings > Storage`, GB) shown as a usage gauge on
-the Storage tab's local disk card — purely informational. Nothing is
+An optional soft budget (GB), set directly from the Storage tab's local disk
+card and shown there as a usage gauge — purely informational. Nothing is
 deleted, blocked, or auto-archived because you're over it; it's there so you
 can see at a glance how close you are, not to enforce a limit.
 
