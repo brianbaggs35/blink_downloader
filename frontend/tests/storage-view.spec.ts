@@ -285,7 +285,7 @@ describe("StorageView auto-archive summary", () => {
 });
 
 describe("StorageView navigation", () => {
-  it("navigates to Settings > Archived from the auto-archive summary", async () => {
+  it("navigates to Settings > Storage from the auto-archive summary", async () => {
     mockedSummary.mockResolvedValue(summary());
     const pinia = makePinia();
     useAuthStore().user = { ...fakeUser, is_superuser: true };
@@ -293,8 +293,8 @@ describe("StorageView navigation", () => {
     const pushSpy = vi.spyOn(router, "push");
     const wrapper = mount(StorageView, { global: mountGlobal(pinia, router) });
     await flushPromises();
-    await wrapper.find('[data-testid="storage-go-to-archived"]').trigger("click");
-    expect(pushSpy).toHaveBeenCalledWith({ name: "settings", query: { tab: "archived" } });
+    await wrapper.find('[data-testid="storage-go-to-storage-settings"]').trigger("click");
+    expect(pushSpy).toHaveBeenCalledWith({ name: "settings", query: { tab: "storage" } });
   });
 
   it("navigates to Integrations from a backend's Connect action", async () => {

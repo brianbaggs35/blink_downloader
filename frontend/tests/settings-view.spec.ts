@@ -12,10 +12,6 @@ vi.mock("@/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api")>()),
   updateMe: vi.fn(),
   getBlinkStatus: vi.fn(),
-  getStorageSettings: vi.fn(),
-  updateStorageSettings: vi.fn(),
-  browseStorageDirectories: vi.fn(),
-  createStorageDirectory: vi.fn(),
   getBlinkSyncSettings: vi.fn(),
   updateBlinkSyncSettings: vi.fn(),
 }));
@@ -25,21 +21,10 @@ vi.mock("primevue/usetoast", () => ({
   useToast: () => ({ add: toastAdd }),
 }));
 
-import {
-  browseStorageDirectories,
-  getBlinkStatus,
-  getBlinkSyncSettings,
-  getStorageSettings,
-  updateBlinkSyncSettings,
-  updateMe,
-  updateStorageSettings,
-} from "@/api";
+import { getBlinkStatus, getBlinkSyncSettings, updateBlinkSyncSettings, updateMe } from "@/api";
 
 const mockedUpdate = vi.mocked(updateMe);
 const mockedBlinkStatus = vi.mocked(getBlinkStatus);
-const mockedGetStorage = vi.mocked(getStorageSettings);
-const mockedUpdateStorage = vi.mocked(updateStorageSettings);
-const mockedBrowseDirs = vi.mocked(browseStorageDirectories);
 const mockedGetBlinkSync = vi.mocked(getBlinkSyncSettings);
 const mockedUpdateBlinkSync = vi.mocked(updateBlinkSyncSettings);
 
@@ -48,7 +33,6 @@ const unlinkedBlinkStatus = fakeBlinkStatus();
 beforeEach(() => {
   vi.clearAllMocks();
   mockedBlinkStatus.mockResolvedValue(unlinkedBlinkStatus);
-  mockedGetStorage.mockResolvedValue({ storage_dir: "/data/clips", is_default: true });
   mockedGetBlinkSync.mockResolvedValue({
     sync_interval_seconds: 60,
     initial_sync_days: 3,
@@ -69,7 +53,7 @@ const settingsTabStubs = {
   SettingsAlertsPanel: { template: '<div data-testid="stub-alerts" />' },
   SettingsLiveViewPanel: { template: '<div data-testid="stub-live-view" />' },
   SettingsSecurityFeedPanel: { template: '<div data-testid="stub-security-feed" />' },
-  SettingsArchivedPanel: { template: '<div data-testid="stub-archived" />' },
+  SettingsStoragePanel: { template: '<div data-testid="stub-storage" />' },
   SettingsAboutPanel: { template: '<div data-testid="stub-about" />' },
 };
 
@@ -218,126 +202,6 @@ describe("SettingsView appearance", () => {
   });
 });
 
-describe("SettingsView storage", () => {
-  it("is hidden for a non-superuser", async () => {
-    const pinia = makePinia();
-    useAuthStore().user = { ...fakeUser, is_superuser: false, timezone: "UTC" };
-    const wrapper = mount(SettingsView, { global: mountGlobal(pinia, makeRouter()) });
-    await flushPromises();
-    expect(wrapper.find('[data-testid="storage-dir"]').exists()).toBe(false);
-    expect(mockedGetStorage).not.toHaveBeenCalled();
-  });
-
-  it("loads and displays the current storage directory for a superuser", async () => {
-    mockedGetStorage.mockResolvedValue({ storage_dir: "/mnt/clips", is_default: false });
-    const wrapper = mountSettings();
-    await flushPromises();
-    const input = wrapper.find('[data-testid="storage-dir"]').element as HTMLInputElement;
-    expect(input.value).toBe("/mnt/clips");
-    expect(wrapper.text()).toContain("Custom location.");
-  });
-
-  it("leaves the field blank when loading the current directory fails", async () => {
-    mockedGetStorage.mockRejectedValue(new TypeError("network down"));
-    const wrapper = mountSettings();
-    await flushPromises();
-    const input = wrapper.find('[data-testid="storage-dir"]').element as HTMLInputElement;
-    expect(input.value).toBe("");
-  });
-
-  it("saves the storage directory and toasts success", async () => {
-    mockedUpdateStorage.mockResolvedValue({ storage_dir: "/mnt/new", is_default: false });
-    const wrapper = mountSettings();
-    await flushPromises();
-    await wrapper.find('[data-testid="storage-dir"]').setValue("/mnt/new");
-    await wrapper.find('[data-testid="save-storage"]').trigger("click");
-    await flushPromises();
-
-    expect(mockedUpdateStorage).toHaveBeenCalledWith({ storage_dir: "/mnt/new" });
-    expect(toastAdd).toHaveBeenCalledWith(
-      expect.objectContaining({ summary: "Storage location saved" }),
-    );
-    const input = wrapper.find('[data-testid="storage-dir"]').element as HTMLInputElement;
-    expect(input.value).toBe("/mnt/new");
-  });
-
-  it("Browse opens the directory browser dialog, seeded with the current path", async () => {
-    mockedGetStorage.mockResolvedValue({ storage_dir: "/mnt/clips", is_default: false });
-    mockedBrowseDirs.mockResolvedValue({
-      path: "/mnt/clips",
-      parent_path: "/mnt",
-      directories: [],
-    });
-    const wrapper = mountSettings();
-    await flushPromises();
-    try {
-      await wrapper.find('[data-testid="storage-dir-browse"]').trigger("click");
-      await flushPromises();
-      expect(mockedBrowseDirs).toHaveBeenCalledWith("/mnt/clips");
-      expect(
-        document.body.querySelector('[data-testid="storage-browse-modal"]'),
-      ).toBeTruthy();
-    } finally {
-      wrapper.unmount();
-    }
-  });
-
-  it("selecting a folder in the browser dialog fills in the storage directory field", async () => {
-    mockedGetStorage.mockResolvedValue({ storage_dir: "/mnt/clips", is_default: false });
-    mockedBrowseDirs.mockResolvedValue({
-      path: "/mnt/archive",
-      parent_path: "/mnt",
-      directories: [],
-    });
-    const wrapper = mountSettings();
-    await flushPromises();
-    try {
-      await wrapper.find('[data-testid="storage-dir-browse"]').trigger("click");
-      await flushPromises();
-      (
-        document.body.querySelector(
-          '[data-testid="storage-browse-select"]',
-        ) as HTMLElement
-      ).click();
-      await flushPromises();
-
-      const input = wrapper.find('[data-testid="storage-dir"]').element as HTMLInputElement;
-      expect(input.value).toBe("/mnt/archive");
-      expect(document.body.querySelector('[data-testid="storage-browse-modal"]')).toBeFalsy();
-    } finally {
-      wrapper.unmount();
-    }
-  });
-
-  it("sends null when clearing the directory back to the default", async () => {
-    mockedUpdateStorage.mockResolvedValue({ storage_dir: "/data/clips", is_default: true });
-    const wrapper = mountSettings();
-    await flushPromises();
-    await wrapper.find('[data-testid="storage-dir"]').setValue("");
-    await wrapper.find('[data-testid="save-storage"]').trigger("click");
-    await flushPromises();
-    expect(mockedUpdateStorage).toHaveBeenCalledWith({ storage_dir: null });
-  });
-
-  it("shows an inline error with the API message when saving fails", async () => {
-    mockedUpdateStorage.mockRejectedValue(new ApiError(400, "Path is not writable."));
-    const wrapper = mountSettings();
-    await flushPromises();
-    await wrapper.find('[data-testid="save-storage"]').trigger("click");
-    await flushPromises();
-    expect(wrapper.find('[data-testid="storage-error"]').text()).toBe("Path is not writable.");
-  });
-
-  it("falls back to a generic inline error when saving fails with a non-API error", async () => {
-    mockedUpdateStorage.mockRejectedValue(new TypeError("down"));
-    const wrapper = mountSettings();
-    await flushPromises();
-    await wrapper.find('[data-testid="save-storage"]').trigger("click");
-    await flushPromises();
-    expect(wrapper.find('[data-testid="storage-error"]').text()).toBe("Unexpected error.");
-  });
-});
-
 describe("SettingsView blink sync", () => {
   it("is hidden for a non-superuser", async () => {
     const pinia = makePinia();
@@ -432,7 +296,7 @@ describe("SettingsView tabs", () => {
     ["cameras", "stub-cameras"],
     ["vehicles", "stub-vehicles"],
     ["alerts", "stub-alerts"],
-    ["archived", "stub-archived"],
+    ["storage", "stub-storage"],
     ["about", "stub-about"],
   ])("renders the %s section for its ?tab= value, not General", async (value, testId) => {
     const pinia = makePinia();
