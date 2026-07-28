@@ -18,6 +18,7 @@ import EmptyState from "@/components/EmptyState.vue";
 import PageHeader from "@/components/PageHeader.vue";
 import { useFormatting } from "@/composables/useFormatting";
 import { useSidebarCollapse } from "@/composables/useSidebarCollapse";
+import { useAuthStore } from "@/stores/auth";
 import { useBlinkStore } from "@/stores/blink";
 
 import type { CameraRead } from "@/api";
@@ -45,6 +46,7 @@ function emptySlot(): Slot {
 }
 
 const toast = useToast();
+const auth = useAuthStore();
 const blink = useBlinkStore();
 const sidebar = useSidebarCollapse();
 const { formatRelativeTime } = useFormatting();
@@ -321,6 +323,7 @@ function updatedLabel(slot: Slot): string {
           <span class="muted">Updated {{ updatedLabel(primary) }}</span>
           <div class="panel-actions">
             <Button
+              v-if="auth.isAdmin"
               label="Refresh"
               icon="pi pi-refresh"
               size="small"
@@ -340,6 +343,7 @@ function updatedLabel(slot: Slot): string {
               @click="screenshot(primary)"
             />
             <Button
+              v-if="auth.isAdmin"
               label="Save clip"
               icon="pi pi-video"
               size="small"
@@ -403,6 +407,7 @@ function updatedLabel(slot: Slot): string {
           <span class="muted">Updated {{ updatedLabel(secondary) }}</span>
           <div class="panel-actions">
             <Button
+              v-if="auth.isAdmin"
               label="Refresh"
               icon="pi pi-refresh"
               size="small"
@@ -422,6 +427,7 @@ function updatedLabel(slot: Slot): string {
               @click="screenshot(secondary)"
             />
             <Button
+              v-if="auth.isAdmin"
               label="Save clip"
               icon="pi pi-video"
               size="small"
