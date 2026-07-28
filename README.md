@@ -16,9 +16,10 @@ Built on [blinkpy](https://github.com/fronzbot/blinkpy) for Blink API access;
 everything else — accounts, storage, AI, biometrics, events, alerts,
 dashboards — is this application. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 for the overall design, [docs/BIOMETRICS.md](docs/BIOMETRICS.md) for facial
-recognition specifically, [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md) for
-every `.env` variable, and [docs/ROADMAP.md](docs/ROADMAP.md) for what lands
-next.
+recognition specifically, [docs/STORAGE.md](docs/STORAGE.md) for local vs.
+cloud clip storage and connecting Amazon S3/Google Drive/OneDrive,
+[docs/ENVIRONMENT.md](docs/ENVIRONMENT.md) for every `.env` variable, and
+[docs/ROADMAP.md](docs/ROADMAP.md) for what lands next.
 
 ## Facial recognition, and why it never phones home
 
