@@ -152,6 +152,113 @@ describe("StorageView admin-only connection status", () => {
   });
 });
 
+describe("StorageView connected-folder display", () => {
+  it("shows the bucket and prefix for a connected S3 backend", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedIntegrationSettings.mockResolvedValue(
+      fakeStorageIntegrationSettings({
+        s3_enabled: true,
+        s3_credentials_set: true,
+        s3_bucket: "my-bucket",
+        s3_prefix: "clips/",
+      }),
+    );
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="backend-folder-s3"]').text()).toBe("my-bucket/clips/");
+  });
+
+  it("shows just the bucket for S3 when there's no prefix", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedIntegrationSettings.mockResolvedValue(
+      fakeStorageIntegrationSettings({
+        s3_enabled: true,
+        s3_credentials_set: true,
+        s3_bucket: "my-bucket",
+      }),
+    );
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="backend-folder-s3"]').text()).toBe("my-bucket");
+  });
+
+  it("shows nothing for S3 when connected but no bucket is set", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedIntegrationSettings.mockResolvedValue(
+      fakeStorageIntegrationSettings({ s3_enabled: true, s3_credentials_set: true }),
+    );
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="backend-folder-s3"]').exists()).toBe(false);
+  });
+
+  it("shows the Drive folder id when set, and a root fallback otherwise", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedIntegrationSettings.mockResolvedValue(
+      fakeStorageIntegrationSettings({
+        google_drive_enabled: true,
+        google_drive_connected: true,
+        google_drive_folder_id: "drive-folder-1",
+      }),
+    );
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="backend-folder-google_drive"]').text()).toBe(
+      "Folder ID: drive-folder-1",
+    );
+  });
+
+  it("falls back to My Drive (root) when no Drive folder id is set", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedIntegrationSettings.mockResolvedValue(
+      fakeStorageIntegrationSettings({ google_drive_enabled: true, google_drive_connected: true }),
+    );
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="backend-folder-google_drive"]').text()).toBe(
+      "My Drive (root)",
+    );
+  });
+
+  it("shows the OneDrive folder path when set, and the BlinkClips default otherwise", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedIntegrationSettings.mockResolvedValue(
+      fakeStorageIntegrationSettings({
+        onedrive_enabled: true,
+        onedrive_connected: true,
+        onedrive_folder_path: "Custom/Path",
+      }),
+    );
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="backend-folder-onedrive"]').text()).toBe("Custom/Path");
+  });
+
+  it("falls back to BlinkClips when no OneDrive folder path is set", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedIntegrationSettings.mockResolvedValue(
+      fakeStorageIntegrationSettings({ onedrive_enabled: true, onedrive_connected: true }),
+    );
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="backend-folder-onedrive"]').text()).toBe("BlinkClips");
+  });
+
+  it("never shows a folder line for local disk", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="backend-folder-local"]').exists()).toBe(false);
+  });
+
+  it("shows no folder line for a backend that isn't connected", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedIntegrationSettings.mockResolvedValue(
+      fakeStorageIntegrationSettings({ s3_bucket: "my-bucket" }),
+    );
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="backend-folder-s3"]').exists()).toBe(false);
+  });
+
+  it("shows no folder line for a viewer (no integrations detail loaded)", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    const wrapper = await mountView(false);
+    expect(wrapper.find('[data-testid="backend-folder-s3"]').exists()).toBe(false);
+  });
+});
+
 describe("StorageView auto-archive summary", () => {
   it("reports local disk as the default destination", async () => {
     mockedSummary.mockResolvedValue(summary());

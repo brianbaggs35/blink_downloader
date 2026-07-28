@@ -88,6 +88,26 @@ function isConnected(backend: StorageBackend): boolean {
   return integrations.value.onedrive_enabled && integrations.value.onedrive_connected;
 }
 
+/** Which folder a connected provider is actually using, for display next to
+ * its card - null when there's nothing meaningful to show (local disk, not
+ * connected, or a viewer with no integrations detail at all). */
+function folderLabel(backend: StorageBackend): string | null {
+  if (backend === "local" || !integrations.value || !isConnected(backend)) return null;
+  if (backend === "s3") {
+    if (!integrations.value.s3_bucket) return null;
+    return integrations.value.s3_prefix
+      ? `${integrations.value.s3_bucket}/${integrations.value.s3_prefix}`
+      : integrations.value.s3_bucket;
+  }
+  if (backend === "google_drive") {
+    return integrations.value.google_drive_folder_id
+      ? `Folder ID: ${integrations.value.google_drive_folder_id}`
+      : "My Drive (root)";
+  }
+  // Only "onedrive" remains, given the "local"/"s3"/"google_drive" returns above.
+  return integrations.value.onedrive_folder_path || "BlinkClips";
+}
+
 const autoArchiveLabel = computed(() => {
   if (!integrations.value || integrations.value.auto_archive_backend === "local") {
     return "New downloads stay on local disk.";
@@ -200,6 +220,18 @@ function goToLibrary(): void {
               :severity="isConnected(backend) ? 'success' : 'secondary'"
               :data-testid="`backend-status-${backend}`"
             />
+          </div>
+          <div
+            v-if="folderLabel(backend)"
+            class="backend-folder"
+            :data-testid="`backend-folder-${backend}`"
+            :title="folderLabel(backend)!"
+          >
+            <i
+              class="pi pi-folder"
+              aria-hidden="true"
+            />
+            <span>{{ folderLabel(backend) }}</span>
           </div>
           <div class="backend-stats">
             <div>
@@ -326,6 +358,27 @@ function goToLibrary(): void {
   font-weight: 700;
   font-size: 0.92rem;
   flex: 1;
+}
+
+.backend-folder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 0.78rem;
+  color: var(--p-surface-500);
+}
+
+.backend-folder i {
+  flex-shrink: 0;
+}
+
+.backend-folder span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .backend-stats {
