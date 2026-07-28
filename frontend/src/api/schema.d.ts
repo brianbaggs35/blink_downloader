@@ -1034,6 +1034,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/storage-integrations/{provider}/browse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Browse Cloud Folders */
+        get: operations["browse_cloud_folders_api_settings_storage_integrations__provider__browse_get"];
+        put?: never;
+        /** Create Cloud Folder */
+        post: operations["create_cloud_folder_api_settings_storage_integrations__provider__browse_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings/storage-integrations/google-drive/oauth/start": {
         parameters: {
             query?: never;
@@ -1755,6 +1773,25 @@ export interface components {
              * @default []
              */
             recognized_people: components["schemas"]["RecognizedPersonRead"][];
+        };
+        /** CloudBrowseResponse */
+        CloudBrowseResponse: {
+            /** Folders */
+            folders: components["schemas"]["CloudFolderEntry"][];
+        };
+        /** CloudCreateFolderRequest */
+        CloudCreateFolderRequest: {
+            /** Parent Id */
+            parent_id?: string | null;
+            /** Name */
+            name: string;
+        };
+        /** CloudFolderEntry */
+        CloudFolderEntry: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
         };
         /** DailyClipCount */
         DailyClipCount: {
@@ -4791,6 +4828,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StorageTestResponse"];
+                };
+            };
+        };
+    };
+    browse_cloud_folders_api_settings_storage_integrations__provider__browse_get: {
+        parameters: {
+            query?: {
+                parent?: string | null;
+            };
+            header?: never;
+            path: {
+                provider: "s3" | "google_drive" | "onedrive";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudBrowseResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_cloud_folder_api_settings_storage_integrations__provider__browse_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "s3" | "google_drive" | "onedrive";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CloudCreateFolderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudBrowseResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
