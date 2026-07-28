@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.models import AIProviderKind, AIUsage, Analysis, AnalysisTier, SuspicionLabel
 from app.biometrics.models import FaceEmbedding, Person, RecognizedFace
+from app.biometrics.service import get_biometrics_settings, verify_model
 from app.blink.models import BlinkAccount, Camera, Clip
 from app.config import get_settings
 from app.db import build_engine, build_sessionmaker
@@ -144,14 +145,31 @@ async def _seed_demo_data(session: AsyncSession) -> None:
 
     # Spread across the Biometrics tab's enrollment time-range options
     # (24h/48h/7d) so seeded data can actually exercise all three, plus one
-    # clip older than any of them and one not-yet-downloaded.
+    # clip older than any of them and one not-yet-downloaded. The disposable
+    # batch at the end is deliberately the newest of the whole set and has no
+    # analysis/vehicle/face relations pointing at any of it - e2e's own
+    # delete/bulk-delete tests need something disposable to remove that
+    # nothing else in the fixture set depends on, and "newest first" (the
+    # Library's default sort) makes them reliably selectable via
+    # .first()/.nth(1)/etc. without a search/filter step. There are ten of
+    # them, not two: Playwright's own retries (playwright.config.ts,
+    # retries: 2 under CI) mean a single flaky delete test can consume more
+    # than one disposable clip per run (each retry re-selects "whatever is
+    # currently first/second" and deletes it again), and fullyParallel means
+    # more than one delete-ish test can be doing this at once - a too-small
+    # buffer here doesn't fail loudly, it silently cascades into deleting
+    # real fixture clips (and anything that references them) once exhausted.
     clip_specs = [
         (front_door, now - timedelta(hours=2), True),
         (front_door, now - timedelta(hours=30), True),
         (front_door, now - timedelta(days=5), True),
         (backyard, now - timedelta(hours=6), True),
         (backyard, now - timedelta(days=10), True),
-        (backyard, now - timedelta(minutes=20), False),  # still "downloading"
+        (backyard, now - timedelta(minutes=21), False),  # still "downloading"
+        *[
+            (front_door, now - timedelta(minutes=minutes), True)  # disposable
+            for minutes in range(2, 22, 2)
+        ],
     ]
 
     clips: list[Clip] = []
@@ -428,6 +446,32 @@ async def seed() -> bool:
             await session.commit()
             logger.info("seed.admin_created", email=E2E_ADMIN_EMAIL)
             return True
+    finally:
+        await engine.dispose()
+
+
+async def warm_up_biometrics_model() -> None:
+    """Pays the insightface ONNX model's cold-load cost once, up front,
+    instead of leaving it for whichever e2e test happens to trigger the
+    first real detect-faces call. That first call is otherwise a lazy load
+    of real model weights (app.biometrics.recognition), which under
+    fullyParallel workers competing for CPU can take well over 20s - long
+    enough to time out a test that has no reason to know it just drew the
+    short straw. Never raises: a warm-up failure just leaves the same
+    lazy-load behavior tests would have hit anyway, no worse than before
+    this existed.
+    """
+    settings = get_settings()
+    engine = build_engine(settings.database_url)
+    try:
+        sessionmaker = build_sessionmaker(engine)
+        async with sessionmaker() as session:
+            biometrics_settings = await get_biometrics_settings(session)
+            await session.commit()
+        await verify_model(biometrics_settings, settings.biometrics_model_cache_dir)
+        logger.info("seed.biometrics_model_warmed")
+    except Exception as exc:
+        logger.warning("seed.biometrics_model_warmup_failed", error=str(exc))
     finally:
         await engine.dispose()
 

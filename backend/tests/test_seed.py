@@ -29,9 +29,9 @@ async def test_seed_creates_admin_once(client: AsyncClient, app: FastAPI, tmp_pa
 
     async with app.state.sessionmaker() as session:
         clips = (await session.execute(select(Clip))).scalars().all()
-        assert len(clips) == 6
+        assert len(clips) == 16
         downloaded = [c for c in clips if c.downloaded_at is not None]
-        assert len(downloaded) == 5
+        assert len(downloaded) == 15
         for clip in downloaded:
             assert clip.storage_path is not None
             assert Path(clip.storage_path).exists()
