@@ -21,7 +21,6 @@ import {
   testStorageIntegrations,
   updateStorageIntegrationSettings,
 } from "@/api";
-import CloudFolderBrowserDialog from "@/components/CloudFolderBrowserDialog.vue";
 import EmptyState from "@/components/EmptyState.vue";
 import PageHeader from "@/components/PageHeader.vue";
 
@@ -159,7 +158,6 @@ const expandedKey = ref<ProviderKey | null>(null);
 const s3Enabled = ref(false);
 const s3Bucket = ref("");
 const s3Region = ref("");
-const s3Prefix = ref("");
 const s3AccessKeyInput = ref("");
 const s3SecretKeyInput = ref("");
 const s3ClearCredentials = ref(false);
@@ -168,13 +166,11 @@ const driveEnabled = ref(false);
 const driveClientId = ref("");
 const driveClientSecretInput = ref("");
 const driveClientSecretClear = ref(false);
-const driveFolderId = ref("");
 
 const onedriveEnabled = ref(false);
 const onedriveClientId = ref("");
 const onedriveClientSecretInput = ref("");
 const onedriveClientSecretClear = ref(false);
-const onedriveFolderPath = ref("");
 
 function resetFormsFromCurrent(): void {
   // Only called from toggleExpanded, itself only reachable once cards (and
@@ -184,7 +180,6 @@ function resetFormsFromCurrent(): void {
   s3Enabled.value = current.value.s3_enabled;
   s3Bucket.value = current.value.s3_bucket ?? "";
   s3Region.value = current.value.s3_region ?? "";
-  s3Prefix.value = current.value.s3_prefix ?? "";
   s3AccessKeyInput.value = "";
   s3SecretKeyInput.value = "";
   s3ClearCredentials.value = false;
@@ -193,13 +188,11 @@ function resetFormsFromCurrent(): void {
   driveClientId.value = current.value.google_drive_client_id ?? "";
   driveClientSecretInput.value = "";
   driveClientSecretClear.value = false;
-  driveFolderId.value = current.value.google_drive_folder_id ?? "";
 
   onedriveEnabled.value = current.value.onedrive_enabled;
   onedriveClientId.value = current.value.onedrive_client_id ?? "";
   onedriveClientSecretInput.value = "";
   onedriveClientSecretClear.value = false;
-  onedriveFolderPath.value = current.value.onedrive_folder_path ?? "";
 }
 
 function toggleExpanded(key: ProviderKey): void {
@@ -230,7 +223,9 @@ async function saveProvider(key: ProviderKey): Promise<void> {
       s3_enabled: key === "s3" ? s3Enabled.value : current.value.s3_enabled,
       s3_bucket: key === "s3" ? s3Bucket.value || null : current.value.s3_bucket,
       s3_region: key === "s3" ? s3Region.value || null : current.value.s3_region,
-      s3_prefix: key === "s3" ? s3Prefix.value || null : current.value.s3_prefix,
+      // Folder/prefix selection lives exclusively on the Storage tab now -
+      // this page only ever edits credentials, so always echo it back.
+      s3_prefix: current.value.s3_prefix,
       s3_access_key_id:
         key === "s3" ? resolvedSecret(s3AccessKeyInput.value, s3ClearCredentials.value) : null,
       s3_secret_access_key:
@@ -242,8 +237,7 @@ async function saveProvider(key: ProviderKey): Promise<void> {
         key === "google_drive"
           ? resolvedSecret(driveClientSecretInput.value, driveClientSecretClear.value)
           : null,
-      google_drive_folder_id:
-        key === "google_drive" ? driveFolderId.value || null : current.value.google_drive_folder_id,
+      google_drive_folder_id: current.value.google_drive_folder_id,
       onedrive_enabled: key === "onedrive" ? onedriveEnabled.value : current.value.onedrive_enabled,
       onedrive_client_id:
         key === "onedrive" ? onedriveClientId.value || null : current.value.onedrive_client_id,
@@ -251,8 +245,7 @@ async function saveProvider(key: ProviderKey): Promise<void> {
         key === "onedrive"
           ? resolvedSecret(onedriveClientSecretInput.value, onedriveClientSecretClear.value)
           : null,
-      onedrive_folder_path:
-        key === "onedrive" ? onedriveFolderPath.value || null : current.value.onedrive_folder_path,
+      onedrive_folder_path: current.value.onedrive_folder_path,
       auto_archive_backend: current.value.auto_archive_backend,
       auto_archive_after_days: current.value.auto_archive_after_days,
     });
@@ -299,35 +292,6 @@ function connectOAuthProvider(key: "google_drive" | "onedrive"): void {
 
 const helpOpenFor = ref<ProviderKey | null>(null);
 const redirectOrigin = window.location.origin;
-
-// ------------------------------------------------------------ cloud browse
-
-const cloudBrowseFor = ref<ProviderKey | null>(null);
-// Kept separate from cloudBrowseFor (which drives :visible and goes back to
-// null on close) so the dialog's own header/provider don't blank out mid
-// fade-out transition - it only ever changes on open, never on close.
-const cloudBrowseProvider = ref<ProviderKey>("s3");
-// Non-null: cloudBrowseProvider is always one of the three ProviderKey
-// literals and INTEGRATIONS exhaustively covers all three, so find() always
-// succeeds - a ?? fallback here would just be unreachable dead code.
-const cloudBrowseLabel = computed(
-  () => INTEGRATIONS.find((i) => i.key === cloudBrowseProvider.value)!.name,
-);
-
-function openCloudBrowser(key: ProviderKey): void {
-  cloudBrowseFor.value = key;
-  cloudBrowseProvider.value = key;
-}
-
-function onCloudFolderSelected(payload: { id: string; path: string }): void {
-  if (cloudBrowseProvider.value === "s3") {
-    s3Prefix.value = payload.id ? `${payload.id}/` : "";
-  } else if (cloudBrowseProvider.value === "google_drive") {
-    driveFolderId.value = payload.id;
-  } else {
-    onedriveFolderPath.value = payload.path;
-  }
-}
 </script>
 
 <template>
@@ -459,6 +423,17 @@ function onCloudFolderSelected(payload: { id: string; path: string }): void {
           :data-testid="`integration-form-${integration.key}`"
           @submit.prevent="saveProvider(integration.key)"
         >
+          <Message
+            severity="info"
+            :closable="false"
+            class="form-hint"
+          >
+            Once this is enabled and connected, pick which folder new clips archive to on the
+            <RouterLink :to="{ name: 'storage' }">
+              Storage tab
+            </RouterLink>.
+          </Message>
+
           <template v-if="integration.key === 's3'">
             <label class="field toggle-field">
               <input
@@ -484,29 +459,6 @@ function onCloudFolderSelected(payload: { id: string; path: string }): void {
                 fluid
                 data-testid="s3-region"
               />
-            </label>
-            <label class="field">
-              <span class="field-label">Key prefix (optional)</span>
-              <div class="field-with-action">
-                <InputText
-                  v-model="s3Prefix"
-                  placeholder="blink-clips/"
-                  fluid
-                  data-testid="s3-prefix"
-                />
-                <Button
-                  v-tooltip.top="
-                    isConnected('s3') ? 'Browse folders' : 'Save and connect S3 first'
-                  "
-                  icon="pi pi-folder-open"
-                  severity="secondary"
-                  outlined
-                  :disabled="!isConnected('s3')"
-                  aria-label="Browse S3 folders"
-                  data-testid="s3-browse"
-                  @click="openCloudBrowser('s3')"
-                />
-              </div>
             </label>
             <label class="field">
               <span class="field-label">Access key ID</span>
@@ -586,31 +538,6 @@ function onCloudFolderSelected(payload: { id: string; path: string }): void {
               >
               Remove the saved client secret on next save
             </label>
-            <label class="field">
-              <span class="field-label">Folder ID (optional)</span>
-              <div class="field-with-action">
-                <InputText
-                  v-model="driveFolderId"
-                  placeholder="Uploads to My Drive's root if left blank"
-                  fluid
-                  data-testid="drive-folder-id"
-                />
-                <Button
-                  v-tooltip.top="
-                    isConnected('google_drive')
-                      ? 'Browse folders'
-                      : 'Connect Google Drive first'
-                  "
-                  icon="pi pi-folder-open"
-                  severity="secondary"
-                  outlined
-                  :disabled="!isConnected('google_drive')"
-                  aria-label="Browse Google Drive folders"
-                  data-testid="drive-browse"
-                  @click="openCloudBrowser('google_drive')"
-                />
-              </div>
-            </label>
             <Button
               label="Connect with Google"
               icon="pi pi-google"
@@ -664,29 +591,6 @@ function onCloudFolderSelected(payload: { id: string; path: string }): void {
               >
               Remove the saved client secret on next save
             </label>
-            <label class="field">
-              <span class="field-label">Folder path (optional)</span>
-              <div class="field-with-action">
-                <InputText
-                  v-model="onedriveFolderPath"
-                  placeholder="BlinkClips"
-                  fluid
-                  data-testid="onedrive-folder-path"
-                />
-                <Button
-                  v-tooltip.top="
-                    isConnected('onedrive') ? 'Browse folders' : 'Connect OneDrive first'
-                  "
-                  icon="pi pi-folder-open"
-                  severity="secondary"
-                  outlined
-                  :disabled="!isConnected('onedrive')"
-                  aria-label="Browse OneDrive folders"
-                  data-testid="onedrive-browse"
-                  @click="openCloudBrowser('onedrive')"
-                />
-              </div>
-            </label>
             <Button
               label="Connect with Microsoft"
               icon="pi pi-microsoft"
@@ -706,6 +610,15 @@ function onCloudFolderSelected(payload: { id: string; path: string }): void {
           </Message>
 
           <div class="form-actions">
+            <Button
+              type="button"
+              label="Test connection"
+              severity="secondary"
+              outlined
+              :loading="testing"
+              :data-testid="`integration-test-${integration.key}`"
+              @click="runTest"
+            />
             <Button
               type="submit"
               label="Save"
@@ -785,14 +698,6 @@ function onCloudFolderSelected(payload: { id: string; path: string }): void {
         <li>Click "Connect with Microsoft" and approve access on Microsoft's own sign-in screen.</li>
       </ol>
     </Dialog>
-
-    <CloudFolderBrowserDialog
-      :visible="cloudBrowseFor !== null"
-      :provider="cloudBrowseProvider"
-      :provider-label="cloudBrowseLabel"
-      @update:visible="cloudBrowseFor = null"
-      @select="onCloudFolderSelected"
-    />
   </section>
 </template>
 
@@ -810,14 +715,8 @@ function onCloudFolderSelected(payload: { id: string; path: string }): void {
   min-width: 220px;
 }
 
-.field-with-action {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.field-with-action :deep(.p-inputtext) {
-  flex: 1;
+.form-hint {
+  margin: 0;
 }
 
 .grid {
@@ -970,6 +869,7 @@ function onCloudFolderSelected(payload: { id: string; path: string }): void {
 .form-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
 }
 
 .help-steps {
