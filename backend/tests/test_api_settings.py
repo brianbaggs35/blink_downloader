@@ -29,6 +29,7 @@ async def test_default_reflects_env_var(admin_client: AsyncClient) -> None:
     body = response.json()
     assert body["is_default"] is True
     assert body["storage_dir"]
+    assert body["local_storage_quota_bytes"] is None
 
 
 async def test_update_to_a_writable_directory(admin_client: AsyncClient, tmp_path: object) -> None:
@@ -65,6 +66,33 @@ async def test_unwritable_path_rejected(admin_client: AsyncClient) -> None:
     )
     assert response.status_code == 400
     assert "not exist or is not writable" in response.json()["detail"]
+
+
+async def test_sets_a_local_storage_quota(admin_client: AsyncClient) -> None:
+    quota = 500 * 1024**3  # 500 GB - well past a 32-bit int's range
+    response = await admin_client.patch(
+        "/api/settings/storage", json={"local_storage_quota_bytes": quota}
+    )
+    assert response.status_code == 200
+    assert response.json()["local_storage_quota_bytes"] == quota
+
+    followup = await admin_client.get("/api/settings/storage")
+    assert followup.json()["local_storage_quota_bytes"] == quota
+
+
+async def test_clearing_the_quota_restores_unlimited(admin_client: AsyncClient) -> None:
+    await admin_client.patch("/api/settings/storage", json={"local_storage_quota_bytes": 1024})
+    response = await admin_client.patch("/api/settings/storage", json={})
+    assert response.status_code == 200
+    assert response.json()["local_storage_quota_bytes"] is None
+
+
+@pytest.mark.parametrize("value", [0, -1])
+async def test_rejects_a_non_positive_quota(admin_client: AsyncClient, value: int) -> None:
+    response = await admin_client.patch(
+        "/api/settings/storage", json={"local_storage_quota_bytes": value}
+    )
+    assert response.status_code == 422
 
 
 # ------------------------------------------------------------- storage browse

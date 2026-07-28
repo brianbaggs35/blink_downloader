@@ -38,6 +38,7 @@ from app.settings.service import (
     get_app_settings,
     resolve_storage_dir,
     set_blink_sync_settings,
+    set_local_storage_quota_bytes,
     set_storage_dir,
 )
 from app.users.auth import current_superuser
@@ -47,15 +48,26 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/settings", tags=["settings"])
 
 
+def _storage_settings_read(row: AppSettings) -> StorageSettingsRead:
+    if row.storage_dir:
+        return StorageSettingsRead(
+            storage_dir=row.storage_dir,
+            is_default=False,
+            local_storage_quota_bytes=row.local_storage_quota_bytes,
+        )
+    return StorageSettingsRead(
+        storage_dir=str(get_settings().storage_dir),
+        is_default=True,
+        local_storage_quota_bytes=row.local_storage_quota_bytes,
+    )
+
+
 @router.get("/storage", response_model=StorageSettingsRead)
 async def get_storage_settings(
     session: Annotated[AsyncSession, Depends(get_session)],
     _user: Annotated[object, Depends(current_superuser)],
 ) -> StorageSettingsRead:
-    row = await get_app_settings(session)
-    if row.storage_dir:
-        return StorageSettingsRead(storage_dir=row.storage_dir, is_default=False)
-    return StorageSettingsRead(storage_dir=str(get_settings().storage_dir), is_default=True)
+    return _storage_settings_read(await get_app_settings(session))
 
 
 @router.patch("/storage", response_model=StorageSettingsRead)
@@ -72,11 +84,10 @@ async def update_storage_settings(
                 "backend container. Existing clips are not moved when you change this."
             ),
         )
-    row = await set_storage_dir(session, payload.storage_dir)
+    await set_storage_dir(session, payload.storage_dir)
+    row = await set_local_storage_quota_bytes(session, payload.local_storage_quota_bytes)
     logger.info("settings.storage_dir_updated", storage_dir=payload.storage_dir)
-    if row.storage_dir:
-        return StorageSettingsRead(storage_dir=row.storage_dir, is_default=False)
-    return StorageSettingsRead(storage_dir=str(get_settings().storage_dir), is_default=True)
+    return _storage_settings_read(row)
 
 
 @router.get("/storage/browse", response_model=StorageBrowseResponse)

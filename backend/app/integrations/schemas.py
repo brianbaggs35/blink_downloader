@@ -105,6 +105,10 @@ class StorageSummaryResponse(BaseModel):
     by_backend: list[BackendStorageSummary]
     total_clips: int
     total_bytes: int
+    local_quota_bytes: int | None
+    """An admin-set budget for local disk usage (app.settings), or null for
+    unlimited - compare against the LOCAL row in by_backend for a usage
+    gauge. Informational only, never enforced."""
 
 
 class ArchiveClipsRequest(BaseModel):

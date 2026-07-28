@@ -127,6 +127,14 @@ async def test_summary_groups_by_backend(
     assert by_backend["local"]["total_bytes"] == 30
     assert by_backend["s3"]["clip_count"] == 1
     assert by_backend["s3"]["total_bytes"] == 30
+    assert body["local_quota_bytes"] is None
+
+
+async def test_summary_reports_the_configured_local_quota(admin_client: AsyncClient) -> None:
+    quota = 500 * 1024**3
+    await admin_client.patch("/api/settings/storage", json={"local_storage_quota_bytes": quota})
+    response = await admin_client.get("/api/storage/summary")
+    assert response.json()["local_quota_bytes"] == quota
 
 
 # ------------------------------------------------------------------- archive

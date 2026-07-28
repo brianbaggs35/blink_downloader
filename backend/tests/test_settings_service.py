@@ -13,6 +13,7 @@ from app.settings.service import (
     resolve_blink_sync_interval_seconds,
     resolve_storage_dir,
     set_blink_sync_settings,
+    set_local_storage_quota_bytes,
     set_storage_dir,
 )
 from tests.conftest import PlainSettings
@@ -22,6 +23,7 @@ async def test_get_app_settings_creates_the_row_on_first_read(app_session: Async
     row = await get_app_settings(app_session)
     assert row.id == SINGLETON_ID
     assert row.storage_dir is None
+    assert row.local_storage_quota_bytes is None
 
 
 async def test_get_app_settings_is_idempotent(app_session: AsyncSession) -> None:
@@ -46,6 +48,19 @@ async def test_set_storage_dir_can_clear_the_override(app_session: AsyncSession)
     await set_storage_dir(app_session, None)
     row = await get_app_settings(app_session)
     assert row.storage_dir is None
+
+
+async def test_set_local_storage_quota_bytes_creates_then_updates(
+    app_session: AsyncSession,
+) -> None:
+    huge_quota = 500 * 1024**3  # 500 GB - well past a 32-bit int's range
+    await set_local_storage_quota_bytes(app_session, huge_quota)
+    row = await get_app_settings(app_session)
+    assert row.local_storage_quota_bytes == huge_quota
+
+    await set_local_storage_quota_bytes(app_session, None)
+    row = await get_app_settings(app_session)
+    assert row.local_storage_quota_bytes is None
 
 
 async def test_resolve_storage_dir_falls_back_to_env_default(app_session: AsyncSession) -> None:

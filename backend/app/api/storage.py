@@ -39,6 +39,7 @@ from app.integrations.service import (
     get_storage_integration_settings,
 )
 from app.logs import get_logger
+from app.settings.service import get_app_settings
 from app.users.auth import current_active_user, current_superuser
 from app.worker.tasks.archive import ARCHIVE_CLIP_JOB_NAME, RESTORE_CLIP_JOB_NAME
 
@@ -65,10 +66,12 @@ async def get_storage_summary(
         BackendStorageSummary(backend=backend, clip_count=count, total_bytes=int(total_bytes))
         for backend, count, total_bytes in rows
     ]
+    app_settings = await get_app_settings(session)
     return StorageSummaryResponse(
         by_backend=by_backend,
         total_clips=sum(item.clip_count for item in by_backend),
         total_bytes=sum(item.total_bytes for item in by_backend),
+        local_quota_bytes=app_settings.local_storage_quota_bytes,
     )
 
 
