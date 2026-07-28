@@ -1,6 +1,16 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// LibraryView can open ClipDetailModal, which renders a real VideoPlayer -
+// same mock as video-player.spec.ts/clip-detail-modal.spec.ts, otherwise an
+// unmocked video.js tries to actually load the fake clip src (happy-dom
+// resolves the relative URL against its default http://localhost:3000
+// origin) and logs a real ECONNREFUSED plus a MEDIA_ERR_SRC_NOT_SUPPORTED.
+vi.mock("video.js", () => ({
+  default: vi.fn(() => ({ dispose: vi.fn(), src: vi.fn() })),
+}));
+vi.mock("video.js/dist/video-js.css", () => ({}));
+
 vi.mock("@/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api")>()),
   getBlinkStatus: vi.fn(),
