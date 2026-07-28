@@ -121,30 +121,32 @@ describe("NavSidebar", () => {
 });
 
 describe("NavSidebar Blink connection badge", () => {
-  it("shows 'Blink not connected' when no account is linked", async () => {
+  it("shows 'Disconnected' when no account is linked", async () => {
     const wrapper = await mountSidebar();
     await flushPromises();
     const badge = wrapper.find('[data-testid="nav-blink-badge"]');
     expect(badge.classes()).toContain("badge-unlinked");
-    expect(badge.text()).toBe("Blink not connected");
+    expect(badge.text()).toBe("Disconnected");
   });
 
-  it("shows 'Blink connected' for an active account", async () => {
+  it("shows 'Connected' for an active account", async () => {
     mockedBlinkStatus.mockResolvedValue({ ...unlinkedStatus, linked: true, status: "active" });
     const wrapper = await mountSidebar();
     await flushPromises();
     const badge = wrapper.find('[data-testid="nav-blink-badge"]');
     expect(badge.classes()).toContain("badge-connected");
-    expect(badge.text()).toBe("Blink connected");
+    expect(badge.text()).toBe("Connected");
   });
 
-  it("shows 'Blink needs attention' for a linked account in an error state", async () => {
+  it("shows 'Disconnected' (styled distinctly) for a linked account in an error state", async () => {
     mockedBlinkStatus.mockResolvedValue({ ...unlinkedStatus, linked: true, status: "error" });
     const wrapper = await mountSidebar();
     await flushPromises();
     const badge = wrapper.find('[data-testid="nav-blink-badge"]');
+    // Still visually distinct from a plain "never linked" - just no longer
+    // a separate word, so the label reads as the two states Brian asked for.
     expect(badge.classes()).toContain("badge-attention");
-    expect(badge.text()).toBe("Blink needs attention");
+    expect(badge.text()).toBe("Disconnected");
   });
 
   it("falls back to the unlinked badge if the status check fails", async () => {
@@ -175,7 +177,7 @@ describe("NavSidebar Blink connection badge", () => {
     // drawers behind in document.body - the freshly teleported one is always
     // the last match, never the first.
     const badges = document.body.querySelectorAll('[data-testid="nav-blink-badge-mobile"]');
-    expect(badges[badges.length - 1]?.textContent).toBe("Blink connected");
+    expect(badges[badges.length - 1]?.textContent).toBe("Connected");
     useMobileNav().close();
     wrapper.unmount();
   });

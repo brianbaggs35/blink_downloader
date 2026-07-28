@@ -48,7 +48,7 @@ test("collapsing the sidebar persists across a reload", async ({ page }) => {
 test("shows the seeded Blink account as connected in the nav badge", async ({ page }) => {
   const badge = page.getByTestId("nav-blink-badge");
   await expect(badge).toHaveClass(/badge-connected/);
-  await expect(badge).toHaveText("Blink connected");
+  await expect(badge).toHaveText("Connected");
 });
 
 test("the theme toggle switches between dark and light", async ({ page }) => {
