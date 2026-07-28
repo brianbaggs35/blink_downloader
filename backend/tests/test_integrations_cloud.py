@@ -44,6 +44,7 @@ class _FakeBotoClient:
         self.raise_on: set[str] = set()
         self.presigned_url_value = "https://s3.example/signed"
         self.get_object_body = b"clip-bytes"
+        self.list_objects_v2_response: dict[str, Any] = {"CommonPrefixes": []}
 
     def _maybe_raise(self, name: str) -> None:
         if name in self.raise_on:
@@ -78,6 +79,11 @@ class _FakeBotoClient:
     def head_bucket(self, **kwargs: Any) -> None:
         self.calls.append(("head_bucket", kwargs))
         self._maybe_raise("head_bucket")
+
+    def list_objects_v2(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(("list_objects_v2", kwargs))
+        self._maybe_raise("list_objects_v2")
+        return self.list_objects_v2_response
 
 
 def _s3_client(
@@ -174,6 +180,62 @@ async def test_s3_test_connection_wraps_errors(monkeypatch: pytest.MonkeyPatch) 
     client = _s3_client(monkeypatch, fake)
     with pytest.raises(CloudStorageError, match="Could not reach bucket"):
         await client.test_connection()
+
+
+async def test_s3_list_folders_at_the_bucket_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeBotoClient()
+    fake.list_objects_v2_response = {
+        "CommonPrefixes": [{"Prefix": "clips/"}, {"Prefix": "backups/"}]
+    }
+    client = _s3_client(monkeypatch, fake)
+    folders = await client.list_folders()
+    assert folders == [("clips", "clips"), ("backups", "backups")]
+    assert fake.calls[0] == (
+        "list_objects_v2",
+        {"Bucket": "my-bucket", "Prefix": "", "Delimiter": "/"},
+    )
+
+
+async def test_s3_list_folders_under_a_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeBotoClient()
+    fake.list_objects_v2_response = {"CommonPrefixes": [{"Prefix": "clips/2026/"}]}
+    client = _s3_client(monkeypatch, fake)
+    folders = await client.list_folders("clips")
+    assert folders == [("clips/2026", "2026")]
+    assert fake.calls[0][1]["Prefix"] == "clips/"
+
+
+async def test_s3_list_folders_with_none_at_this_level(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeBotoClient()
+    client = _s3_client(monkeypatch, fake)
+    assert await client.list_folders() == []
+
+
+async def test_s3_list_folders_wraps_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeBotoClient()
+    fake.raise_on.add("list_objects_v2")
+    client = _s3_client(monkeypatch, fake)
+    with pytest.raises(CloudStorageError, match="S3 could not list folders"):
+        await client.list_folders()
+
+
+async def test_s3_create_folder(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeBotoClient()
+    client = _s3_client(monkeypatch, fake)
+    path = await client.create_folder("clips/2026")
+    assert path == "clips/2026"
+    assert fake.calls[0] == (
+        "put_object",
+        {"Bucket": "my-bucket", "Key": "clips/2026/", "Body": b""},
+    )
+
+
+async def test_s3_create_folder_wraps_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeBotoClient()
+    fake.raise_on.add("put_object")
+    client = _s3_client(monkeypatch, fake)
+    with pytest.raises(CloudStorageError, match="S3 could not create folder"):
+        await client.create_folder("clips")
 
 
 # ------------------------------------------------------------- Google Drive
@@ -276,8 +338,15 @@ class _FakeFilesResource:
     def __init__(self, drive: Any) -> None:
         self._drive = drive
 
-    def create(self, *, body: Any, media_body: Any, fields: str) -> _FakeGoogleRequest:
+    def create(self, *, body: Any, media_body: Any = None, fields: str) -> Any:
         self._drive.create_calls.append(body)
+        if media_body is None:
+            # Folder creation has no media to upload - a plain, immediate
+            # execute() rather than the resumable next_chunk() loop below.
+            return _FakeExecuteRequest(
+                result={"id": self._drive.created_folder_id},
+                raise_error=self._drive.raise_on_create,
+            )
         return _FakeGoogleRequest(list(self._drive.upload_chunks))
 
     def get_media(self, *, fileId: str) -> _FakeGoogleRequest:  # noqa: N803 - matches googleapiclient's own kwarg name
@@ -287,6 +356,13 @@ class _FakeFilesResource:
     def delete(self, *, fileId: str) -> _FakeExecuteRequest:  # noqa: N803
         self._drive.delete_calls.append(fileId)
         return _FakeExecuteRequest(raise_error=self._drive.raise_on_delete)
+
+    def list(self, *, q: str, fields: str, spaces: str) -> _FakeExecuteRequest:
+        self._drive.list_queries.append(q)
+        return _FakeExecuteRequest(
+            result={"files": self._drive.list_files_response},
+            raise_error=self._drive.raise_on_list,
+        )
 
 
 class _FakeAboutResource:
@@ -302,9 +378,14 @@ class _FakeDriveService:
         self.upload_chunks: list[tuple[Any, Any]] = [(None, {"id": "file-123"})]
         self.raise_on_delete = False
         self.raise_on_about = False
+        self.raise_on_create = False
+        self.raise_on_list = False
+        self.created_folder_id = "new-folder-1"
+        self.list_files_response: list[dict[str, str]] = []
         self.create_calls: list[Any] = []
         self.get_media_calls: list[str] = []
         self.delete_calls: list[str] = []
+        self.list_queries: list[str] = []
 
     def files(self) -> _FakeFilesResource:
         return _FakeFilesResource(self)
@@ -343,7 +424,7 @@ async def test_google_drive_upload_wraps_errors(monkeypatch: pytest.MonkeyPatch)
     drive = _FakeDriveService()
 
     class _RaisingFiles(_FakeFilesResource):
-        def create(self, *, body: Any, media_body: Any, fields: str) -> _FakeGoogleRequest:
+        def create(self, *, body: Any, media_body: Any = None, fields: str) -> _FakeGoogleRequest:
             raise GoogleHttpError(httplib2.Response({"status": "500"}), b"boom")
 
     drive.files = lambda: _RaisingFiles(drive)  # type: ignore[method-assign]
@@ -402,6 +483,61 @@ async def test_google_drive_test_connection_wraps_errors(monkeypatch: pytest.Mon
     client = _drive_client(monkeypatch, drive)
     with pytest.raises(CloudStorageError, match="Could not reach Google Drive"):
         await client.test_connection()
+
+
+async def test_google_drive_list_folders_defaults_to_the_drive_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    drive = _FakeDriveService()
+    drive.list_files_response = [{"id": "f1", "name": "Clips"}, {"id": "f2", "name": "Backups"}]
+    client = _drive_client(monkeypatch, drive)
+    folders = await client.list_folders()
+    assert folders == [("f1", "Clips"), ("f2", "Backups")]
+    assert "'root' in parents" in drive.list_queries[0]
+
+
+async def test_google_drive_list_folders_under_a_parent(monkeypatch: pytest.MonkeyPatch) -> None:
+    drive = _FakeDriveService()
+    drive.list_files_response = [{"id": "f3", "name": "2026"}]
+    client = _drive_client(monkeypatch, drive)
+    folders = await client.list_folders("f1")
+    assert folders == [("f3", "2026")]
+    assert "'f1' in parents" in drive.list_queries[0]
+
+
+async def test_google_drive_list_folders_wraps_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    drive = _FakeDriveService()
+    drive.raise_on_list = True
+    client = _drive_client(monkeypatch, drive)
+    with pytest.raises(CloudStorageError, match="Google Drive could not list folders"):
+        await client.list_folders()
+
+
+async def test_google_drive_create_folder_at_the_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    drive = _FakeDriveService()
+    drive.created_folder_id = "new-folder-42"
+    client = _drive_client(monkeypatch, drive)
+    folder_id = await client.create_folder(None, "New Folder")
+    assert folder_id == "new-folder-42"
+    assert drive.create_calls[0] == {
+        "name": "New Folder",
+        "mimeType": "application/vnd.google-apps.folder",
+    }
+
+
+async def test_google_drive_create_folder_under_a_parent(monkeypatch: pytest.MonkeyPatch) -> None:
+    drive = _FakeDriveService()
+    client = _drive_client(monkeypatch, drive)
+    await client.create_folder("f1", "Subfolder")
+    assert drive.create_calls[0]["parents"] == ["f1"]
+
+
+async def test_google_drive_create_folder_wraps_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    drive = _FakeDriveService()
+    drive.raise_on_create = True
+    client = _drive_client(monkeypatch, drive)
+    with pytest.raises(CloudStorageError, match="Google Drive could not create folder"):
+        await client.create_folder(None, "New Folder")
 
 
 # ------------------------------------------------------------------ OneDrive
@@ -571,3 +707,98 @@ async def test_onedrive_test_connection_wraps_errors(monkeypatch: pytest.MonkeyP
     _patch_graph_transport(monkeypatch, handler)
     with pytest.raises(CloudStorageError, match="Could not reach OneDrive"):
         await client.test_connection()
+
+
+async def test_onedrive_list_folders_defaults_to_the_drive_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    msal_app = _FakeMsalApp()
+    client = _onedrive_client(monkeypatch, msal_app)
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        return httpx.Response(
+            200,
+            json={
+                "value": [
+                    {"id": "f1", "name": "Clips", "folder": {}},
+                    {"id": "file1", "name": "not-a-folder.mp4"},
+                ]
+            },
+        )
+
+    _patch_graph_transport(monkeypatch, handler)
+    folders = await client.list_folders()
+    assert folders == [("f1", "Clips")]
+    assert captured["path"].endswith("/root/children")
+
+
+async def test_onedrive_list_folders_under_a_parent(monkeypatch: pytest.MonkeyPatch) -> None:
+    msal_app = _FakeMsalApp()
+    client = _onedrive_client(monkeypatch, msal_app)
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        return httpx.Response(200, json={"value": [{"id": "f2", "name": "2026", "folder": {}}]})
+
+    _patch_graph_transport(monkeypatch, handler)
+    folders = await client.list_folders("f1")
+    assert folders == [("f2", "2026")]
+    assert captured["path"].endswith("/items/f1/children")
+
+
+async def test_onedrive_list_folders_wraps_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    msal_app = _FakeMsalApp()
+    client = _onedrive_client(monkeypatch, msal_app)
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500)
+
+    _patch_graph_transport(monkeypatch, handler)
+    with pytest.raises(CloudStorageError, match="OneDrive could not list folders"):
+        await client.list_folders()
+
+
+async def test_onedrive_create_folder_at_the_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    msal_app = _FakeMsalApp()
+    client = _onedrive_client(monkeypatch, msal_app)
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        captured["body"] = request.content
+        return httpx.Response(201, json={"id": "new-folder-1"})
+
+    _patch_graph_transport(monkeypatch, handler)
+    folder_id = await client.create_folder(None, "New Folder")
+    assert folder_id == "new-folder-1"
+    assert captured["path"].endswith("/root/children")
+    assert b"New Folder" in captured["body"]
+
+
+async def test_onedrive_create_folder_under_a_parent(monkeypatch: pytest.MonkeyPatch) -> None:
+    msal_app = _FakeMsalApp()
+    client = _onedrive_client(monkeypatch, msal_app)
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        return httpx.Response(201, json={"id": "new-folder-2"})
+
+    _patch_graph_transport(monkeypatch, handler)
+    await client.create_folder("f1", "Subfolder")
+    assert captured["path"].endswith("/items/f1/children")
+
+
+async def test_onedrive_create_folder_wraps_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    msal_app = _FakeMsalApp()
+    client = _onedrive_client(monkeypatch, msal_app)
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500)
+
+    _patch_graph_transport(monkeypatch, handler)
+    with pytest.raises(CloudStorageError, match="OneDrive could not create folder"):
+        await client.create_folder(None, "New Folder")
