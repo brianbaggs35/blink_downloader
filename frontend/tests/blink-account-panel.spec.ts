@@ -23,7 +23,8 @@ import {
 } from "@/api";
 import { ApiError } from "@/api/client";
 import BlinkAccountPanel from "@/components/BlinkAccountPanel.vue";
-import { fakeBlinkStatus, makePinia, mountGlobal } from "./helpers";
+import { useAuthStore } from "@/stores/auth";
+import { fakeBlinkStatus, fakeUser, makePinia, mountGlobal } from "./helpers";
 
 const mockedStatus = vi.mocked(getBlinkStatus);
 const mockedLink = vi.mocked(linkBlinkAccount);
@@ -42,9 +43,11 @@ function unlinkedStatus() {
   return fakeBlinkStatus();
 }
 
-async function mountPanel() {
+async function mountPanel(isAdmin = true) {
+  const pinia = makePinia();
+  useAuthStore().user = { ...fakeUser, is_superuser: isAdmin };
   const wrapper = mount(BlinkAccountPanel, {
-    global: mountGlobal(makePinia()),
+    global: mountGlobal(pinia),
     attachTo: document.body,
   });
   await flushPromises();
@@ -227,6 +230,14 @@ describe("BlinkAccountPanel — unlinked", () => {
     await flushPromises();
     expect(document.body.querySelector('[data-testid="twofa-modal"]')).toBeFalsy();
   });
+
+  it("hides the sign-in form from a viewer, showing an admin-only note instead", async () => {
+    const wrapper = await mountPanel(false);
+    expect(wrapper.find('[data-testid="blink-link-form"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="blink-link-admin-only"]').text()).toContain(
+      "Ask an admin",
+    );
+  });
 });
 
 describe("BlinkAccountPanel — linked", () => {
@@ -362,5 +373,12 @@ describe("BlinkAccountPanel — linked", () => {
     expect(toastAdd).toHaveBeenCalledWith(
       expect.objectContaining({ severity: "error", detail: "Server exploded." }),
     );
+  });
+
+  it("hides Sync now/Unlink from a viewer, while still showing read-only status", async () => {
+    const wrapper = await mountPanel(false);
+    expect(wrapper.find('[data-testid="blink-linked"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="sync-now"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="open-unlink-confirm"]').exists()).toBe(false);
   });
 });

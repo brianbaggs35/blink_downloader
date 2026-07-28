@@ -10,8 +10,10 @@ import { computed, onMounted, ref } from "vue";
 
 import { ApiError } from "@/api";
 import { useFormatting } from "@/composables/useFormatting";
+import { useAuthStore } from "@/stores/auth";
 import { useBlinkStore } from "@/stores/blink";
 
+const auth = useAuthStore();
 const blink = useBlinkStore();
 const toast = useToast();
 const { formatDateTime } = useFormatting();
@@ -194,7 +196,10 @@ async function confirmUnlink(): Promise<void> {
       >
         {{ blink.status.last_error }}
       </Message>
-      <div class="panel-actions">
+      <div
+        v-if="auth.isAdmin"
+        class="panel-actions"
+      >
         <Button
           label="Sync now"
           icon="pi pi-refresh"
@@ -214,6 +219,14 @@ async function confirmUnlink(): Promise<void> {
         />
       </div>
     </div>
+
+    <p
+      v-else-if="!auth.isAdmin"
+      class="muted"
+      data-testid="blink-link-admin-only"
+    >
+      No Blink account linked yet. Ask an admin to connect one in Settings.
+    </p>
 
     <form
       v-else

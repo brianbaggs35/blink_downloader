@@ -1,10 +1,14 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { useRoute } from "vue-router";
+
+import { useAuthStore } from "@/stores/auth";
 
 interface NavItem {
   label: string;
   icon: string;
   to: { name: string };
+  adminOnly?: boolean;
 }
 
 interface NavGroup {
@@ -16,7 +20,7 @@ interface NavGroup {
 // View, Storage, AI, AI Usage, Vehicles, Biometrics, Settings. Security
 // Feed sits first - Brian asked for it "near the top" as the closest thing
 // to an at-a-glance live dashboard.
-const groups: NavGroup[] = [
+const GROUPS: NavGroup[] = [
   {
     label: "Monitor",
     items: [
@@ -30,7 +34,11 @@ const groups: NavGroup[] = [
     label: "Archive",
     items: [
       { label: "Storage", icon: "pi pi-database", to: { name: "storage" } },
-      { label: "Integrations", icon: "pi pi-cloud", to: { name: "integrations" } },
+      // Unlike Storage (a real read-only view for any signed-in user),
+      // Integrations has nothing but admin-only credentials/connection
+      // state - the page itself 403s outright for a viewer, so the link
+      // is hidden rather than leading somewhere that only ever errors.
+      { label: "Integrations", icon: "pi pi-cloud", to: { name: "integrations" }, adminOnly: true },
     ],
   },
   {
@@ -57,6 +65,14 @@ withDefaults(defineProps<{ collapsed?: boolean }>(), { collapsed: false });
 const emit = defineEmits<{ navigate: [] }>();
 
 const route = useRoute();
+const auth = useAuthStore();
+
+const groups = computed(() =>
+  GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => !item.adminOnly || auth.isAdmin),
+  })).filter((group) => group.items.length > 0),
+);
 </script>
 
 <template>
