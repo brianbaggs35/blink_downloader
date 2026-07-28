@@ -13,24 +13,21 @@ import { useRoute } from "vue-router";
 import {
   ApiError,
   getBlinkSyncSettings,
-  getStorageSettings,
   updateBlinkSyncSettings,
   updateMe,
-  updateStorageSettings,
 } from "@/api";
 import BlinkAccountPanel from "@/components/BlinkAccountPanel.vue";
 import PageHeader from "@/components/PageHeader.vue";
 import SettingsAboutPanel from "@/components/SettingsAboutPanel.vue";
 import SettingsAiProviderPanel from "@/components/SettingsAiProviderPanel.vue";
 import SettingsAlertsPanel from "@/components/SettingsAlertsPanel.vue";
-import SettingsArchivedPanel from "@/components/SettingsArchivedPanel.vue";
 import SettingsBiometricsPanel from "@/components/SettingsBiometricsPanel.vue";
 import SettingsCamerasPanel from "@/components/SettingsCamerasPanel.vue";
 import SettingsLiveViewPanel from "@/components/SettingsLiveViewPanel.vue";
 import SettingsSecurityFeedPanel from "@/components/SettingsSecurityFeedPanel.vue";
+import SettingsStoragePanel from "@/components/SettingsStoragePanel.vue";
 import SettingsUsersPanel from "@/components/SettingsUsersPanel.vue";
 import SettingsVehiclesPanel from "@/components/SettingsVehiclesPanel.vue";
-import StorageDirectoryBrowserDialog from "@/components/StorageDirectoryBrowserDialog.vue";
 import { useTheme } from "@/composables/useTheme";
 import { useAuthStore } from "@/stores/auth";
 
@@ -58,7 +55,7 @@ const ADMIN_ONLY_TABS = new Set([
   "alerts",
   "live-view",
   "security-feed",
-  "archived",
+  "storage",
 ]);
 const VALID_TABS = new Set(["general", "about", ...ADMIN_ONLY_TABS]);
 const activeTab = computed(() => {
@@ -146,43 +143,6 @@ async function savePassword(): Promise<void> {
     passwordError.value = caught instanceof ApiError ? caught.message : "Unexpected error.";
   } finally {
     savingPassword.value = false;
-  }
-}
-
-const storageDir = ref("");
-const storageIsDefault = ref(true);
-const savingStorage = ref(false);
-const storageError = ref("");
-const storageBrowseOpen = ref(false);
-
-function applyBrowsedStorageDir(path: string): void {
-  storageDir.value = path;
-}
-
-onMounted(async () => {
-  if (auth.user?.is_superuser) {
-    try {
-      const settings = await getStorageSettings();
-      storageDir.value = settings.storage_dir;
-      storageIsDefault.value = settings.is_default;
-    } catch {
-      // Non-fatal — the field just starts blank; saving will surface errors.
-    }
-  }
-});
-
-async function saveStorageDir(): Promise<void> {
-  storageError.value = "";
-  savingStorage.value = true;
-  try {
-    const settings = await updateStorageSettings({ storage_dir: storageDir.value || null });
-    storageDir.value = settings.storage_dir;
-    storageIsDefault.value = settings.is_default;
-    toast.add({ severity: "success", summary: "Storage location saved", life: 2500 });
-  } catch (caught) {
-    storageError.value = caught instanceof ApiError ? caught.message : "Unexpected error.";
-  } finally {
-    savingStorage.value = false;
   }
 }
 
@@ -363,65 +323,6 @@ async function saveBlinkSyncSettings(): Promise<void> {
             class="panel"
           >
             <h3 class="panel-title">
-              Storage
-            </h3>
-            <p class="panel-hint">
-              Where downloaded clips are saved on this server.
-            </p>
-            <div class="panel-body">
-              <label class="field">
-                <span class="field-label">Clip storage directory</span>
-                <div class="storage-dir-row">
-                  <InputText
-                    v-model="storageDir"
-                    placeholder="/data/clips"
-                    fluid
-                    data-testid="storage-dir"
-                  />
-                  <Button
-                    label="Browse"
-                    icon="pi pi-folder-open"
-                    severity="secondary"
-                    outlined
-                    data-testid="storage-dir-browse"
-                    @click="storageBrowseOpen = true"
-                  />
-                </div>
-              </label>
-              <p class="muted">
-                {{ storageIsDefault ? "Using the default from server configuration." : "Custom location." }}
-                Changing this does not move already-downloaded clips.
-              </p>
-              <Message
-                v-if="storageError"
-                severity="error"
-                :closable="false"
-                data-testid="storage-error"
-              >
-                {{ storageError }}
-              </Message>
-              <div class="panel-actions">
-                <Button
-                  label="Save"
-                  :loading="savingStorage"
-                  data-testid="save-storage"
-                  @click="saveStorageDir"
-                />
-              </div>
-            </div>
-          </article>
-
-          <StorageDirectoryBrowserDialog
-            v-model:visible="storageBrowseOpen"
-            :initial-path="storageDir || undefined"
-            @select="applyBrowsedStorageDir"
-          />
-
-          <article
-            v-if="auth.user?.is_superuser"
-            class="panel"
-          >
-            <h3 class="panel-title">
               Blink sync
             </h3>
             <p class="panel-hint">
@@ -492,7 +393,7 @@ async function saveBlinkSyncSettings(): Promise<void> {
         <SettingsAlertsPanel v-else-if="activeTab === 'alerts' && auth.isAdmin" />
         <SettingsLiveViewPanel v-else-if="activeTab === 'live-view' && auth.isAdmin" />
         <SettingsSecurityFeedPanel v-else-if="activeTab === 'security-feed' && auth.isAdmin" />
-        <SettingsArchivedPanel v-else-if="activeTab === 'archived' && auth.isAdmin" />
+        <SettingsStoragePanel v-else-if="activeTab === 'storage' && auth.isAdmin" />
         <SettingsAboutPanel v-else />
       </div>
     </div>
@@ -561,16 +462,6 @@ async function saveBlinkSyncSettings(): Promise<void> {
   margin: 0;
   font-size: 0.82rem;
   color: var(--p-red-500);
-}
-
-.storage-dir-row {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-}
-
-.storage-dir-row :deep(.p-inputtext) {
-  flex: 1;
 }
 
 .panel-actions {

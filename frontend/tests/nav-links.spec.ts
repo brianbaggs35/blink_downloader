@@ -139,7 +139,7 @@ describe("NavLinks", () => {
         "Alerts",
         "Live View",
         "Security Feed",
-        "Archived",
+        "Storage",
         "About",
       ]);
     });

@@ -115,8 +115,8 @@ const autoArchiveLabel = computed(() => {
   return `New downloads auto-archive to ${BACKEND_META[integrations.value.auto_archive_backend].label}.`;
 });
 
-function goToArchivedSettings(): void {
-  void router.push({ name: "settings", query: { tab: "archived" } });
+function goToStorageSettings(): void {
+  void router.push({ name: "settings", query: { tab: "storage" } });
 }
 
 function goToIntegrations(): void {
@@ -193,8 +193,8 @@ function goToLibrary(): void {
         <span>{{ autoArchiveLabel }}</span>
         <a
           href="#"
-          data-testid="storage-go-to-archived"
-          @click.prevent="goToArchivedSettings"
+          data-testid="storage-go-to-storage-settings"
+          @click.prevent="goToStorageSettings"
         >Change this</a>
       </div>
 

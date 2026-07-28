@@ -82,6 +82,7 @@ export function fakeStorageIntegrationSettings(
     onedrive_connected: false,
     onedrive_folder_path: null,
     auto_archive_backend: "local",
+    auto_archive_after_days: 0,
     ...overrides,
   };
 }

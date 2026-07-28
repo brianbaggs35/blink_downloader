@@ -19,7 +19,7 @@ test("every admin section is reachable directly via ?tab=, with About last in th
     "Alerts",
     "Live View",
     "Security Feed",
-    "Archived",
+    "Storage",
     "About",
   ]);
 
