@@ -758,6 +758,31 @@ export interface paths {
         patch: operations["update_storage_settings_api_settings_storage_patch"];
         trace?: never;
     };
+    "/api/settings/storage/browse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Browse Storage Directories
+         * @description Lists the subdirectories of `path` (default: the currently configured
+         *     clip storage directory) so the Storage settings UI can offer a folder
+         *     picker instead of a blind text field - the container can only ever see
+         *     what's actually mounted into it, so this is scoped to browsing/creating
+         *     within that, not a general host filesystem browser.
+         */
+        get: operations["browse_storage_directories_api_settings_storage_browse_get"];
+        put?: never;
+        /** Create Storage Directory */
+        post: operations["create_storage_directory_api_settings_storage_browse_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings/blink-sync": {
         parameters: {
             query?: never;
@@ -2063,6 +2088,29 @@ export interface components {
          * @enum {string}
          */
         StorageBackend: "local" | "s3" | "google_drive" | "onedrive";
+        /** StorageBrowseEntry */
+        StorageBrowseEntry: {
+            /** Name */
+            name: string;
+            /** Path */
+            path: string;
+        };
+        /** StorageBrowseResponse */
+        StorageBrowseResponse: {
+            /** Path */
+            path: string;
+            /** Parent Path */
+            parent_path: string | null;
+            /** Directories */
+            directories: components["schemas"]["StorageBrowseEntry"][];
+        };
+        /** StorageCreateFolderRequest */
+        StorageCreateFolderRequest: {
+            /** Parent Path */
+            parent_path: string;
+            /** Name */
+            name: string;
+        };
         /** StorageIntegrationSettingsRead */
         StorageIntegrationSettingsRead: {
             /** S3 Enabled */
@@ -4106,6 +4154,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StorageSettingsRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    browse_storage_directories_api_settings_storage_browse_get: {
+        parameters: {
+            query?: {
+                path?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageBrowseResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_storage_directory_api_settings_storage_browse_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StorageCreateFolderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageBrowseResponse"];
                 };
             };
             /** @description Validation Error */

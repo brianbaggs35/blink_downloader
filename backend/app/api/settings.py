@@ -28,10 +28,18 @@ from app.settings.models import AppSettings
 from app.settings.schemas import (
     BlinkSyncSettingsRead,
     BlinkSyncSettingsUpdate,
+    StorageBrowseEntry,
+    StorageBrowseResponse,
+    StorageCreateFolderRequest,
     StorageSettingsRead,
     StorageSettingsUpdate,
 )
-from app.settings.service import get_app_settings, set_blink_sync_settings, set_storage_dir
+from app.settings.service import (
+    get_app_settings,
+    resolve_storage_dir,
+    set_blink_sync_settings,
+    set_storage_dir,
+)
 from app.users.auth import current_superuser
 
 logger = get_logger(__name__)
@@ -69,6 +77,44 @@ async def update_storage_settings(
     if row.storage_dir:
         return StorageSettingsRead(storage_dir=row.storage_dir, is_default=False)
     return StorageSettingsRead(storage_dir=str(get_settings().storage_dir), is_default=True)
+
+
+@router.get("/storage/browse", response_model=StorageBrowseResponse)
+async def browse_storage_directories(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _user: Annotated[object, Depends(current_superuser)],
+    path: str | None = None,
+) -> StorageBrowseResponse:
+    """Lists the subdirectories of `path` (default: the currently configured
+    clip storage directory) so the Storage settings UI can offer a folder
+    picker instead of a blind text field - the container can only ever see
+    what's actually mounted into it, so this is scoped to browsing/creating
+    within that, not a general host filesystem browser."""
+    if path is None:
+        path = str(await resolve_storage_dir(session, get_settings()))
+    return await _list_directory(path)
+
+
+@router.post(
+    "/storage/browse",
+    response_model=StorageBrowseResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_storage_directory(
+    payload: StorageCreateFolderRequest,
+    _user: Annotated[object, Depends(current_superuser)],
+) -> StorageBrowseResponse:
+    new_path = Path(payload.parent_path) / payload.name
+    if not await _is_writable_directory(str(new_path)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Could not create '{new_path}' - check the parent path is valid "
+                "and writable by the backend container."
+            ),
+        )
+    logger.info("settings.storage_dir_folder_created", path=str(new_path))
+    return await _list_directory(str(new_path))
 
 
 def _blink_sync_settings_read(row: AppSettings) -> BlinkSyncSettingsRead:
@@ -119,6 +165,36 @@ async def _is_writable_directory(raw_path: str) -> bool:
         return os.access(path, os.W_OK)
 
     return await asyncio.to_thread(check)
+
+
+async def _list_directory(raw_path: str) -> StorageBrowseResponse:
+    def list_dirs() -> StorageBrowseResponse:
+        path = Path(raw_path)
+        if not path.is_absolute():
+            msg = f"'{path}' is not an absolute path."
+            raise ValueError(msg)
+        if not path.is_dir():
+            msg = f"'{path}' does not exist or is not a directory."
+            raise ValueError(msg)
+        try:
+            entries = sorted(
+                (p for p in path.iterdir() if p.is_dir() and not p.name.startswith(".")),
+                key=lambda p: p.name.lower(),
+            )
+        except PermissionError as exc:
+            msg = f"No permission to list '{path}'."
+            raise ValueError(msg) from exc
+        parent = path.parent
+        return StorageBrowseResponse(
+            path=str(path),
+            parent_path=str(parent) if parent != path else None,
+            directories=[StorageBrowseEntry(name=p.name, path=str(p)) for p in entries],
+        )
+
+    try:
+        return await asyncio.to_thread(list_dirs)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 def _ai_settings_read(row: AISettings) -> AISettingsRead:

@@ -24,6 +24,39 @@ class StorageSettingsUpdate(BaseModel):
         return value
 
 
+class StorageBrowseEntry(BaseModel):
+    name: str
+    path: str
+
+
+class StorageBrowseResponse(BaseModel):
+    path: str
+    parent_path: str | None
+    """None when `path` is the filesystem root."""
+    directories: list[StorageBrowseEntry]
+
+
+class StorageCreateFolderRequest(BaseModel):
+    parent_path: str
+    name: str = Field(min_length=1, max_length=255)
+
+    @field_validator("parent_path")
+    @classmethod
+    def _parent_must_be_absolute(cls, value: str) -> str:
+        if not Path(value).is_absolute():
+            msg = "parent_path must be an absolute path."
+            raise ValueError(msg)
+        return value
+
+    @field_validator("name")
+    @classmethod
+    def _name_has_no_path_separators(cls, value: str) -> str:
+        if "/" in value or "\\" in value or value in {".", ".."}:
+            msg = "name must be a plain folder name, not a path."
+            raise ValueError(msg)
+        return value
+
+
 class BlinkSyncSettingsRead(BaseModel):
     sync_interval_seconds: int
     initial_sync_days: int
