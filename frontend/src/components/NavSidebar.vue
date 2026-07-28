@@ -23,21 +23,19 @@ let pollTimer: ReturnType<typeof setInterval> | undefined;
 
 type ConnectionState = "connected" | "attention" | "unlinked";
 
+// Three underlying states still drive the dot's color (an auth error is a
+// meaningfully different situation from never having linked at all - worth
+// flagging red rather than the same gray as "not connected"), but the label
+// itself is deliberately just the two words Brian asked for; the Status
+// page is where the actual distinction and detail live.
 const connectionState = computed<ConnectionState>(() => {
   if (!blink.status?.linked) return "unlinked";
   return blink.status.status === "active" ? "connected" : "attention";
 });
 
-const connectionLabel = computed(() => {
-  switch (connectionState.value) {
-    case "connected":
-      return "Blink connected";
-    case "attention":
-      return "Blink needs attention";
-    default:
-      return "Blink not connected";
-  }
-});
+const connectionLabel = computed(() =>
+  connectionState.value === "connected" ? "Connected" : "Disconnected",
+);
 
 function pollBlinkStatus(): void {
   void blink.refreshStatus().catch(() => undefined);
@@ -55,19 +53,35 @@ onUnmounted(() => {
 
 <template>
   <aside :class="['sidebar', { collapsed: sidebar.isCollapsed.value }]">
-    <RouterLink
-      :to="{ name: 'library' }"
-      class="brand"
-    >
-      <AppLogo :size="34" />
-      <span
-        v-show="!sidebar.isCollapsed.value"
-        class="brand-text"
+    <div class="sidebar-header">
+      <RouterLink
+        :to="{ name: 'library' }"
+        class="brand"
       >
-        <span class="brand-name">Blink</span>
-        <span class="brand-sub">AI Security</span>
-      </span>
-    </RouterLink>
+        <AppLogo :size="34" />
+        <span
+          v-show="!sidebar.isCollapsed.value"
+          class="brand-text"
+        >
+          <span class="brand-name">Blink</span>
+          <span class="brand-sub">AI Security</span>
+        </span>
+      </RouterLink>
+
+      <button
+        type="button"
+        class="collapse-toggle"
+        :title="sidebar.isCollapsed.value ? 'Expand sidebar' : 'Collapse sidebar'"
+        :aria-label="sidebar.isCollapsed.value ? 'Expand sidebar' : 'Collapse sidebar'"
+        data-testid="sidebar-collapse-toggle"
+        @click="sidebar.toggle()"
+      >
+        <i
+          :class="sidebar.isCollapsed.value ? 'pi pi-angle-double-right' : 'pi pi-angle-double-left'"
+          aria-hidden="true"
+        />
+      </button>
+    </div>
 
     <NavLinks :collapsed="sidebar.isCollapsed.value" />
 
@@ -86,17 +100,6 @@ onUnmounted(() => {
         class="badge-label"
       >{{ connectionLabel }}</span>
     </div>
-
-    <button
-      type="button"
-      class="collapse-toggle"
-      :title="sidebar.isCollapsed.value ? 'Expand sidebar' : 'Collapse sidebar'"
-      data-testid="sidebar-collapse-toggle"
-      @click="sidebar.toggle()"
-    >
-      <i :class="sidebar.isCollapsed.value ? 'pi pi-angle-right' : 'pi pi-angle-left'" />
-      <span v-show="!sidebar.isCollapsed.value">Collapse</span>
-    </button>
 
     <footer
       v-show="!sidebar.isCollapsed.value"
@@ -169,25 +172,37 @@ onUnmounted(() => {
   border-right-color: var(--p-surface-800);
 }
 
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 10px;
+}
+
+.sidebar.collapsed .sidebar-header {
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding-right: 0;
+  padding-bottom: 8px;
+}
+
 .collapse-toggle {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 4px 12px 8px;
-  padding: 8px 12px;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
   border: none;
-  border-radius: 10px;
+  border-radius: 8px;
   background: none;
   color: var(--p-surface-500);
-  font-size: 0.82rem;
-  font-weight: 600;
   cursor: pointer;
-  white-space: nowrap;
 }
 
-.sidebar.collapsed .collapse-toggle {
-  justify-content: center;
-  margin-inline: 8px;
+.collapse-toggle i {
+  font-size: 0.9rem;
 }
 
 .collapse-toggle:hover {
@@ -201,14 +216,14 @@ onUnmounted(() => {
 }
 
 .connection-badge {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   margin: 0 12px 4px;
-  padding: 6px 12px;
-  border-radius: 10px;
+  padding: 5px 10px;
+  border-radius: 999px;
   background: var(--p-surface-100);
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -269,8 +284,13 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 18px 20px;
+  padding: 18px 0 18px 20px;
   text-decoration: none;
+  min-width: 0;
+}
+
+.sidebar.collapsed .brand {
+  padding: 18px 0 0;
 }
 
 .brand-text {
