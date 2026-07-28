@@ -2,6 +2,7 @@
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
 import Message from "primevue/message";
+import Popover from "primevue/popover";
 import Skeleton from "primevue/skeleton";
 import Tag from "primevue/tag";
 import { useToast } from "primevue/usetoast";
@@ -184,9 +185,15 @@ async function performReportFalsePositive(personId: string): Promise<void> {
 }
 
 const missedFaceClipId = ref<string | null>(null);
+const missedFacePopover = ref<InstanceType<typeof Popover> | null>(null);
+
+function toggleMissedFacePopover(event: Event): void {
+  missedFacePopover.value?.toggle(event);
+}
 
 function openMissedFaceDialog(): void {
   // Only reachable via the button inside the template's v-if="clip" block.
+  missedFacePopover.value?.hide();
   missedFaceClipId.value = props.clip!.id;
 }
 
@@ -235,19 +242,16 @@ async function onMissedFaceEnrolled(): Promise<void> {
             v-if="canManage"
             class="actions"
           >
-            <a
+            <Button
               v-if="clip.downloaded_at"
+              as="a"
               :href="clipDownloadUrl(clip.id)"
-              class="p-button p-button-secondary p-button-outlined"
+              label="Download"
+              icon="pi pi-download"
+              severity="secondary"
+              outlined
               data-testid="modal-download"
-            >
-              <i
-                class="pi pi-download"
-                aria-hidden="true"
-                style="margin-right: 6px"
-              />
-              Download
-            </a>
+            />
             <Button
               label="Delete"
               icon="pi pi-trash"
@@ -288,15 +292,6 @@ async function onMissedFaceEnrolled(): Promise<void> {
                 class="ai-header-actions"
               >
                 <Button
-                  label="Report a missed face"
-                  icon="pi pi-user-plus"
-                  text
-                  size="small"
-                  severity="secondary"
-                  data-testid="report-missed-face"
-                  @click="openMissedFaceDialog"
-                />
-                <Button
                   v-if="canManage"
                   :label="analysis ? 'Re-analyze' : 'Analyze now'"
                   text
@@ -305,6 +300,33 @@ async function onMissedFaceEnrolled(): Promise<void> {
                   data-testid="reanalyze"
                   @click="triggerReanalyze"
                 />
+                <Button
+                  v-tooltip.top="'Report a missed face'"
+                  icon="pi pi-user-plus"
+                  text
+                  rounded
+                  size="small"
+                  severity="secondary"
+                  aria-label="Report a missed face"
+                  data-testid="report-missed-face"
+                  @click="toggleMissedFacePopover"
+                />
+                <Popover ref="missedFacePopover">
+                  <div class="missed-face-popover">
+                    <p class="popover-hint">
+                      Didn't recognize someone in this clip? Enroll their face so future clips
+                      match them automatically.
+                    </p>
+                    <Button
+                      label="Report a missed face"
+                      icon="pi pi-user-plus"
+                      size="small"
+                      fluid
+                      data-testid="report-missed-face-confirm"
+                      @click="openMissedFaceDialog"
+                    />
+                  </div>
+                </Popover>
               </div>
             </div>
 
@@ -519,14 +541,16 @@ async function onMissedFaceEnrolled(): Promise<void> {
 }
 
 .ai-section {
-  padding: 14px 16px;
-  border-radius: 10px;
-  border: 1px dashed var(--p-surface-300);
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1px solid var(--p-surface-200);
+  background: var(--p-surface-50);
   margin-bottom: 18px;
 }
 
 .blink-dark .ai-section {
-  border-color: var(--p-surface-700);
+  border-color: var(--p-surface-800);
+  background: color-mix(in srgb, var(--p-surface-900) 50%, transparent);
 }
 
 .ai-header {
@@ -534,14 +558,14 @@ async function onMissedFaceEnrolled(): Promise<void> {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   flex-wrap: wrap;
 }
 
 .ai-header-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   flex-wrap: wrap;
 }
 
@@ -577,15 +601,17 @@ async function onMissedFaceEnrolled(): Promise<void> {
 
 .label-tag {
   text-transform: capitalize;
+  font-size: 0.82rem;
 }
 
 .score {
-  font-size: 0.82rem;
-  color: var(--p-surface-600);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--p-surface-800);
 }
 
 .blink-dark .score {
-  color: var(--p-surface-300);
+  color: var(--p-surface-100);
 }
 
 .summary-text {
@@ -703,5 +729,24 @@ async function onMissedFaceEnrolled(): Promise<void> {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.missed-face-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 240px;
+  padding: 4px;
+}
+
+.popover-hint {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--p-surface-600);
+}
+
+.blink-dark .popover-hint {
+  color: var(--p-surface-300);
 }
 </style>

@@ -617,6 +617,17 @@ describe("ClipDetailModal — report a false positive", () => {
   });
 });
 
+// "Report a missed face" opens a Popover first (the trigger button keeps
+// its established testid, since several tests below only check *whether*
+// it's offered at all) - actually opening the enrollment dialog is a
+// second click, on the confirm button inside that popover, which only
+// renders after Vue flushes the popover's own open transition.
+async function openMissedFacePopoverAndConfirm(): Promise<void> {
+  document.body.querySelector<HTMLElement>('[data-testid="report-missed-face"]')?.click();
+  await nextTick();
+  document.body.querySelector<HTMLElement>('[data-testid="report-missed-face-confirm"]')?.click();
+}
+
 describe("ClipDetailModal — report a missed face", () => {
   it("is shown for a viewer account too (enrollment isn't admin-only)", async () => {
     mockedGetAnalysis.mockResolvedValue(routineAnalysis);
@@ -630,11 +641,22 @@ describe("ClipDetailModal — report a missed face", () => {
     expect(document.body.querySelector('[data-testid="report-missed-face"]')).toBeNull();
   });
 
+  it("opens a popover explaining the feature before reporting", async () => {
+    mockedGetAnalysis.mockResolvedValue(routineAnalysis);
+    await mountModal(clip);
+
+    document.body.querySelector<HTMLElement>('[data-testid="report-missed-face"]')?.click();
+    await nextTick();
+
+    expect(document.body.textContent).toContain("Didn't recognize someone in this clip?");
+    expect(document.body.querySelector('[data-testid="report-missed-face-confirm"]')).toBeTruthy();
+  });
+
   it("opens the missed-face dialog scoped to the current clip", async () => {
     mockedGetAnalysis.mockResolvedValue(routineAnalysis);
     const wrapper = await mountModal(clip);
 
-    document.body.querySelector<HTMLElement>('[data-testid="report-missed-face"]')?.click();
+    await openMissedFacePopoverAndConfirm();
     await flushPromises();
 
     expect(
@@ -646,7 +668,7 @@ describe("ClipDetailModal — report a missed face", () => {
   it("closes the missed-face dialog on its close event", async () => {
     mockedGetAnalysis.mockResolvedValue(routineAnalysis);
     const wrapper = await mountModal(clip);
-    document.body.querySelector<HTMLElement>('[data-testid="report-missed-face"]')?.click();
+    await openMissedFacePopoverAndConfirm();
     await flushPromises();
 
     await wrapper.findComponent({ name: "ReportMissedFaceDialog" }).vm.$emit("close");
@@ -659,7 +681,7 @@ describe("ClipDetailModal — report a missed face", () => {
   it("toasts and reloads the analysis when a missed face is enrolled", async () => {
     mockedGetAnalysis.mockResolvedValue(routineAnalysis);
     const wrapper = await mountModal(clip);
-    document.body.querySelector<HTMLElement>('[data-testid="report-missed-face"]')?.click();
+    await openMissedFacePopoverAndConfirm();
     await flushPromises();
     mockedGetAnalysis.mockClear();
 
@@ -673,7 +695,7 @@ describe("ClipDetailModal — report a missed face", () => {
   it("skips reloading the analysis if the clip closed before the missed face finished enrolling", async () => {
     mockedGetAnalysis.mockResolvedValue(routineAnalysis);
     const wrapper = await mountModal(clip);
-    document.body.querySelector<HTMLElement>('[data-testid="report-missed-face"]')?.click();
+    await openMissedFacePopoverAndConfirm();
     await flushPromises();
 
     await wrapper.setProps({ clip: null });
