@@ -189,14 +189,14 @@ function viewClips(cameraId: string): void {
         <div class="events">
           <div class="events-header">
             <h4>Recent proximity events</h4>
-            <button
-              type="button"
-              class="link-button"
+            <Button
+              label="View clips from this camera"
+              icon="pi pi-images"
+              text
+              size="small"
               :data-testid="`view-clips-${vehicle.camera_id}`"
               @click="viewClips(vehicle.camera_id)"
-            >
-              View clips from this camera
-            </button>
+            />
           </div>
 
           <Skeleton
@@ -356,24 +356,6 @@ function viewClips(cameraId: string): void {
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--p-surface-500);
-}
-
-.link-button {
-  border: none;
-  background: none;
-  padding: 0;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--p-primary-600);
-  cursor: pointer;
-}
-
-.blink-dark .link-button {
-  color: var(--p-primary-300);
-}
-
-.link-button:hover {
-  text-decoration: underline;
 }
 
 .muted {
