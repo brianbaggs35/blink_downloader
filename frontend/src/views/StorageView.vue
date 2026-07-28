@@ -15,6 +15,7 @@ import {
   updateStorageIntegrationSettings,
   updateStorageSettings,
 } from "@/api";
+import BrandIcon from "@/components/BrandIcon.vue";
 import CloudFolderBrowserDialog from "@/components/CloudFolderBrowserDialog.vue";
 import PageHeader from "@/components/PageHeader.vue";
 import StorageDirectoryBrowserDialog from "@/components/StorageDirectoryBrowserDialog.vue";
@@ -31,17 +32,18 @@ import type {
   StorageSettingsRead,
   StorageSummaryResponse,
 } from "@/api";
+import type { BrandName } from "@/components/BrandIcon.vue";
 
 interface BackendMeta {
   label: string;
-  icon: string;
+  icon: { kind: "class"; value: string } | { kind: "brand"; value: BrandName };
 }
 
 const BACKEND_META: Record<StorageBackend, BackendMeta> = {
-  local: { label: "Local disk", icon: "pi pi-server" },
-  s3: { label: "Amazon S3", icon: "pi pi-amazon" },
-  google_drive: { label: "Google Drive", icon: "pi pi-google" },
-  onedrive: { label: "Microsoft OneDrive", icon: "pi pi-microsoft" },
+  local: { label: "Local disk", icon: { kind: "class", value: "pi pi-server" } },
+  s3: { label: "Amazon S3", icon: { kind: "class", value: "pi pi-amazon" } },
+  google_drive: { label: "Google Drive", icon: { kind: "brand", value: "google_drive" } },
+  onedrive: { label: "Microsoft OneDrive", icon: { kind: "brand", value: "onedrive" } },
 };
 
 const BACKENDS: StorageBackend[] = ["local", "s3", "google_drive", "onedrive"];
@@ -372,8 +374,13 @@ function goToLibrary(): void {
         >
           <div class="backend-header">
             <i
-              :class="BACKEND_META[backend].icon"
+              v-if="BACKEND_META[backend].icon.kind === 'class'"
+              :class="BACKEND_META[backend].icon.value"
               aria-hidden="true"
+            />
+            <BrandIcon
+              v-else
+              :name="BACKEND_META[backend].icon.value"
             />
             <span class="backend-name">{{ BACKEND_META[backend].label }}</span>
             <Tag
@@ -563,7 +570,8 @@ function goToLibrary(): void {
   gap: 10px;
 }
 
-.backend-header i {
+.backend-header i,
+.backend-header .brand-icon {
   font-size: 1.1rem;
   color: var(--p-surface-500);
 }

@@ -21,18 +21,26 @@ import {
   testStorageIntegrations,
   updateStorageIntegrationSettings,
 } from "@/api";
+import BrandIcon from "@/components/BrandIcon.vue";
 import EmptyState from "@/components/EmptyState.vue";
 import PageHeader from "@/components/PageHeader.vue";
 
 import type { StorageIntegrationSettingsRead, StorageTestResult } from "@/api";
+import type { BrandName } from "@/components/BrandIcon.vue";
 
 type ProviderKey = "s3" | "google_drive" | "onedrive";
+
+/** S3 has no accurate real-brand icon readily available under a permissive
+ * license (unlike Drive/OneDrive - see BrandIcon.vue) - pi-amazon (a generic
+ * company mark, not a product-specific one) is the closest reasonable
+ * option. */
+type IntegrationIcon = { kind: "class"; value: string } | { kind: "brand"; value: BrandName };
 
 interface IntegrationDef {
   key: ProviderKey;
   name: string;
   category: string;
-  icon: string;
+  icon: IntegrationIcon;
   description: string;
 }
 
@@ -41,21 +49,21 @@ const INTEGRATIONS: IntegrationDef[] = [
     key: "s3",
     name: "Amazon S3",
     category: "Storage",
-    icon: "pi pi-amazon",
+    icon: { kind: "class", value: "pi pi-amazon" },
     description: "Archive downloaded clips to an S3 bucket you own.",
   },
   {
     key: "google_drive",
     name: "Google Drive",
     category: "Storage",
-    icon: "pi pi-google",
+    icon: { kind: "brand", value: "google_drive" },
     description: "Archive downloaded clips to your Google Drive.",
   },
   {
     key: "onedrive",
     name: "Microsoft OneDrive",
     category: "Storage",
-    icon: "pi pi-microsoft",
+    icon: { kind: "brand", value: "onedrive" },
     description: "Archive downloaded clips to your OneDrive.",
   },
 ];
@@ -368,7 +376,14 @@ const redirectOrigin = window.location.origin;
       >
         <div class="card-header">
           <div class="card-icon">
-            <i :class="integration.icon" />
+            <i
+              v-if="integration.icon.kind === 'class'"
+              :class="integration.icon.value"
+            />
+            <BrandIcon
+              v-else
+              :name="integration.icon.value"
+            />
           </div>
           <div class="card-heading">
             <h3>{{ integration.name }}</h3>

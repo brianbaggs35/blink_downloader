@@ -64,13 +64,22 @@ const technologies = [
         Trademarks
       </h3>
       <p class="panel-hint">
-        Third-party names referenced by the Storage integrations feature.
+        Third-party names and marks referenced by the Storage integrations
+        feature.
       </p>
       <p class="panel-body-text">
         Google Drive is a trademark of Google LLC. Microsoft OneDrive is a
         trademark of Microsoft Corporation. Amazon S3 is a trademark of
         Amazon.com, Inc. or its affiliates. This project is not affiliated
-        with, endorsed by, or sponsored by Google, Microsoft, or Amazon.
+        with, endorsed by, or sponsored by Google, Microsoft, or Amazon. The
+        Google Drive and OneDrive icons shown on the Integrations and Storage
+        pages are
+        <a
+          href="https://github.com/Templarian/MaterialDesign"
+          target="_blank"
+          rel="noopener noreferrer"
+        >Pictogrammers Material Design Icons</a> (Apache-2.0) - used to
+        identify the products, not to imply endorsement.
       </p>
     </article>
 
