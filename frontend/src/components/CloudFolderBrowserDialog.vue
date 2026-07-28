@@ -5,7 +5,14 @@ import InputText from "primevue/inputtext";
 import Message from "primevue/message";
 import { computed, ref, watch } from "vue";
 
-import { ApiError, browseCloudFolders, createCloudFolder } from "@/api";
+import {
+  ApiError,
+  browseCloudFolders,
+  createCloudFolder,
+  deleteCloudFolder,
+  renameCloudFolder,
+} from "@/api";
+import { useDeleteConfirm } from "@/composables/useDeleteConfirm";
 
 import type { CloudFolderEntry, CloudProvider } from "@/api";
 
@@ -41,6 +48,12 @@ const newFolderName = ref("");
 const creatingFolder = ref(false);
 const createError = ref("");
 
+const { confirmDelete } = useDeleteConfirm();
+const renamingId = ref<string | null>(null);
+const renameValue = ref("");
+const renaming = ref(false);
+const actionError = ref("");
+
 const currentCrumb = computed(() => trail.value[trail.value.length - 1]!);
 
 async function load(): Promise<void> {
@@ -63,6 +76,8 @@ watch(
       trail.value = [ROOT_CRUMB];
       newFolderName.value = "";
       createError.value = "";
+      renamingId.value = null;
+      actionError.value = "";
       void load();
     }
   },
@@ -98,6 +113,56 @@ async function createFolder(): Promise<void> {
     createError.value = caught instanceof ApiError ? caught.message : "Could not create this folder.";
   } finally {
     creatingFolder.value = false;
+  }
+}
+
+function startRename(entry: CloudFolderEntry): void {
+  actionError.value = "";
+  renamingId.value = entry.id;
+  renameValue.value = entry.name;
+}
+
+function cancelRename(): void {
+  renamingId.value = null;
+}
+
+async function confirmRename(): Promise<void> {
+  // The confirm button (the only caller) only renders while a rename is in
+  // progress, so renamingId is never null here in practice.
+  /* v8 ignore next */
+  if (!renamingId.value) return;
+  actionError.value = "";
+  renaming.value = true;
+  try {
+    await renameCloudFolder(props.provider, renamingId.value, renameValue.value.trim());
+    renamingId.value = null;
+    await load();
+  } catch (caught) {
+    actionError.value = caught instanceof ApiError ? caught.message : "Could not rename this folder.";
+  } finally {
+    renaming.value = false;
+  }
+}
+
+function deleteEntry(entry: CloudFolderEntry): void {
+  confirmDelete({
+    header: "Delete folder",
+    message: `Delete "${entry.name}"?${
+      props.provider === "s3"
+        ? " This only works if the folder is empty, and can't be undone."
+        : " It'll be moved to your provider's trash/recycle bin."
+    }`,
+    onAccept: () => void performDelete(entry),
+  });
+}
+
+async function performDelete(entry: CloudFolderEntry): Promise<void> {
+  actionError.value = "";
+  try {
+    await deleteCloudFolder(props.provider, entry.id);
+    await load();
+  } catch (caught) {
+    actionError.value = caught instanceof ApiError ? caught.message : "Could not delete this folder.";
   }
 }
 
@@ -176,20 +241,85 @@ function selectCurrent(): void {
         :key="entry.id"
         class="entry"
       >
-        <button
-          type="button"
-          class="entry-button"
-          :data-testid="`cloud-browse-entry-${entry.name}`"
-          @click="navigateInto(entry)"
+        <form
+          v-if="renamingId === entry.id"
+          class="rename-row"
+          @submit.prevent="confirmRename"
         >
-          <i
-            class="pi pi-folder"
-            aria-hidden="true"
+          <InputText
+            v-model="renameValue"
+            autofocus
+            fluid
+            :data-testid="`cloud-browse-rename-input-${entry.name}`"
           />
-          {{ entry.name }}
-        </button>
+          <Button
+            type="submit"
+            icon="pi pi-check"
+            text
+            rounded
+            severity="success"
+            aria-label="Confirm rename"
+            :disabled="!renameValue.trim()"
+            :loading="renaming"
+            :data-testid="`cloud-browse-rename-confirm-${entry.name}`"
+          />
+          <Button
+            type="button"
+            icon="pi pi-times"
+            text
+            rounded
+            severity="secondary"
+            aria-label="Cancel rename"
+            :data-testid="`cloud-browse-rename-cancel-${entry.name}`"
+            @click="cancelRename"
+          />
+        </form>
+        <template v-else>
+          <button
+            type="button"
+            class="entry-button"
+            :data-testid="`cloud-browse-entry-${entry.name}`"
+            @click="navigateInto(entry)"
+          >
+            <i
+              class="pi pi-folder"
+              aria-hidden="true"
+            />
+            {{ entry.name }}
+          </button>
+          <div class="entry-actions">
+            <Button
+              icon="pi pi-pencil"
+              text
+              rounded
+              size="small"
+              :aria-label="`Rename ${entry.name}`"
+              :data-testid="`cloud-browse-rename-${entry.name}`"
+              @click="startRename(entry)"
+            />
+            <Button
+              icon="pi pi-trash"
+              text
+              rounded
+              size="small"
+              severity="danger"
+              :aria-label="`Delete ${entry.name}`"
+              :data-testid="`cloud-browse-delete-${entry.name}`"
+              @click="deleteEntry(entry)"
+            />
+          </div>
+        </template>
       </li>
     </ul>
+
+    <Message
+      v-if="actionError"
+      severity="error"
+      :closable="false"
+      data-testid="cloud-browse-action-error"
+    >
+      {{ actionError }}
+    </Message>
 
     <form
       class="new-folder-row"
@@ -299,11 +429,18 @@ function selectCurrent(): void {
   color: var(--p-surface-500);
 }
 
+.entry {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .entry-button {
   display: flex;
   align-items: center;
   gap: 10px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 9px 12px;
   border: none;
   background: none;
@@ -311,6 +448,9 @@ function selectCurrent(): void {
   font-size: 0.88rem;
   cursor: pointer;
   color: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .entry-button:hover {
@@ -319,6 +459,20 @@ function selectCurrent(): void {
 
 .blink-dark .entry-button:hover {
   background: color-mix(in srgb, var(--p-surface-800) 70%, transparent);
+}
+
+.entry-actions {
+  display: flex;
+  gap: 2px;
+  padding-right: 6px;
+}
+
+.rename-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 4px 8px;
 }
 
 .new-folder-row {

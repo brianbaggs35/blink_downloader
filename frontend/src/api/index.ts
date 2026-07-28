@@ -31,6 +31,7 @@ export type StorageSettingsUpdate = components["schemas"]["StorageSettingsUpdate
 export type StorageBrowseEntry = components["schemas"]["StorageBrowseEntry"];
 export type StorageBrowseResponse = components["schemas"]["StorageBrowseResponse"];
 export type StorageCreateFolderRequest = components["schemas"]["StorageCreateFolderRequest"];
+export type StorageRenameFolderRequest = components["schemas"]["StorageRenameFolderRequest"];
 
 export type StorageBackend = components["schemas"]["StorageBackend"];
 export type StorageIntegrationSettingsRead = components["schemas"]["StorageIntegrationSettingsRead"];
@@ -41,6 +42,7 @@ export type StorageTestResponse = components["schemas"]["StorageTestResponse"];
 export type CloudProvider = "s3" | "google_drive" | "onedrive";
 export type CloudFolderEntry = components["schemas"]["CloudFolderEntry"];
 export type CloudBrowseResponse = components["schemas"]["CloudBrowseResponse"];
+export type CloudRenameFolderRequest = components["schemas"]["CloudRenameFolderRequest"];
 export type BackendStorageSummary = components["schemas"]["BackendStorageSummary"];
 export type StorageSummaryResponse = components["schemas"]["StorageSummaryResponse"];
 export type TemporaryLinkResponse = components["schemas"]["TemporaryLinkResponse"];
@@ -329,6 +331,20 @@ export function createStorageDirectory(
   return api<StorageBrowseResponse>("/settings/storage/browse", { method: "POST", json: body });
 }
 
+export function renameStorageDirectory(
+  path: string,
+  newName: string,
+): Promise<StorageBrowseResponse> {
+  const body: StorageRenameFolderRequest = { path, new_name: newName };
+  return api<StorageBrowseResponse>("/settings/storage/browse", { method: "PATCH", json: body });
+}
+
+export function deleteStorageDirectory(path: string): Promise<StorageBrowseResponse> {
+  return api<StorageBrowseResponse>(`/settings/storage/browse${queryString({ path })}`, {
+    method: "DELETE",
+  });
+}
+
 export function getStorageIntegrationSettings(): Promise<StorageIntegrationSettingsRead> {
   return api<StorageIntegrationSettingsRead>("/settings/storage-integrations");
 }
@@ -364,6 +380,25 @@ export function createCloudFolder(
     method: "POST",
     json: { parent_id: parentId, name },
   });
+}
+
+export function renameCloudFolder(
+  provider: CloudProvider,
+  id: string,
+  newName: string,
+): Promise<void> {
+  const body: CloudRenameFolderRequest = { id, new_name: newName };
+  return api<void>(`/settings/storage-integrations/${provider}/browse`, {
+    method: "PATCH",
+    json: body,
+  });
+}
+
+export function deleteCloudFolder(provider: CloudProvider, folderId: string): Promise<void> {
+  return api<void>(
+    `/settings/storage-integrations/${provider}/browse${queryString({ folder_id: folderId })}`,
+    { method: "DELETE" },
+  );
 }
 
 /** Browser-navigation URLs (the backend responds with a 302 to the

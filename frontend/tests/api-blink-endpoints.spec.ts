@@ -5,6 +5,7 @@ import {
   bulkDeleteClips,
   createStorageDirectory,
   deleteClip,
+  deleteStorageDirectory,
   downloadClipsAsZip,
   getBlinkStatus,
   getBlinkSyncSettings,
@@ -13,6 +14,7 @@ import {
   linkBlinkAccount,
   listCameras,
   listClips,
+  renameStorageDirectory,
   triggerBlinkSync,
   unlinkBlinkAccount,
   updateBlinkSyncSettings,
@@ -264,6 +266,25 @@ describe("settings endpoints", () => {
     const init = mock.mock.calls[0]?.[1] as RequestInit;
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body as string)).toEqual({ parent_path: "/data/clips", name: "new" });
+  });
+
+  it("renameStorageDirectory PATCHes the path and new name", async () => {
+    const mock = capture(
+      jsonResponse({ path: "/data/clips", parent_path: "/data", directories: [] }),
+    );
+    await renameStorageDirectory("/data/clips/old", "new");
+    expect(mock.mock.calls[0]?.[0]).toBe("/api/settings/storage/browse");
+    const init = mock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body as string)).toEqual({ path: "/data/clips/old", new_name: "new" });
+  });
+
+  it("deleteStorageDirectory DELETEs with a path query string", async () => {
+    const mock = capture(jsonResponse({ path: "/data/clips", parent_path: "/data", directories: [] }));
+    await deleteStorageDirectory("/data/clips/old");
+    expect(mock.mock.calls[0]?.[0]).toBe("/api/settings/storage/browse?path=%2Fdata%2Fclips%2Fold");
+    const init = mock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.method).toBe("DELETE");
   });
 
   it("getBlinkSyncSettings GETs /settings/blink-sync", async () => {
