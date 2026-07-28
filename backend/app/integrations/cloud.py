@@ -147,6 +147,54 @@ class S3Client:
             raise CloudStorageError(f"S3 could not create folder: {exc}") from exc
         return path
 
+    async def _prefix_is_empty(self, path: str) -> bool:
+        """True when nothing lives under `path` besides (optionally) its own
+        zero-byte folder marker object - the only case rename/delete below
+        can safely handle without a bulk recursive copy of real data."""
+        marker = f"{path.strip('/')}/"
+        try:
+            response = await asyncio.to_thread(
+                self._client.list_objects_v2, Bucket=self._bucket, Prefix=marker, MaxKeys=2
+            )
+        except (BotoCoreError, ClientError) as exc:
+            raise CloudStorageError(f"S3 could not check folder contents: {exc}") from exc
+        keys = {entry["Key"] for entry in response.get("Contents", [])}
+        return keys <= {marker}
+
+    async def rename_folder(self, path: str, new_name: str) -> str:
+        """S3 has no rename primitive - a 'folder' is just a common key
+        prefix, and a real rename would mean recursively copying every
+        object under it to the new prefix. Only supported when the prefix
+        is empty, where it's just swapping one zero-byte marker for
+        another."""
+        normalized = path.strip("/")
+        if not await self._prefix_is_empty(normalized):
+            raise CloudStorageError("This folder isn't empty - S3 can only rename an empty folder.")
+        parent, _, _ = normalized.rpartition("/")
+        new_path = f"{parent}/{new_name}" if parent else new_name
+        await self.create_folder(new_path)
+        try:
+            await asyncio.to_thread(
+                self._client.delete_object, Bucket=self._bucket, Key=f"{normalized}/"
+            )
+        except (BotoCoreError, ClientError) as exc:
+            raise CloudStorageError(f"S3 could not remove the old folder marker: {exc}") from exc
+        return new_path
+
+    async def delete_folder(self, path: str) -> None:
+        """Only supported when the prefix is empty - S3 has no recycle bin,
+        so a non-empty folder is refused rather than silently destroying
+        its contents."""
+        normalized = path.strip("/")
+        if not await self._prefix_is_empty(normalized):
+            raise CloudStorageError("This folder isn't empty - S3 can only delete an empty folder.")
+        try:
+            await asyncio.to_thread(
+                self._client.delete_object, Bucket=self._bucket, Key=f"{normalized}/"
+            )
+        except (BotoCoreError, ClientError) as exc:
+            raise CloudStorageError(f"S3 delete failed: {exc}") from exc
+
     async def download(self, key: str) -> bytes:
         try:
             response = await asyncio.to_thread(
@@ -344,6 +392,29 @@ class GoogleDriveClient:
         except (GoogleHttpError, GoogleAuthError) as exc:
             raise CloudStorageError(f"Google Drive could not create folder: {exc}") from exc
 
+    def _rename_folder_sync(self, folder_id: str, new_name: str) -> None:
+        self._service().files().update(fileId=folder_id, body={"name": new_name}).execute()
+
+    async def rename_folder(self, folder_id: str, new_name: str) -> None:
+        """A metadata-only update - safe regardless of what's inside the
+        folder, unlike S3's prefix-based rename."""
+        try:
+            await asyncio.to_thread(self._rename_folder_sync, folder_id, new_name)
+        except (GoogleHttpError, GoogleAuthError) as exc:
+            raise CloudStorageError(f"Google Drive could not rename folder: {exc}") from exc
+
+    def _delete_folder_sync(self, folder_id: str) -> None:
+        self._service().files().update(fileId=folder_id, body={"trashed": True}).execute()
+
+    async def delete_folder(self, folder_id: str) -> None:
+        """Moves the folder (and anything in it) to Drive's own Trash rather
+        than permanently deleting it - recoverable by the user for as long
+        as Drive's trash retention allows, unlike S3's hard delete."""
+        try:
+            await asyncio.to_thread(self._delete_folder_sync, folder_id)
+        except (GoogleHttpError, GoogleAuthError) as exc:
+            raise CloudStorageError(f"Google Drive could not delete folder: {exc}") from exc
+
 
 # ------------------------------------------------------------------ OneDrive
 
@@ -476,6 +547,29 @@ class OneDriveClient:
                 response.raise_for_status()
             except httpx.HTTPError as exc:
                 raise CloudStorageError(f"OneDrive delete failed: {exc}") from exc
+
+    async def rename_folder(self, item_id: str, new_name: str) -> None:
+        """A metadata-only update - safe regardless of what's inside the
+        folder, unlike S3's prefix-based rename."""
+        token = await self._access_token()
+        async with httpx.AsyncClient(timeout=30) as client:
+            try:
+                response = await client.patch(
+                    f"{GRAPH_API_URL}/me/drive/items/{item_id}",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json={"name": new_name},
+                )
+                response.raise_for_status()
+            except httpx.HTTPError as exc:
+                raise CloudStorageError(f"OneDrive could not rename folder: {exc}") from exc
+
+    async def delete_folder(self, item_id: str) -> None:
+        """Graph's DELETE already sends OneDrive items to the Recycle Bin
+        rather than permanently deleting them - the same call as delete()
+        above, just named for the folder-browser call sites so every
+        provider's CloudClient exposes the same rename_folder/delete_folder
+        shape."""
+        await self.delete(item_id)
 
     async def test_connection(self) -> None:
         token = await self._access_token()

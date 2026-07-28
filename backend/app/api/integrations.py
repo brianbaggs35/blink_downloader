@@ -28,6 +28,7 @@ from app.integrations.schemas import (
     CloudCreateFolderRequest,
     CloudFolderEntry,
     CloudProvider,
+    CloudRenameFolderRequest,
     StorageIntegrationSettingsRead,
     StorageIntegrationSettingsUpdate,
     StorageTestResponse,
@@ -143,13 +144,9 @@ async def _cloud_client_for(
     return build_onedrive_client(row, encryption_key)
 
 
-@router.get("/{provider}/browse", response_model=CloudBrowseResponse)
-async def browse_cloud_folders(
-    provider: CloudProvider,
-    session: Annotated[AsyncSession, Depends(get_session)],
-    _user: Annotated[object, Depends(current_superuser)],
-    parent: str | None = None,
-) -> CloudBrowseResponse:
+async def _require_cloud_client(
+    provider: CloudProvider, session: AsyncSession
+) -> S3Client | GoogleDriveClient | OneDriveClient:
     row = await get_storage_integration_settings(session)
     client = await _cloud_client_for(provider, row, get_settings().encryption_key)
     if client is None:
@@ -157,6 +154,17 @@ async def browse_cloud_folders(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"{provider.replace('_', ' ').title()} isn't connected yet.",
         )
+    return client
+
+
+@router.get("/{provider}/browse", response_model=CloudBrowseResponse)
+async def browse_cloud_folders(
+    provider: CloudProvider,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _user: Annotated[object, Depends(current_superuser)],
+    parent: str | None = None,
+) -> CloudBrowseResponse:
+    client = await _require_cloud_client(provider, session)
     try:
         folders = await client.list_folders(parent)
     except CloudStorageError as exc:
@@ -175,13 +183,7 @@ async def create_cloud_folder(
     session: Annotated[AsyncSession, Depends(get_session)],
     _user: Annotated[object, Depends(current_superuser)],
 ) -> CloudBrowseResponse:
-    row = await get_storage_integration_settings(session)
-    client = await _cloud_client_for(provider, row, get_settings().encryption_key)
-    if client is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"{provider.replace('_', ' ').title()} isn't connected yet.",
-        )
+    client = await _require_cloud_client(provider, session)
     try:
         if isinstance(client, S3Client):
             new_path = (
@@ -200,6 +202,36 @@ async def create_cloud_folder(
     return CloudBrowseResponse(
         folders=[CloudFolderEntry(id=folder_id, name=name) for folder_id, name in folders]
     )
+
+
+@router.patch("/{provider}/browse", status_code=status.HTTP_204_NO_CONTENT)
+async def rename_cloud_folder(
+    provider: CloudProvider,
+    payload: CloudRenameFolderRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _user: Annotated[object, Depends(current_superuser)],
+) -> None:
+    client = await _require_cloud_client(provider, session)
+    try:
+        await client.rename_folder(payload.id, payload.new_name)
+    except CloudStorageError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    logger.info("integrations.cloud_folder_renamed", provider=provider, folder_id=payload.id)
+
+
+@router.delete("/{provider}/browse", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_cloud_folder(
+    provider: CloudProvider,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _user: Annotated[object, Depends(current_superuser)],
+    folder_id: str,
+) -> None:
+    client = await _require_cloud_client(provider, session)
+    try:
+        await client.delete_folder(folder_id)
+    except CloudStorageError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    logger.info("integrations.cloud_folder_deleted", provider=provider, folder_id=folder_id)
 
 
 @router.get("/google-drive/oauth/start")

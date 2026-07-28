@@ -238,6 +238,85 @@ async def test_s3_create_folder_wraps_errors(monkeypatch: pytest.MonkeyPatch) ->
         await client.create_folder("clips")
 
 
+async def test_s3_rename_folder_when_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeBotoClient()
+    fake.list_objects_v2_response = {"Contents": [{"Key": "clips/garage/"}]}
+    client = _s3_client(monkeypatch, fake)
+    new_path = await client.rename_folder("clips/garage", "driveway")
+    assert new_path == "clips/driveway"
+    put_calls = [call for call in fake.calls if call[0] == "put_object"]
+    assert put_calls[-1][1] == {"Bucket": "my-bucket", "Key": "clips/driveway/", "Body": b""}
+    delete_calls = [call for call in fake.calls if call[0] == "delete_object"]
+    assert delete_calls[-1][1] == {"Bucket": "my-bucket", "Key": "clips/garage/"}
+
+
+async def test_s3_rename_folder_at_the_bucket_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeBotoClient()
+    fake.list_objects_v2_response = {"Contents": [{"Key": "garage/"}]}
+    client = _s3_client(monkeypatch, fake)
+    new_path = await client.rename_folder("garage", "driveway")
+    assert new_path == "driveway"
+
+
+async def test_s3_rename_folder_refuses_when_not_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeBotoClient()
+    fake.list_objects_v2_response = {
+        "Contents": [{"Key": "clips/garage/"}, {"Key": "clips/garage/x.mp4"}]
+    }
+    client = _s3_client(monkeypatch, fake)
+    with pytest.raises(CloudStorageError, match="isn't empty"):
+        await client.rename_folder("clips/garage", "driveway")
+
+
+async def test_s3_rename_folder_wraps_the_emptiness_check_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeBotoClient()
+    fake.raise_on.add("list_objects_v2")
+    client = _s3_client(monkeypatch, fake)
+    with pytest.raises(CloudStorageError, match="S3 could not check folder contents"):
+        await client.rename_folder("clips/garage", "driveway")
+
+
+async def test_s3_rename_folder_wraps_the_delete_marker_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeBotoClient()
+    fake.list_objects_v2_response = {"Contents": [{"Key": "clips/garage/"}]}
+    fake.raise_on.add("delete_object")
+    client = _s3_client(monkeypatch, fake)
+    with pytest.raises(CloudStorageError, match="could not remove the old folder marker"):
+        await client.rename_folder("clips/garage", "driveway")
+
+
+async def test_s3_delete_folder_when_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeBotoClient()
+    fake.list_objects_v2_response = {"Contents": [{"Key": "clips/garage/"}]}
+    client = _s3_client(monkeypatch, fake)
+    await client.delete_folder("clips/garage")
+    delete_calls = [call for call in fake.calls if call[0] == "delete_object"]
+    assert delete_calls[-1][1] == {"Bucket": "my-bucket", "Key": "clips/garage/"}
+
+
+async def test_s3_delete_folder_refuses_when_not_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeBotoClient()
+    fake.list_objects_v2_response = {
+        "Contents": [{"Key": "clips/garage/"}, {"Key": "clips/garage/x.mp4"}]
+    }
+    client = _s3_client(monkeypatch, fake)
+    with pytest.raises(CloudStorageError, match="isn't empty"):
+        await client.delete_folder("clips/garage")
+
+
+async def test_s3_delete_folder_wraps_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeBotoClient()
+    fake.list_objects_v2_response = {"Contents": [{"Key": "clips/garage/"}]}
+    fake.raise_on.add("delete_object")
+    client = _s3_client(monkeypatch, fake)
+    with pytest.raises(CloudStorageError, match="S3 delete failed"):
+        await client.delete_folder("clips/garage")
+
+
 # ------------------------------------------------------------- Google Drive
 
 
@@ -364,6 +443,10 @@ class _FakeFilesResource:
             raise_error=self._drive.raise_on_list,
         )
 
+    def update(self, *, fileId: str, body: dict[str, Any]) -> _FakeExecuteRequest:  # noqa: N803
+        self._drive.update_calls.append((fileId, body))
+        return _FakeExecuteRequest(raise_error=self._drive.raise_on_update)
+
 
 class _FakeAboutResource:
     def __init__(self, drive: Any) -> None:
@@ -380,12 +463,14 @@ class _FakeDriveService:
         self.raise_on_about = False
         self.raise_on_create = False
         self.raise_on_list = False
+        self.raise_on_update = False
         self.created_folder_id = "new-folder-1"
         self.list_files_response: list[dict[str, str]] = []
         self.create_calls: list[Any] = []
         self.get_media_calls: list[str] = []
         self.delete_calls: list[str] = []
         self.list_queries: list[str] = []
+        self.update_calls: list[tuple[str, dict[str, Any]]] = []
 
     def files(self) -> _FakeFilesResource:
         return _FakeFilesResource(self)
@@ -538,6 +623,39 @@ async def test_google_drive_create_folder_wraps_errors(monkeypatch: pytest.Monke
     client = _drive_client(monkeypatch, drive)
     with pytest.raises(CloudStorageError, match="Google Drive could not create folder"):
         await client.create_folder(None, "New Folder")
+
+
+async def test_google_drive_rename_folder(monkeypatch: pytest.MonkeyPatch) -> None:
+    drive = _FakeDriveService()
+    client = _drive_client(monkeypatch, drive)
+    await client.rename_folder("folder-1", "Renamed")
+    assert drive.update_calls == [("folder-1", {"name": "Renamed"})]
+
+
+async def test_google_drive_rename_folder_wraps_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    drive = _FakeDriveService()
+    drive.raise_on_update = True
+    client = _drive_client(monkeypatch, drive)
+    with pytest.raises(CloudStorageError, match="Google Drive could not rename folder"):
+        await client.rename_folder("folder-1", "Renamed")
+
+
+async def test_google_drive_delete_folder_trashes_rather_than_hard_deletes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    drive = _FakeDriveService()
+    client = _drive_client(monkeypatch, drive)
+    await client.delete_folder("folder-1")
+    assert drive.update_calls == [("folder-1", {"trashed": True})]
+    assert drive.delete_calls == []
+
+
+async def test_google_drive_delete_folder_wraps_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    drive = _FakeDriveService()
+    drive.raise_on_update = True
+    client = _drive_client(monkeypatch, drive)
+    with pytest.raises(CloudStorageError, match="Google Drive could not delete folder"):
+        await client.delete_folder("folder-1")
 
 
 # ------------------------------------------------------------------ OneDrive
@@ -802,3 +920,63 @@ async def test_onedrive_create_folder_wraps_errors(monkeypatch: pytest.MonkeyPat
     _patch_graph_transport(monkeypatch, handler)
     with pytest.raises(CloudStorageError, match="OneDrive could not create folder"):
         await client.create_folder(None, "New Folder")
+
+
+async def test_onedrive_rename_folder(monkeypatch: pytest.MonkeyPatch) -> None:
+    msal_app = _FakeMsalApp()
+    client = _onedrive_client(monkeypatch, msal_app)
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["method"] = request.method
+        captured["path"] = request.url.path
+        captured["body"] = request.content
+        return httpx.Response(200, json={"id": "item-1", "name": "Driveway"})
+
+    _patch_graph_transport(monkeypatch, handler)
+    await client.rename_folder("item-1", "Driveway")
+    assert captured["method"] == "PATCH"
+    assert captured["path"].endswith("/items/item-1")
+    assert b"Driveway" in captured["body"]
+
+
+async def test_onedrive_rename_folder_wraps_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    msal_app = _FakeMsalApp()
+    client = _onedrive_client(monkeypatch, msal_app)
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500)
+
+    _patch_graph_transport(monkeypatch, handler)
+    with pytest.raises(CloudStorageError, match="OneDrive could not rename folder"):
+        await client.rename_folder("item-1", "Driveway")
+
+
+async def test_onedrive_delete_folder_reuses_the_recycle_bin_delete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    msal_app = _FakeMsalApp()
+    client = _onedrive_client(monkeypatch, msal_app)
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["method"] = request.method
+        captured["path"] = request.url.path
+        return httpx.Response(204)
+
+    _patch_graph_transport(monkeypatch, handler)
+    await client.delete_folder("item-1")
+    assert captured["method"] == "DELETE"
+    assert captured["path"].endswith("/items/item-1")
+
+
+async def test_onedrive_delete_folder_wraps_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    msal_app = _FakeMsalApp()
+    client = _onedrive_client(monkeypatch, msal_app)
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500)
+
+    _patch_graph_transport(monkeypatch, handler)
+    with pytest.raises(CloudStorageError, match="OneDrive delete failed"):
+        await client.delete_folder("item-1")

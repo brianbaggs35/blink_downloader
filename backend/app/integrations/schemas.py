@@ -84,6 +84,11 @@ class CloudCreateFolderRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
 
 
+class CloudRenameFolderRequest(BaseModel):
+    id: str
+    new_name: str = Field(min_length=1, max_length=255)
+
+
 class StorageTestResult(BaseModel):
     ok: bool
     detail: str

@@ -777,10 +777,12 @@ export interface paths {
         put?: never;
         /** Create Storage Directory */
         post: operations["create_storage_directory_api_settings_storage_browse_post"];
-        delete?: never;
+        /** Delete Storage Directory */
+        delete: operations["delete_storage_directory_api_settings_storage_browse_delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Rename Storage Directory */
+        patch: operations["rename_storage_directory_api_settings_storage_browse_patch"];
         trace?: never;
     };
     "/api/settings/blink-sync": {
@@ -1046,10 +1048,12 @@ export interface paths {
         put?: never;
         /** Create Cloud Folder */
         post: operations["create_cloud_folder_api_settings_storage_integrations__provider__browse_post"];
-        delete?: never;
+        /** Delete Cloud Folder */
+        delete: operations["delete_cloud_folder_api_settings_storage_integrations__provider__browse_delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Rename Cloud Folder */
+        patch: operations["rename_cloud_folder_api_settings_storage_integrations__provider__browse_patch"];
         trace?: never;
     };
     "/api/settings/storage-integrations/google-drive/oauth/start": {
@@ -1793,6 +1797,13 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** CloudRenameFolderRequest */
+        CloudRenameFolderRequest: {
+            /** Id */
+            id: string;
+            /** New Name */
+            new_name: string;
+        };
         /** DailyClipCount */
         DailyClipCount: {
             /** Date */
@@ -2230,6 +2241,13 @@ export interface components {
              * @default 0
              */
             auto_archive_after_days: number;
+        };
+        /** StorageRenameFolderRequest */
+        StorageRenameFolderRequest: {
+            /** Path */
+            path: string;
+            /** New Name */
+            new_name: string;
         };
         /** StorageSettingsRead */
         StorageSettingsRead: {
@@ -4281,6 +4299,70 @@ export interface operations {
             };
         };
     };
+    delete_storage_directory_api_settings_storage_browse_delete: {
+        parameters: {
+            query: {
+                path: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageBrowseResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_storage_directory_api_settings_storage_browse_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StorageRenameFolderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageBrowseResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_blink_sync_settings_api_settings_blink_sync_get: {
         parameters: {
             query?: never;
@@ -4901,6 +4983,70 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CloudBrowseResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_cloud_folder_api_settings_storage_integrations__provider__browse_delete: {
+        parameters: {
+            query: {
+                folder_id: string;
+            };
+            header?: never;
+            path: {
+                provider: "s3" | "google_drive" | "onedrive";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_cloud_folder_api_settings_storage_integrations__provider__browse_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "s3" | "google_drive" | "onedrive";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CloudRenameFolderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

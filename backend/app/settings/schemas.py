@@ -28,6 +28,13 @@ class StorageSettingsUpdate(BaseModel):
         return value
 
 
+def _require_plain_name(value: str) -> str:
+    if "/" in value or "\\" in value or value in {".", ".."}:
+        msg = "name must be a plain folder name, not a path."
+        raise ValueError(msg)
+    return value
+
+
 class StorageBrowseEntry(BaseModel):
     name: str
     path: str
@@ -55,10 +62,25 @@ class StorageCreateFolderRequest(BaseModel):
     @field_validator("name")
     @classmethod
     def _name_has_no_path_separators(cls, value: str) -> str:
-        if "/" in value or "\\" in value or value in {".", ".."}:
-            msg = "name must be a plain folder name, not a path."
+        return _require_plain_name(value)
+
+
+class StorageRenameFolderRequest(BaseModel):
+    path: str
+    new_name: str = Field(min_length=1, max_length=255)
+
+    @field_validator("path")
+    @classmethod
+    def _path_must_be_absolute(cls, value: str) -> str:
+        if not Path(value).is_absolute():
+            msg = "path must be an absolute path."
             raise ValueError(msg)
         return value
+
+    @field_validator("new_name")
+    @classmethod
+    def _new_name_has_no_path_separators(cls, value: str) -> str:
+        return _require_plain_name(value)
 
 
 class BlinkSyncSettingsRead(BaseModel):
