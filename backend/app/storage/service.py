@@ -3,6 +3,7 @@
 import asyncio
 import errno
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
@@ -16,9 +17,30 @@ class StorageError(Exception):
 
 
 class ClipStorage(Protocol):
-    def clip_path(self, camera_id: uuid.UUID, clip_id: uuid.UUID) -> Path: ...
+    def clip_path(self, camera_id: uuid.UUID, clip_id: uuid.UUID, recorded_at: datetime) -> Path:
+        """Where a clip's own video should be written - called exactly once,
+        at download time, with its result immediately persisted as
+        Clip.storage_path. Every other reader/deleter of an existing clip's
+        file must use that persisted value instead of calling this again -
+        a clip downloaded before this method's formula last changed would
+        never resolve correctly through a fresh recompute."""
+        ...
 
-    def thumbnail_path(self, camera_id: uuid.UUID, clip_id: uuid.UUID) -> Path: ...
+    def thumbnail_path(
+        self, camera_id: uuid.UUID, clip_id: uuid.UUID, recorded_at: datetime
+    ) -> Path:
+        """Same one-time-use-at-generation-time contract as clip_path above -
+        the result is persisted as Clip.thumbnail_path. Existing readers use
+        that persisted value, falling back to legacy_thumbnail_path below
+        only for a clip generated before that column existed."""
+        ...
+
+    def legacy_thumbnail_path(self, camera_id: uuid.UUID, clip_id: uuid.UUID) -> Path:
+        """The pre-migration flat thumbnail location (no date folder) - a
+        fallback for a clip whose thumbnail_path column is null because it
+        was generated before that column existed, frozen exactly as that
+        historical layout was, regardless of any future clip_path change."""
+        ...
 
     def vehicle_reference_path(self, camera_id: uuid.UUID) -> Path: ...
 
@@ -41,12 +63,20 @@ class LocalClipStorage:
     def __init__(self, root: Path) -> None:
         self.root = root
 
-    def clip_path(self, camera_id: uuid.UUID, clip_id: uuid.UUID) -> Path:
+    def clip_path(self, camera_id: uuid.UUID, clip_id: uuid.UUID, recorded_at: datetime) -> Path:
         # Our own UUIDs, never externally-controlled strings, are the only
         # thing that reaches the filesystem — no path-sanitization needed.
-        return self.root / str(camera_id) / f"{clip_id}.mp4"
+        # camera/date (not date/camera) matches the Library bulk-ZIP
+        # export's existing arcname convention (app.api.clips._clip_arcname)
+        # - one grouping convention across the app, not two.
+        return self.root / str(camera_id) / f"{recorded_at:%Y-%m-%d}" / f"{clip_id}.mp4"
 
-    def thumbnail_path(self, camera_id: uuid.UUID, clip_id: uuid.UUID) -> Path:
+    def thumbnail_path(
+        self, camera_id: uuid.UUID, clip_id: uuid.UUID, recorded_at: datetime
+    ) -> Path:
+        return self.root / str(camera_id) / f"{recorded_at:%Y-%m-%d}" / f"{clip_id}.jpg"
+
+    def legacy_thumbnail_path(self, camera_id: uuid.UUID, clip_id: uuid.UUID) -> Path:
         return self.root / str(camera_id) / f"{clip_id}.jpg"
 
     def vehicle_reference_path(self, camera_id: uuid.UUID) -> Path:

@@ -491,6 +491,31 @@ async def test_thumbnail_returns_the_image(
     assert response.content == b"\xff\xd8fake-jpeg"
 
 
+async def test_thumbnail_uses_the_persisted_path_when_set(
+    admin_client: AsyncClient, app: FastAPI, tmp_path: Path
+) -> None:
+    """A clip generated after the thumbnail_path column existed must use
+    that persisted value, not the legacy flat-location fallback - even
+    though nothing lives at the legacy location for this clip at all."""
+    await _use_storage(app, tmp_path)
+    camera = await _make_camera(app)
+    clip = await _make_clip(app, camera, downloaded=True, storage_dir=tmp_path)
+    thumb_path = tmp_path / str(camera.id) / "2026-07-20" / f"{clip.id}.jpg"
+    thumb_path.parent.mkdir(parents=True)
+    thumb_path.write_bytes(b"\xff\xd8new-format-jpeg")
+    async with app.state.sessionmaker() as session:
+        from sqlalchemy import select
+
+        row = (await session.execute(select(Clip).where(Clip.id == clip.id))).scalar_one()
+        row.thumbnail_generated = True
+        row.thumbnail_path = str(thumb_path)
+        await session.commit()
+
+    response = await admin_client.get(f"/api/clips/{clip.id}/thumbnail")
+    assert response.status_code == 200
+    assert response.content == b"\xff\xd8new-format-jpeg"
+
+
 # ----------------------------------------------------------------- download
 
 

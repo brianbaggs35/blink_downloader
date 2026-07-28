@@ -239,14 +239,17 @@ async def clip_thumbnail(
     _user: Annotated[object, Depends(current_active_user)],
 ) -> FileResponse:
     clip = await _get_clip_or_404(session, clip_id)
-    if not clip.thumbnail_generated or clip.storage_path is None:
+    if not clip.thumbnail_generated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No thumbnail yet.")
-    camera = await session.get(Camera, clip.camera_id)
-    if camera is None:  # pragma: no cover — FK guarantees this in practice
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No thumbnail yet.")
-    storage_root = await resolve_storage_dir(session, get_settings())
-    storage = get_clip_storage(storage_root)
-    path = _clip_file_or_404(str(storage.thumbnail_path(camera.id, clip.id)), "thumbnail")
+    if clip.thumbnail_path:
+        thumb_path = clip.thumbnail_path
+    else:
+        # Generated before the thumbnail_path column existed - falls back to
+        # the pre-migration flat (no date folder) location.
+        storage_root = await resolve_storage_dir(session, get_settings())
+        storage = get_clip_storage(storage_root)
+        thumb_path = str(storage.legacy_thumbnail_path(clip.camera_id, clip.id))
+    path = _clip_file_or_404(thumb_path, "thumbnail")
     return FileResponse(path, media_type="image/jpeg", content_disposition_type="inline")
 
 
@@ -262,8 +265,16 @@ async def download_clip_file(
 
 
 async def _delete_one(session: AsyncSession, storage: ClipStorage, clip: Clip) -> None:
-    await storage.delete(storage.clip_path(clip.camera_id, clip.id))
-    await storage.delete(storage.thumbnail_path(clip.camera_id, clip.id))
+    # Deletes by the clip's own persisted paths, never by recomputing
+    # clip_path/thumbnail_path from ids - a clip downloaded before either
+    # formula last changed would never resolve correctly through a fresh
+    # recompute (see ClipStorage's docstrings in app.storage.service).
+    if clip.storage_path:
+        await storage.delete(Path(clip.storage_path))
+    thumb_path = clip.thumbnail_path or str(
+        storage.legacy_thumbnail_path(clip.camera_id, clip.id)
+    )
+    await storage.delete(Path(thumb_path))
     await session.delete(clip)
 
 
@@ -422,8 +433,6 @@ async def bulk_download_clips(
     )
     camera_names = {c.id: c.name for c in cameras}
 
-    storage_root = await resolve_storage_dir(session, get_settings())
-    local_storage = get_clip_storage(storage_root)
     encryption_key = get_settings().encryption_key
     clients: dict[StorageBackend, CloudClient | None] = {}
 
@@ -433,8 +442,11 @@ async def bulk_download_clips(
         camera_name = camera_names.get(clip.camera_id, "Unknown Camera")
         arcname = _clip_arcname(camera_name, clip)
         if clip.storage_backend == StorageBackend.LOCAL:
-            local_entries.append((local_storage.clip_path(clip.camera_id, clip.id), arcname))
+            # clip.storage_path (already filtered non-null above), never a
+            # recompute - see _delete_one's docstring for why.
+            local_entries.append((Path(clip.storage_path), arcname))  # type: ignore[arg-type]
             continue
+
         if clip.storage_backend not in clients:
             clients[clip.storage_backend] = await _cloud_client_for(
                 session, clip.storage_backend, encryption_key

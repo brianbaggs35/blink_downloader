@@ -12,6 +12,7 @@ import asyncio
 import json
 import uuid
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -53,7 +54,6 @@ async def _client_for(
 async def archive_clip(
     session: AsyncSession,
     clip: Clip,
-    camera_id: uuid.UUID,
     backend: StorageBackend,
     encryption_key: str,
     local_storage: ClipStorage,
@@ -69,7 +69,10 @@ async def archive_clip(
     if client is None:
         raise ArchiveError(f"{backend.value} is not configured.")
 
-    local_path = local_storage.clip_path(camera_id, clip.id)
+    # clip.storage_path (guaranteed set alongside downloaded_at above), never
+    # a recompute - a clip downloaded before clip_path's formula last
+    # changed would never resolve correctly through a fresh recompute.
+    local_path = Path(clip.storage_path)  # type: ignore[arg-type]
     try:
         data = await asyncio.to_thread(local_path.read_bytes)
     except OSError as exc:
@@ -96,7 +99,6 @@ async def archive_clip(
 async def restore_clip(
     session: AsyncSession,
     clip: Clip,
-    camera_id: uuid.UUID,
     encryption_key: str,
     local_storage: ClipStorage,
 ) -> None:
@@ -114,7 +116,10 @@ async def restore_clip(
     except CloudStorageError as exc:
         raise ArchiveError(str(exc)) from exc
 
-    local_path = local_storage.clip_path(camera_id, clip.id)
+    # A genuinely fresh write (the clip is currently NOT local, being
+    # restored TO local), so the current clip_path formula applies - unlike
+    # archive_clip above, there's no historical reference to preserve here.
+    local_path = local_storage.clip_path(clip.camera_id, clip.id, clip.recorded_at)
     try:
         await local_storage.write(local_path, data)
     except StorageError as exc:

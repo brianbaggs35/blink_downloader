@@ -69,7 +69,7 @@ async def _make_downloaded_clip(
     await session.commit()
     await session.refresh(clip)
 
-    path = storage.clip_path(camera.id, clip.id)
+    path = storage.clip_path(camera.id, clip.id, clip.recorded_at)
     await storage.write(path, content)
     clip.storage_path = str(path)
     clip.filename = path.name
@@ -126,7 +126,7 @@ async def test_archive_clip_rejects_local_as_a_destination(
     storage = get_clip_storage(tmp_path)
     clip = await _make_downloaded_clip(app_session, camera, storage)
     with pytest.raises(ArchiveError, match="not an archive destination"):
-        await archive_clip(app_session, clip, camera.id, StorageBackend.LOCAL, "key", storage)
+        await archive_clip(app_session, clip, StorageBackend.LOCAL, "key", storage)
 
 
 async def test_archive_clip_rejects_an_already_archived_clip(
@@ -138,7 +138,7 @@ async def test_archive_clip_rejects_an_already_archived_clip(
     clip.storage_backend = StorageBackend.S3
     await app_session.commit()
     with pytest.raises(ArchiveError, match="already archived"):
-        await archive_clip(app_session, clip, camera.id, StorageBackend.S3, "key", storage)
+        await archive_clip(app_session, clip, StorageBackend.S3, "key", storage)
 
 
 async def test_archive_clip_rejects_a_clip_not_yet_downloaded(
@@ -156,7 +156,7 @@ async def test_archive_clip_rejects_a_clip_not_yet_downloaded(
     await app_session.refresh(clip)
     storage = get_clip_storage(tmp_path)
     with pytest.raises(ArchiveError, match="not been downloaded"):
-        await archive_clip(app_session, clip, camera.id, StorageBackend.S3, "key", storage)
+        await archive_clip(app_session, clip, StorageBackend.S3, "key", storage)
 
 
 async def test_archive_clip_rejects_an_unconfigured_backend(
@@ -167,7 +167,7 @@ async def test_archive_clip_rejects_an_unconfigured_backend(
     clip = await _make_downloaded_clip(app_session, camera, storage)
     with pytest.raises(ArchiveError, match="not configured"):
         await archive_clip(
-            app_session, clip, camera.id, StorageBackend.S3, get_settings().encryption_key, storage
+            app_session, clip, StorageBackend.S3, get_settings().encryption_key, storage
         )
 
 
@@ -181,13 +181,13 @@ async def test_archive_clip_uploads_deletes_local_and_updates_the_clip(
     monkeypatch.setattr("app.integrations.archive.build_s3_client", lambda *_a, **_kw: fake)
 
     await archive_clip(
-        app_session, clip, camera.id, StorageBackend.S3, get_settings().encryption_key, storage
+        app_session, clip, StorageBackend.S3, get_settings().encryption_key, storage
     )
 
     assert fake.uploaded == [(f"{clip.id}.mp4", b"hello-world")]
     assert clip.storage_backend == StorageBackend.S3
     assert clip.storage_path == "clips/abc.mp4"
-    local_path = storage.clip_path(camera.id, clip.id)
+    local_path = storage.clip_path(camera.id, clip.id, clip.recorded_at)
     assert not local_path.exists()
 
 
@@ -202,7 +202,7 @@ async def test_archive_clip_wraps_upload_errors(
 
     with pytest.raises(ArchiveError, match="upload boom"):
         await archive_clip(
-            app_session, clip, camera.id, StorageBackend.S3, get_settings().encryption_key, storage
+            app_session, clip, StorageBackend.S3, get_settings().encryption_key, storage
         )
     assert clip.storage_backend == StorageBackend.LOCAL
 
@@ -213,13 +213,13 @@ async def test_archive_clip_raises_when_the_local_file_is_missing(
     camera = await _make_camera(app_session)
     storage = get_clip_storage(tmp_path)
     clip = await _make_downloaded_clip(app_session, camera, storage)
-    storage.clip_path(camera.id, clip.id).unlink()
+    storage.clip_path(camera.id, clip.id, clip.recorded_at).unlink()
     fake = _FakeCloudClient()
     monkeypatch.setattr("app.integrations.archive.build_s3_client", lambda *_a, **_kw: fake)
 
     with pytest.raises(ArchiveError, match="Could not read the local clip file"):
         await archive_clip(
-            app_session, clip, camera.id, StorageBackend.S3, get_settings().encryption_key, storage
+            app_session, clip, StorageBackend.S3, get_settings().encryption_key, storage
         )
 
 
@@ -238,7 +238,7 @@ async def test_archive_clip_succeeds_despite_a_local_cleanup_failure(
     monkeypatch.setattr(storage, "delete", _raise)
 
     await archive_clip(
-        app_session, clip, camera.id, StorageBackend.S3, get_settings().encryption_key, storage
+        app_session, clip, StorageBackend.S3, get_settings().encryption_key, storage
     )
     assert clip.storage_backend == StorageBackend.S3
 
@@ -253,7 +253,7 @@ async def test_restore_clip_rejects_an_already_local_clip(
     storage = get_clip_storage(tmp_path)
     clip = await _make_downloaded_clip(app_session, camera, storage)
     with pytest.raises(ArchiveError, match="already local"):
-        await restore_clip(app_session, clip, camera.id, "key", storage)
+        await restore_clip(app_session, clip, "key", storage)
 
 
 async def test_restore_clip_rejects_a_clip_with_no_archived_copy(
@@ -271,7 +271,7 @@ async def test_restore_clip_rejects_a_clip_with_no_archived_copy(
     await app_session.commit()
     storage = get_clip_storage(tmp_path)
     with pytest.raises(ArchiveError, match="no archived copy"):
-        await restore_clip(app_session, clip, camera.id, "key", storage)
+        await restore_clip(app_session, clip, "key", storage)
 
 
 async def test_restore_clip_rejects_an_unconfigured_backend(
@@ -290,7 +290,7 @@ async def test_restore_clip_rejects_an_unconfigured_backend(
     await app_session.commit()
     storage = get_clip_storage(tmp_path)
     with pytest.raises(ArchiveError, match="not configured"):
-        await restore_clip(app_session, clip, camera.id, get_settings().encryption_key, storage)
+        await restore_clip(app_session, clip, get_settings().encryption_key, storage)
 
 
 async def test_restore_clip_downloads_deletes_remote_and_updates_the_clip(
@@ -312,7 +312,7 @@ async def test_restore_clip_downloads_deletes_remote_and_updates_the_clip(
     fake = _FakeCloudClient(download_result=b"restored-bytes")
     monkeypatch.setattr("app.integrations.archive.build_s3_client", lambda *_a, **_kw: fake)
 
-    await restore_clip(app_session, clip, camera.id, get_settings().encryption_key, storage)
+    await restore_clip(app_session, clip, get_settings().encryption_key, storage)
 
     assert fake.downloaded == ["clips/x.mp4"]
     assert fake.deleted == ["clips/x.mp4"]
@@ -340,7 +340,7 @@ async def test_restore_clip_wraps_download_errors(
     monkeypatch.setattr("app.integrations.archive.build_s3_client", lambda *_a, **_kw: fake)
 
     with pytest.raises(ArchiveError, match="download boom"):
-        await restore_clip(app_session, clip, camera.id, get_settings().encryption_key, storage)
+        await restore_clip(app_session, clip, get_settings().encryption_key, storage)
 
 
 async def test_restore_clip_succeeds_despite_a_remote_cleanup_failure(
@@ -361,7 +361,7 @@ async def test_restore_clip_succeeds_despite_a_remote_cleanup_failure(
     fake = _FakeCloudClient(raise_on={"delete"})
     monkeypatch.setattr("app.integrations.archive.build_s3_client", lambda *_a, **_kw: fake)
 
-    await restore_clip(app_session, clip, camera.id, get_settings().encryption_key, storage)
+    await restore_clip(app_session, clip, get_settings().encryption_key, storage)
     assert clip.storage_backend == StorageBackend.LOCAL
 
 
@@ -389,7 +389,7 @@ async def test_restore_clip_wraps_local_write_errors(
     monkeypatch.setattr(storage, "write", _raise)
 
     with pytest.raises(ArchiveError, match="Could not write the restored clip locally"):
-        await restore_clip(app_session, clip, camera.id, get_settings().encryption_key, storage)
+        await restore_clip(app_session, clip, get_settings().encryption_key, storage)
 
 
 async def test_restore_clip_from_google_drive_dispatches_to_the_right_client(
@@ -412,7 +412,7 @@ async def test_restore_clip_from_google_drive_dispatches_to_the_right_client(
         "app.integrations.archive.build_google_drive_client", lambda *_a, **_kw: fake
     )
 
-    await restore_clip(app_session, clip, camera.id, get_settings().encryption_key, storage)
+    await restore_clip(app_session, clip, get_settings().encryption_key, storage)
 
     assert fake.downloaded == ["file-123"]
     assert clip.storage_backend == StorageBackend.LOCAL
@@ -436,7 +436,7 @@ async def test_restore_clip_from_onedrive_dispatches_to_the_right_client(
     fake = _FakeCloudClient(download_result=b"onedrive-bytes")
     monkeypatch.setattr("app.integrations.archive.build_onedrive_client", lambda *_a, **_kw: fake)
 
-    await restore_clip(app_session, clip, camera.id, get_settings().encryption_key, storage)
+    await restore_clip(app_session, clip, get_settings().encryption_key, storage)
 
     assert fake.downloaded == ["item-456"]
     assert clip.storage_backend == StorageBackend.LOCAL

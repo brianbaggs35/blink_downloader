@@ -504,9 +504,15 @@ async def test_unlink_removes_account_cameras_clips_and_files(
         )
         session.add(clip)
         await session.commit()
+        # Pre-migration flat path (no date folder) - also proves an
+        # old-format clip's file still gets cleaned up correctly via its
+        # own persisted storage_path, not a recompute.
         clip_path = tmp_path / str(camera.id) / f"{clip.id}.mp4"
         clip_path.parent.mkdir(parents=True)
         clip_path.write_bytes(b"video")
+        clip.storage_path = str(clip_path)
+        clip.downloaded_at = datetime.now(UTC)
+        await session.commit()
 
     response = await admin_client.delete("/api/blink/account")
     assert response.status_code == 204
