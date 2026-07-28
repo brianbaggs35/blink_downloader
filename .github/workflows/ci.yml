@@ -251,12 +251,19 @@ jobs:
     needs: [backend-test, frontend]
     steps:
       - uses: actions/checkout@v7
-      - name: Run e2e suite
-        run: make e2e
+      - name: Run e2e suite against an instrumented frontend, with coverage
+        run: make e2e-coverage
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: e2e/playwright-report
+          retention-days: 7
+      - name: Upload e2e frontend coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-coverage-report
+          path: e2e/coverage
           retention-days: 7
