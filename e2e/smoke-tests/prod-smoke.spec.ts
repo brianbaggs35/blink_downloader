@@ -17,6 +17,11 @@ test("first-run setup (skipping Blink), then every nav destination loads", async
   await page.getByTestId("confirm").locator("input").fill(ADMIN_PASSWORD);
   await page.getByTestId("submit").click();
 
+  // Step 2 (Storage) - accept the default local directory and move on;
+  // SetupView.vue's Stepper is linear, so step 3 never activates (and
+  // blink-step-skip never becomes visible) without this click.
+  await page.getByTestId("storage-step-continue").click();
+
   // No real Blink account to link in this ephemeral environment - the
   // wizard must still be completable without one (see SetupView.vue).
   await page.getByTestId("blink-step-skip").click();
@@ -31,16 +36,21 @@ test("first-run setup (skipping Blink), then every nav destination loads", async
     ["Status", "Status"],
     ["Live View", "Live View"],
     ["Storage", "Storage"],
-    ["Integrations", "Integrations"],
+    ["Connect", "Integrations"],
     ["AI", /^AI$/],
     ["AI Usage", "AI Usage"],
     ["Vehicles", "Vehicles"],
     ["Biometrics", "Biometrics"],
-    ["Settings", "Settings"],
   ];
   const nav = page.getByRole("navigation", { name: "Primary" });
   for (const [linkName, heading] of destinations) {
     await nav.getByRole("link", { name: linkName, exact: true }).click();
     await expect(page.getByRole("heading", { name: heading, exact: true }).first()).toBeVisible();
   }
+
+  // Settings is an accordion, not a plain link - expand it, then follow one
+  // of its sections in.
+  await page.getByTestId("settings-accordion-trigger").click();
+  await nav.getByRole("link", { name: "General", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
 });

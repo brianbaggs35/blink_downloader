@@ -180,9 +180,7 @@ async def test_archive_clip_uploads_deletes_local_and_updates_the_clip(
     fake = _FakeCloudClient(upload_result="clips/abc.mp4")
     monkeypatch.setattr("app.integrations.archive.build_s3_client", lambda *_a, **_kw: fake)
 
-    await archive_clip(
-        app_session, clip, StorageBackend.S3, get_settings().encryption_key, storage
-    )
+    await archive_clip(app_session, clip, StorageBackend.S3, get_settings().encryption_key, storage)
 
     assert fake.uploaded == [(f"{clip.id}.mp4", b"hello-world")]
     assert clip.storage_backend == StorageBackend.S3
@@ -237,9 +235,7 @@ async def test_archive_clip_succeeds_despite_a_local_cleanup_failure(
 
     monkeypatch.setattr(storage, "delete", _raise)
 
-    await archive_clip(
-        app_session, clip, StorageBackend.S3, get_settings().encryption_key, storage
-    )
+    await archive_clip(app_session, clip, StorageBackend.S3, get_settings().encryption_key, storage)
     assert clip.storage_backend == StorageBackend.S3
 
 
