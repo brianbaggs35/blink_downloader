@@ -95,3 +95,14 @@ export const seededVehicle = {
   description: "A silver sedan is normally parked in the driveway overnight.",
   proximityEventCount: 3,
 };
+
+// One physical, armed, online, local-storage-active Sync Module on the same
+// seeded network, with three local (USB) items spanning
+// available/downloaded/error - see backend/app/testing/seed.py.
+export const seededSyncModule = {
+  name: "Home",
+  serial: "SN-DEMO-0001",
+  firmwareVersion: "2.14.28",
+  localItemCount: 3,
+  errorMessage: "Failed to prepare this clip from the Sync Module - device busy.",
+};
