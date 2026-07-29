@@ -1215,6 +1215,176 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sync-modules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Sync Modules Route */
+        get: operations["list_sync_modules_route_api_sync_modules_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sync-modules/{sync_module_id}/cameras": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Sync Module Cameras Route */
+        get: operations["list_sync_module_cameras_route_api_sync_modules__sync_module_id__cameras_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sync-modules/{sync_module_id}/arm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Arm Sync Module Route */
+        post: operations["arm_sync_module_route_api_sync_modules__sync_module_id__arm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sync-modules/{sync_module_id}/cameras/{camera_id}/motion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Set Camera Motion Detection Route */
+        patch: operations["set_camera_motion_detection_route_api_sync_modules__sync_module_id__cameras__camera_id__motion_patch"];
+        trace?: never;
+    };
+    "/api/sync-modules/{sync_module_id}/cameras/motion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Bulk Set Camera Motion Detection Route */
+        patch: operations["bulk_set_camera_motion_detection_route_api_sync_modules__sync_module_id__cameras_motion_patch"];
+        trace?: never;
+    };
+    "/api/sync-modules/{sync_module_id}/local-storage/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Local Storage Items Route */
+        get: operations["list_local_storage_items_route_api_sync_modules__sync_module_id__local_storage_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sync-modules/{sync_module_id}/local-storage/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh Local Storage Route */
+        post: operations["refresh_local_storage_route_api_sync_modules__sync_module_id__local_storage_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sync-modules/{sync_module_id}/local-storage/items/{item_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Download Local Storage Item Route */
+        post: operations["download_local_storage_item_route_api_sync_modules__sync_module_id__local_storage_items__item_id__download_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sync-modules/{sync_module_id}/local-storage/items/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Local Storage Item Route */
+        delete: operations["delete_local_storage_item_route_api_sync_modules__sync_module_id__local_storage_items__item_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sync-modules/{sync_module_id}/local-storage/items/{item_id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Local Storage Item File Route */
+        get: operations["get_local_storage_item_file_route_api_sync_modules__sync_module_id__local_storage_items__item_id__file_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1991,12 +2161,31 @@ export interface components {
             auto_refresh_interval_seconds: number;
         };
         /**
+         * LocalItemStatus
+         * @enum {string}
+         */
+        LocalItemStatus: "available" | "preparing" | "downloading" | "downloaded" | "error";
+        /**
+         * LocalStorageStatus
+         * @enum {string}
+         */
+        LocalStorageStatus: "idle" | "refreshing" | "error";
+        /**
          * ModelPack
          * @description insightface named model packs, smallest/fastest to largest/most
          *     accurate. Chosen in Settings based on available CPU/GPU headroom.
          * @enum {string}
          */
         ModelPack: "buffalo_sc" | "buffalo_s" | "buffalo_m" | "buffalo_l";
+        /**
+         * MotionDetectionUpdate
+         * @description Body for both the per-camera and the bulk "all cameras" motion
+         *     detection routes - same shape, same field.
+         */
+        MotionDetectionUpdate: {
+            /** Enabled */
+            enabled: boolean;
+        };
         /** PersonCreate */
         PersonCreate: {
             /** Name */
@@ -2299,6 +2488,92 @@ export interface components {
          * @enum {string}
          */
         SuspicionLabel: "routine" | "uncertain" | "suspicious";
+        /** SyncModuleArmRequest */
+        SyncModuleArmRequest: {
+            /** Armed */
+            armed: boolean;
+        };
+        /** SyncModuleCameraRead */
+        SyncModuleCameraRead: {
+            /**
+             * Camera Id
+             * Format: uuid
+             */
+            camera_id: string;
+            /** Name */
+            name: string;
+            /** Camera Type */
+            camera_type: string;
+            /** Motion Enabled */
+            motion_enabled: boolean;
+            /** Motion Supported */
+            motion_supported: boolean;
+            /** Battery */
+            battery: string | null;
+        };
+        /** SyncModuleLocalItemRead */
+        SyncModuleLocalItemRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Camera Id */
+            camera_id: string | null;
+            /** Camera Name */
+            camera_name: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Present On Device */
+            present_on_device: boolean;
+            status: components["schemas"]["LocalItemStatus"];
+            /** Downloaded At */
+            downloaded_at: string | null;
+            /** Last Error */
+            last_error: string | null;
+        };
+        /** SyncModuleRead */
+        SyncModuleRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Network Id */
+            network_id: string;
+            /** Name */
+            name: string;
+            /** Serial */
+            serial: string | null;
+            /** Firmware Version */
+            firmware_version: string | null;
+            /** Is Physical Hub */
+            is_physical_hub: boolean;
+            /** Armed */
+            armed: boolean | null;
+            /** Online */
+            online: boolean;
+            /** Local Storage Compatible */
+            local_storage_compatible: boolean;
+            /** Local Storage Enabled */
+            local_storage_enabled: boolean;
+            /** Local Storage Active */
+            local_storage_active: boolean;
+            local_storage_status: components["schemas"]["LocalStorageStatus"];
+            /** Local Storage Manifest Refreshed At */
+            local_storage_manifest_refreshed_at: string | null;
+            /** Local Storage Last Error */
+            local_storage_last_error: string | null;
+            /** Camera Count */
+            camera_count: number;
+            /** Last Synced At */
+            last_synced_at: string | null;
+        };
         /** TemporaryLinkResponse */
         TemporaryLinkResponse: {
             /** Url */
@@ -5295,6 +5570,321 @@ export interface operations {
             header?: never;
             path: {
                 token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sync_modules_route_api_sync_modules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncModuleRead"][];
+                };
+            };
+        };
+    };
+    list_sync_module_cameras_route_api_sync_modules__sync_module_id__cameras_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sync_module_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncModuleCameraRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    arm_sync_module_route_api_sync_modules__sync_module_id__arm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sync_module_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncModuleArmRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncModuleRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_camera_motion_detection_route_api_sync_modules__sync_module_id__cameras__camera_id__motion_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sync_module_id: string;
+                camera_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MotionDetectionUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncModuleCameraRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bulk_set_camera_motion_detection_route_api_sync_modules__sync_module_id__cameras_motion_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sync_module_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MotionDetectionUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkActionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_local_storage_items_route_api_sync_modules__sync_module_id__local_storage_items_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sync_module_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncModuleLocalItemRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_local_storage_route_api_sync_modules__sync_module_id__local_storage_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sync_module_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_local_storage_item_route_api_sync_modules__sync_module_id__local_storage_items__item_id__download_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sync_module_id: string;
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_local_storage_item_route_api_sync_modules__sync_module_id__local_storage_items__item_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sync_module_id: string;
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_local_storage_item_file_route_api_sync_modules__sync_module_id__local_storage_items__item_id__file_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sync_module_id: string;
+                item_id: string;
             };
             cookie?: never;
         };

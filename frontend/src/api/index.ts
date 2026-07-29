@@ -90,6 +90,12 @@ export type RecognizedPersonRead = components["schemas"]["RecognizedPersonRead"]
 export type VerifyModelRead = components["schemas"]["VerifyModelRead"];
 export type ReportFalsePositiveRead = components["schemas"]["ReportFalsePositiveRead"];
 
+export type SyncModuleRead = components["schemas"]["SyncModuleRead"];
+export type SyncModuleCameraRead = components["schemas"]["SyncModuleCameraRead"];
+export type SyncModuleLocalItemRead = components["schemas"]["SyncModuleLocalItemRead"];
+export type LocalStorageStatus = components["schemas"]["LocalStorageStatus"];
+export type LocalItemStatus = components["schemas"]["LocalItemStatus"];
+
 export { ApiError } from "./client";
 
 export function getHealth(): Promise<HealthReport> {
@@ -610,4 +616,72 @@ export function reportFalsePositive(
     `/biometrics/clips/${clipId}/people/${personId}/report-false-positive`,
     { method: "POST" },
   );
+}
+
+// ------------------------------------------------------------ Sync Module
+
+export function listSyncModules(): Promise<SyncModuleRead[]> {
+  return api<SyncModuleRead[]>("/sync-modules");
+}
+
+export function listSyncModuleCameras(syncModuleId: string): Promise<SyncModuleCameraRead[]> {
+  return api<SyncModuleCameraRead[]>(`/sync-modules/${syncModuleId}/cameras`);
+}
+
+export function armSyncModule(syncModuleId: string, armed: boolean): Promise<SyncModuleRead> {
+  return api<SyncModuleRead>(`/sync-modules/${syncModuleId}/arm`, { json: { armed } });
+}
+
+export function setCameraMotionDetection(
+  syncModuleId: string,
+  cameraId: string,
+  enabled: boolean,
+): Promise<SyncModuleCameraRead> {
+  return api<SyncModuleCameraRead>(`/sync-modules/${syncModuleId}/cameras/${cameraId}/motion`, {
+    method: "PATCH",
+    json: { enabled },
+  });
+}
+
+export function bulkSetCameraMotionDetection(
+  syncModuleId: string,
+  enabled: boolean,
+): Promise<BulkActionResponse> {
+  return api<BulkActionResponse>(`/sync-modules/${syncModuleId}/cameras/motion`, {
+    method: "PATCH",
+    json: { enabled },
+  });
+}
+
+export function listSyncModuleLocalStorageItems(
+  syncModuleId: string,
+): Promise<SyncModuleLocalItemRead[]> {
+  return api<SyncModuleLocalItemRead[]>(`/sync-modules/${syncModuleId}/local-storage/items`);
+}
+
+export function refreshSyncModuleLocalStorage(syncModuleId: string): Promise<void> {
+  return api<void>(`/sync-modules/${syncModuleId}/local-storage/refresh`, { method: "POST" });
+}
+
+export function downloadSyncModuleLocalStorageItem(
+  syncModuleId: string,
+  itemId: string,
+): Promise<void> {
+  return api<void>(`/sync-modules/${syncModuleId}/local-storage/items/${itemId}/download`, {
+    method: "POST",
+  });
+}
+
+export function deleteSyncModuleLocalStorageItem(
+  syncModuleId: string,
+  itemId: string,
+): Promise<void> {
+  return api<void>(`/sync-modules/${syncModuleId}/local-storage/items/${itemId}`, {
+    method: "DELETE",
+  });
+}
+
+/** Same-origin, cookie-authenticated - use directly as a download link href. */
+export function syncModuleLocalStorageItemFileUrl(syncModuleId: string, itemId: string): string {
+  return `/api/sync-modules/${syncModuleId}/local-storage/items/${itemId}/file`;
 }
