@@ -50,6 +50,14 @@ class ClipStorage(Protocol):
 
     def face_sample_path(self, person_id: uuid.UUID, face_embedding_id: uuid.UUID) -> Path: ...
 
+    def sync_module_clip_path(
+        self, sync_module_id: uuid.UUID, item_id: uuid.UUID, recorded_at: datetime
+    ) -> Path:
+        """Where a Sync Module local-storage item's downloaded video should
+        be written - same one-time-use-at-download-time contract as
+        clip_path above, persisted as SyncModuleLocalItem.storage_path."""
+        ...
+
     async def write(self, path: Path, data: bytes) -> int:
         """Write ``data`` to ``path`` atomically. Returns the byte count."""
         ...
@@ -90,6 +98,17 @@ class LocalClipStorage:
 
     def face_sample_path(self, person_id: uuid.UUID, face_embedding_id: uuid.UUID) -> Path:
         return self.root / "people" / str(person_id) / "samples" / f"{face_embedding_id}.jpg"
+
+    def sync_module_clip_path(
+        self, sync_module_id: uuid.UUID, item_id: uuid.UUID, recorded_at: datetime
+    ) -> Path:
+        return (
+            self.root
+            / "sync-module"
+            / str(sync_module_id)
+            / f"{recorded_at:%Y-%m-%d}"
+            / f"{item_id}.mp4"
+        )
 
     async def write(self, path: Path, data: bytes) -> int:
         return await asyncio.to_thread(self._write_sync, path, data)
