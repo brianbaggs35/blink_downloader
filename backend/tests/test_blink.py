@@ -8,22 +8,31 @@ network call.
 
 # pytest calls autouse fixtures implicitly; pyright can't see that usage.
 # pyright: reportUnusedFunction=false
+# blinkpy ships no type stubs (no py.typed marker) - same as app/blink/service.py.
+# pyright: reportMissingTypeStubs=false
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any, ClassVar
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 from aiohttp import ClientResponseError, RequestInfo
+from blinkpy.sync_module import BlinkOwl
 from yarl import URL
 
 from app.blink.service import (
     BlinkAuthError,
     BlinkCameraInfo,
     BlinkError,
+    BlinkLocalStorageItem,
+    BlinkLocalStorageManifest,
     BlinkMediaItem,
     BlinkPyService,
+    BlinkSyncModuleInfo,
     CameraNotFoundError,
+    LocalStorageUnavailableError,
+    SyncModuleNotFoundError,
     get_blink_service,
 )
 
@@ -45,9 +54,12 @@ class FakeSession:
 
 
 class FakeCamera:
-    def __init__(self, attrs: dict[str, Any]) -> None:
+    def __init__(self, attrs: dict[str, Any], camera_type: str = "default") -> None:
         self.attributes = attrs
         self.camera_id = attrs.get("camera_id")
+        # blinkpy's own "default"/"mini"/"doorbell" dispatch bucket - not
+        # the same as attrs["type"] (the raw product codename).
+        self.camera_type = camera_type
         self.thumbnail_response: Any = None
         self.thumbnail_error: Exception | None = None
         self.snap_error: Exception | None = None
@@ -72,6 +84,59 @@ class FakeCamera:
         if self.record_error:
             raise self.record_error
         self.recorded = True
+
+
+class FakeManifestItem:
+    def __init__(self, item_id: int, name: str, created_at: datetime, size: int) -> None:
+        self.id = item_id
+        self.name = name
+        self.created_at = created_at
+        self.size = size
+
+
+class FakeSyncModule:
+    """Duck-types blinkpy's BlinkSyncModule closely enough for our adapter -
+    a real BlinkSyncModule needs a live Blink instance to construct, which
+    this avoids. is_physical_hub relies on isinstance(_, (BlinkOwl,
+    BlinkLotus)) though, which a plain object like this always fails (in the
+    correct direction) - the one test that needs is_physical_hub=False
+    constructs a real BlinkOwl instead (see below)."""
+
+    def __init__(
+        self,
+        network_id: str,
+        *,
+        sync_id: str | None = "sync-1",
+        name: str = "Home",
+        serial: str | None = "SN123",
+        version: str | None = "1.2.3",
+        armed: bool | None = True,
+        online: bool = True,
+        local_storage_compatible: bool = True,
+        local_storage_enabled: bool = True,
+        local_storage_active: bool = True,
+        manifest: list[FakeManifestItem] | None = None,
+    ) -> None:
+        self.network_id = network_id
+        self.sync_id = sync_id
+        self.name = name
+        self.serial = serial
+        self.version = version
+        self.arm = armed
+        self.online = online
+        self._local_storage: dict[str, Any] = {
+            "compatible": local_storage_compatible,
+            "enabled": local_storage_enabled,
+            "status": local_storage_active,
+            "manifest_stale": False,
+            "last_manifest_id": "manifest-1",
+            "manifest": manifest or [],
+        }
+        self.update_local_storage_manifest = AsyncMock()
+
+    @property
+    def local_storage(self) -> bool:
+        return bool(self._local_storage["status"])
 
 
 class FakeAuth:
@@ -99,13 +164,17 @@ class FakeBlink:
         self.session = session
         self.auth: FakeAuth | None = None
         self.cameras: dict[str, FakeCamera] = {}
+        self.sync: dict[str, Any] = {}
         self.setup_urls = Mock()  # real Blink.setup_urls() is synchronous
         self.get_homescreen = AsyncMock()
+        self.setup_post_verify = AsyncMock(return_value=True)
         self.homescreen_error: Exception | None = None
         self.media_items: list[dict[str, Any]] = []
         self.media_error: Exception | None = None
         self.http_get_error: Exception | None = None
         self.last_http_get_address: str | None = None
+        self.account_id = "acct-1"
+        self.urls = SimpleNamespace(base_url="https://rest.example.com")
         FakeBlink.instances.append(self)
 
     async def get_videos_metadata(self, since: Any = None, stop: int = 10) -> list[dict[str, Any]]:
@@ -400,3 +469,319 @@ async def test_close_closes_the_session() -> None:
 
 def test_error_hierarchy() -> None:
     assert issubclass(BlinkAuthError, BlinkError)
+    assert issubclass(SyncModuleNotFoundError, BlinkError)
+    assert issubclass(LocalStorageUnavailableError, BlinkError)
+
+
+# --------------------------------------------------------------- sync modules
+
+
+async def test_ensure_sync_only_calls_setup_post_verify_once() -> None:
+    service, _auth, blink = _make_service()
+    blink.sync = {}
+    await service.get_sync_modules()
+    await service.get_sync_modules()
+    blink.setup_post_verify.assert_awaited_once()
+
+
+async def test_ensure_sync_raises_when_setup_post_verify_returns_false() -> None:
+    service, _auth, blink = _make_service()
+    blink.setup_post_verify = AsyncMock(return_value=False)
+    with pytest.raises(BlinkError):
+        await service.get_sync_modules()
+
+
+async def test_ensure_sync_maps_client_response_error() -> None:
+    service, _auth, blink = _make_service()
+    blink.setup_post_verify = AsyncMock(side_effect=_client_response_error(401))
+    with pytest.raises(BlinkAuthError):
+        await service.get_sync_modules()
+
+
+async def test_get_sync_modules_maps_attributes() -> None:
+    service, _auth, blink = _make_service()
+    blink.sync = {
+        "Home": FakeSyncModule(
+            "10",
+            sync_id="sync-1",
+            name="Home",
+            serial="SN123",
+            version="2.1.0",
+            armed=True,
+            online=True,
+            local_storage_compatible=True,
+            local_storage_enabled=True,
+            local_storage_active=True,
+        )
+    }
+    modules = await service.get_sync_modules()
+    assert modules == [
+        BlinkSyncModuleInfo(
+            network_id="10",
+            sync_id="sync-1",
+            name="Home",
+            serial="SN123",
+            firmware_version="2.1.0",
+            armed=True,
+            online=True,
+            is_physical_hub=True,
+            local_storage_compatible=True,
+            local_storage_enabled=True,
+            local_storage_active=True,
+        )
+    ]
+
+
+async def test_get_sync_modules_surfaces_unknown_arm_state() -> None:
+    service, _auth, blink = _make_service()
+    blink.sync = {"Home": FakeSyncModule("10", armed=None)}
+    modules = await service.get_sync_modules()
+    assert modules[0].armed is None
+
+
+async def test_get_sync_modules_handles_a_sync_id_of_none() -> None:
+    service, _auth, blink = _make_service()
+    blink.sync = {"Home": FakeSyncModule("10", sync_id=None)}
+    modules = await service.get_sync_modules()
+    assert modules[0].sync_id is None
+
+
+async def test_get_sync_modules_is_physical_hub_false_for_a_sync_less_owl() -> None:
+    service, _auth, blink = _make_service()
+    owl_blink_stub = SimpleNamespace(
+        auth=SimpleNamespace(region_id="us"), motion_interval=5, account_id="acct-1"
+    )
+    owl = BlinkOwl(
+        owl_blink_stub, "Mini Network", "20", {"id": "owl-1", "serial": "SN-OWL", "enabled": True}
+    )
+    blink.sync = {"Mini Network": owl}
+    modules = await service.get_sync_modules()
+    assert modules[0].is_physical_hub is False
+    assert modules[0].local_storage_compatible is False
+
+
+async def test_get_camera_motion_bucket_returns_blinkpys_dispatch_bucket() -> None:
+    service, _auth, blink = _make_service()
+    blink.cameras = {"mini": FakeCamera({"camera_id": "2"}, camera_type="mini")}
+    assert await service.get_camera_motion_bucket("2") == "mini"
+
+
+async def test_get_camera_motion_bucket_defaults_to_default_for_an_empty_bucket() -> None:
+    service, _auth, blink = _make_service()
+    blink.cameras = {"cam": FakeCamera({"camera_id": "1"}, camera_type="")}
+    assert await service.get_camera_motion_bucket("1") == "default"
+
+
+async def test_get_camera_motion_bucket_raises_when_camera_not_found() -> None:
+    service, _auth, blink = _make_service()
+    # A non-matching camera present (not an empty dict) so the loop actually
+    # iterates past one entry before exhausting, rather than trivially
+    # skipping a zero-length collection - covers the "keep looking" branch.
+    blink.cameras = {"other": FakeCamera({"camera_id": "1"})}
+    with pytest.raises(CameraNotFoundError):
+        await service.get_camera_motion_bucket("missing")
+
+
+async def test_set_sync_module_arm_calls_request_system_arm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _auth, _blink = _make_service()
+    mock_arm = AsyncMock()
+    mock_disarm = AsyncMock()
+    monkeypatch.setattr("app.blink.service.api.request_system_arm", mock_arm)
+    monkeypatch.setattr("app.blink.service.api.request_system_disarm", mock_disarm)
+    await service.set_sync_module_arm("10", True)
+    mock_arm.assert_awaited_once()
+    mock_disarm.assert_not_awaited()
+
+
+async def test_set_sync_module_arm_calls_request_system_disarm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _auth, _blink = _make_service()
+    mock_arm = AsyncMock()
+    mock_disarm = AsyncMock()
+    monkeypatch.setattr("app.blink.service.api.request_system_arm", mock_arm)
+    monkeypatch.setattr("app.blink.service.api.request_system_disarm", mock_disarm)
+    await service.set_sync_module_arm("10", False)
+    mock_disarm.assert_awaited_once()
+    mock_arm.assert_not_awaited()
+
+
+async def test_set_sync_module_arm_maps_auth_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    service, _auth, _blink = _make_service()
+    monkeypatch.setattr(
+        "app.blink.service.api.request_system_arm",
+        AsyncMock(side_effect=_client_response_error(401)),
+    )
+    with pytest.raises(BlinkAuthError):
+        await service.set_sync_module_arm("10", True)
+
+
+async def test_set_camera_motion_detection_calls_enable(monkeypatch: pytest.MonkeyPatch) -> None:
+    service, _auth, blink = _make_service()
+    mock_enable = AsyncMock()
+    mock_disable = AsyncMock()
+    monkeypatch.setattr("app.blink.service.api.request_motion_detection_enable", mock_enable)
+    monkeypatch.setattr("app.blink.service.api.request_motion_detection_disable", mock_disable)
+    await service.set_camera_motion_detection("10", "1", "default", True)
+    mock_enable.assert_awaited_once_with(blink, "10", "1", camera_type="default")
+    mock_disable.assert_not_awaited()
+
+
+async def test_set_camera_motion_detection_calls_disable(monkeypatch: pytest.MonkeyPatch) -> None:
+    service, _auth, blink = _make_service()
+    mock_enable = AsyncMock()
+    mock_disable = AsyncMock()
+    monkeypatch.setattr("app.blink.service.api.request_motion_detection_enable", mock_enable)
+    monkeypatch.setattr("app.blink.service.api.request_motion_detection_disable", mock_disable)
+    await service.set_camera_motion_detection("10", "1", "mini", False)
+    mock_disable.assert_awaited_once_with(blink, "10", "1", camera_type="mini")
+    mock_enable.assert_not_awaited()
+
+
+async def test_set_camera_motion_detection_maps_auth_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _auth, _blink = _make_service()
+    monkeypatch.setattr(
+        "app.blink.service.api.request_motion_detection_enable",
+        AsyncMock(side_effect=_client_response_error(401)),
+    )
+    with pytest.raises(BlinkAuthError):
+        await service.set_camera_motion_detection("10", "1", "default", True)
+
+
+# --------------------------------------------------------- local storage (USB)
+
+
+async def test_refresh_local_storage_manifest_returns_items() -> None:
+    service, _auth, blink = _make_service()
+    recorded_at = datetime(2026, 7, 20, 10, 0, tzinfo=UTC)
+    blink.sync = {
+        "Home": FakeSyncModule(
+            "10", manifest=[FakeManifestItem(1, "Front Door", recorded_at, 1024)]
+        )
+    }
+    manifest = await service.refresh_local_storage_manifest("10")
+    assert manifest == BlinkLocalStorageManifest(
+        manifest_id="manifest-1",
+        items=[
+            BlinkLocalStorageItem(
+                item_id=1, camera_name="Front Door", recorded_at=recorded_at, size_bytes=1024
+            )
+        ],
+    )
+
+
+async def test_refresh_local_storage_manifest_raises_when_sync_module_not_found() -> None:
+    service, _auth, blink = _make_service()
+    # A non-matching sync module present (not an empty dict) - same
+    # "keep looking, then exhaust" branch reasoning as the camera lookup
+    # above.
+    blink.sync = {"Other": FakeSyncModule("99")}
+    with pytest.raises(SyncModuleNotFoundError):
+        await service.refresh_local_storage_manifest("missing")
+
+
+async def test_refresh_local_storage_manifest_raises_when_not_a_physical_hub() -> None:
+    service, _auth, blink = _make_service()
+    owl_blink_stub = SimpleNamespace(
+        auth=SimpleNamespace(region_id="us"), motion_interval=5, account_id="acct-1"
+    )
+    owl = BlinkOwl(
+        owl_blink_stub, "Mini Network", "20", {"id": "owl-1", "serial": "SN-OWL", "enabled": True}
+    )
+    blink.sync = {"Mini Network": owl}
+    with pytest.raises(LocalStorageUnavailableError):
+        await service.refresh_local_storage_manifest("20")
+
+
+async def test_refresh_local_storage_manifest_raises_when_not_compatible() -> None:
+    service, _auth, blink = _make_service()
+    blink.sync = {"Home": FakeSyncModule("10", local_storage_compatible=False)}
+    with pytest.raises(LocalStorageUnavailableError):
+        await service.refresh_local_storage_manifest("10")
+
+
+async def test_refresh_local_storage_manifest_raises_when_it_stays_stale() -> None:
+    service, _auth, blink = _make_service()
+    sync_module = FakeSyncModule("10")
+    sync_module._local_storage["manifest_stale"] = True  # pyright: ignore[reportPrivateUsage]
+    blink.sync = {"Home": sync_module}
+    with pytest.raises(BlinkError):
+        await service.refresh_local_storage_manifest("10")
+
+
+async def test_refresh_local_storage_manifest_maps_auth_errors() -> None:
+    service, _auth, blink = _make_service()
+    sync_module = FakeSyncModule("10")
+    sync_module.update_local_storage_manifest = AsyncMock(side_effect=_client_response_error(401))
+    blink.sync = {"Home": sync_module}
+    with pytest.raises(BlinkAuthError):
+        await service.refresh_local_storage_manifest("10")
+
+
+async def test_prepare_local_storage_clip_calls_the_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    service, _auth, blink = _make_service()
+    mock_prepare = AsyncMock()
+    monkeypatch.setattr("app.blink.service.api.request_local_storage_clip", mock_prepare)
+    await service.prepare_local_storage_clip("10", "sync-1", "manifest-1", 42)
+    mock_prepare.assert_awaited_once_with(blink, "10", "sync-1", "manifest-1", 42)
+
+
+async def test_prepare_local_storage_clip_maps_auth_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    service, _auth, _blink = _make_service()
+    monkeypatch.setattr(
+        "app.blink.service.api.request_local_storage_clip",
+        AsyncMock(side_effect=_client_response_error(401)),
+    )
+    with pytest.raises(BlinkAuthError):
+        await service.prepare_local_storage_clip("10", "sync-1", "manifest-1", 42)
+
+
+async def test_download_local_storage_clip_returns_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
+    service, _auth, _blink = _make_service()
+    response = AsyncMock()
+    response.read = AsyncMock(return_value=b"clip-bytes")
+    monkeypatch.setattr("app.blink.service.api.http_get", AsyncMock(return_value=response))
+    data = await service.download_local_storage_clip("10", "sync-1", "manifest-1", 42)
+    assert data == b"clip-bytes"
+
+
+async def test_download_local_storage_clip_maps_auth_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _auth, _blink = _make_service()
+    monkeypatch.setattr(
+        "app.blink.service.api.http_get", AsyncMock(side_effect=_client_response_error(401))
+    )
+    with pytest.raises(BlinkAuthError):
+        await service.download_local_storage_clip("10", "sync-1", "manifest-1", 42)
+
+
+async def test_delete_local_storage_clip_returns_true_on_200(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _auth, _blink = _make_service()
+    response = Mock(status=200)
+    monkeypatch.setattr("app.blink.service.api.http_post", AsyncMock(return_value=response))
+    assert await service.delete_local_storage_clip("10", "sync-1", "manifest-1", 42) is True
+
+
+async def test_delete_local_storage_clip_returns_false_on_non_200(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _auth, _blink = _make_service()
+    response = Mock(status=500)
+    monkeypatch.setattr("app.blink.service.api.http_post", AsyncMock(return_value=response))
+    assert await service.delete_local_storage_clip("10", "sync-1", "manifest-1", 42) is False
+
+
+async def test_delete_local_storage_clip_maps_auth_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    service, _auth, _blink = _make_service()
+    monkeypatch.setattr(
+        "app.blink.service.api.http_post", AsyncMock(side_effect=_client_response_error(401))
+    )
+    with pytest.raises(BlinkAuthError):
+        await service.delete_local_storage_clip("10", "sync-1", "manifest-1", 42)
