@@ -2,12 +2,16 @@
 
 from pathlib import Path
 
+import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
+import app.testing.seed as seed_module
 from app.ai.models import AIUsage
 from app.biometrics.models import Person
+from app.biometrics.recognition import ModelLoadError
 from app.blink.models import Camera, Clip
 from app.settings.service import set_storage_dir
 from app.testing.seed import DEMO_PERSON_NAME, E2E_ADMIN_EMAIL, E2E_ADMIN_PASSWORD, seed
@@ -72,3 +76,23 @@ async def test_seed_creates_admin_once(client: AsyncClient, app: FastAPI, tmp_pa
             )
         )
         await session.commit()
+
+
+async def test_warm_up_biometrics_model_logs_success_when_the_model_loads(
+    app_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def _fake_verify_model(*_args: object, **_kwargs: object) -> list[str]:
+        return ["CPUExecutionProvider"]
+
+    monkeypatch.setattr(seed_module, "verify_model", _fake_verify_model)
+    await seed_module.warm_up_biometrics_model()  # must not raise
+
+
+async def test_warm_up_biometrics_model_swallows_a_load_failure(
+    app_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def _boom(*_args: object, **_kwargs: object) -> list[str]:
+        raise ModelLoadError("could not download the model")
+
+    monkeypatch.setattr(seed_module, "verify_model", _boom)
+    await seed_module.warm_up_biometrics_model()  # must not raise

@@ -271,9 +271,7 @@ async def _delete_one(session: AsyncSession, storage: ClipStorage, clip: Clip) -
     # recompute (see ClipStorage's docstrings in app.storage.service).
     if clip.storage_path:
         await storage.delete(Path(clip.storage_path))
-    thumb_path = clip.thumbnail_path or str(
-        storage.legacy_thumbnail_path(clip.camera_id, clip.id)
-    )
+    thumb_path = clip.thumbnail_path or str(storage.legacy_thumbnail_path(clip.camera_id, clip.id))
     await storage.delete(Path(thumb_path))
     await session.delete(clip)
 

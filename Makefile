@@ -97,14 +97,16 @@ e2e-coverage: certs ## Run e2e against an istanbul-instrumented frontend and rep
 	@rm -rf e2e/.nyc_output e2e/coverage
 	VITE_COVERAGE=true COVERAGE_DIR=/e2e/.nyc_output \
 	  $(COMPOSE_TEST) --profile e2e up --build --abort-on-container-exit --exit-code-from playwright; \
-	status=$$?; \
+	test_status=$$?; \
 	docker run --rm -v "$(CURDIR)/e2e:/e2e" alpine sh -c \
 	  "chown -R $(shell id -u):$(shell id -g) /e2e/.nyc_output && rm -rf /e2e/node_modules"; \
 	docker run --rm -v "$(CURDIR)/e2e:/e2e" -v "$(CURDIR)/frontend/src:/app/src:ro" -w /e2e \
-	  --user "$(shell id -u):$(shell id -g)" \
+	  --user "$(shell id -u):$(shell id -g)" -e npm_config_cache=/tmp/.npm-cache \
 	  node:24-slim sh -c "npm ci --no-audit --no-fund && npm run coverage:report"; \
+	report_status=$$?; \
 	$(COMPOSE_TEST) --profile e2e down -v; \
-	exit $$status
+	if [ "$$test_status" -ne 0 ]; then exit "$$test_status"; fi; \
+	exit "$$report_status"
 
 lint: lint-backend lint-frontend lint-e2e ## Run every linter
 
