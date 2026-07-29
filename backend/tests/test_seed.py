@@ -14,6 +14,7 @@ from app.biometrics.models import Person
 from app.biometrics.recognition import ModelLoadError
 from app.blink.models import Camera, Clip
 from app.settings.service import set_storage_dir
+from app.sync_module.models import LocalItemStatus, SyncModule, SyncModuleLocalItem
 from app.testing.seed import DEMO_PERSON_NAME, E2E_ADMIN_EMAIL, E2E_ADMIN_PASSWORD, seed
 from app.vehicles.models import ProximityEvent, Vehicle
 from tests.conftest import login
@@ -66,6 +67,27 @@ async def test_seed_creates_admin_once(client: AsyncClient, app: FastAPI, tmp_pa
         assert len(usage_rows) == 6
         assert sum(1 for row in usage_rows if not row.success) == 1
         assert len({row.provider for row in usage_rows}) == 2
+
+        sync_module = (await session.execute(select(SyncModule))).scalar_one()
+        assert sync_module.is_physical_hub is True
+        assert sync_module.armed is True
+        assert sync_module.online is True
+        assert sync_module.local_storage_compatible is True
+        assert sync_module.local_storage_enabled is True
+        assert sync_module.local_storage_active is True
+
+        local_items = (await session.execute(select(SyncModuleLocalItem))).scalars().all()
+        assert len(local_items) == 3
+        by_status = {item.status: item for item in local_items}
+        assert set(by_status) == {
+            LocalItemStatus.AVAILABLE,
+            LocalItemStatus.DOWNLOADED,
+            LocalItemStatus.ERROR,
+        }
+        downloaded_item = by_status[LocalItemStatus.DOWNLOADED]
+        assert downloaded_item.storage_path is not None
+        assert Path(downloaded_item.storage_path).exists()
+        assert by_status[LocalItemStatus.ERROR].last_error is not None
 
     # Leave a clean slate for other tests (client fixture truncates pre-test too).
     async with app.state.sessionmaker() as session:

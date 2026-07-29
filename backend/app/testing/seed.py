@@ -30,6 +30,12 @@ from app.logs import configure_logging, get_logger
 from app.security.crypto import SecretBox
 from app.settings.service import resolve_storage_dir
 from app.storage.service import ClipStorage, get_clip_storage
+from app.sync_module.models import (
+    LocalItemStatus,
+    LocalStorageStatus,
+    SyncModule,
+    SyncModuleLocalItem,
+)
 from app.users.models import User
 from app.vehicles.models import ProximityEvent, Vehicle
 
@@ -265,6 +271,7 @@ async def _seed_demo_data(session: AsyncSession) -> None:
 
     await _seed_vehicle_data(session, storage, front_door, clips)
     await _seed_ai_usage_data(session, clips, routine, suspicious)
+    await _seed_sync_module_data(session, storage, account, front_door, backyard, clip_bytes)
 
 
 async def _seed_vehicle_data(
@@ -313,6 +320,85 @@ async def _seed_vehicle_data(
                 occurred_at=now - timedelta(days=5),
             ),
         ]
+    )
+
+
+async def _seed_sync_module_data(
+    session: AsyncSession,
+    storage: ClipStorage,
+    account: BlinkAccount,
+    front_door: Camera,
+    backyard: Camera,
+    clip_bytes: bytes,
+) -> None:
+    """One physical Sync Module on the same seeded network (armed, online,
+    local storage compatible/enabled/active), with local (USB) storage
+    items spanning AVAILABLE/DOWNLOADED/ERROR - enough for the Sync Module
+    tab's arm control, motion toggles, and file browser to all have
+    something real to show."""
+    now = datetime.now(UTC)
+    sync_module = SyncModule(
+        blink_account_id=account.id,
+        network_id="demo-network",
+        sync_id="demo-sync-1",
+        name="Home",
+        serial="SN-DEMO-0001",
+        firmware_version="2.14.28",
+        is_physical_hub=True,
+        armed=True,
+        online=True,
+        local_storage_compatible=True,
+        local_storage_enabled=True,
+        local_storage_active=True,
+        local_storage_manifest_id="demo-manifest-1",
+        local_storage_status=LocalStorageStatus.IDLE,
+        local_storage_manifest_refreshed_at=now - timedelta(minutes=30),
+        last_synced_at=now,
+    )
+    session.add(sync_module)
+    await session.flush()
+
+    session.add(
+        SyncModuleLocalItem(
+            sync_module_id=sync_module.id,
+            camera_id=front_door.id,
+            camera_name=front_door.name,
+            blink_item_id=1,
+            recorded_at=now - timedelta(hours=1),
+            size_bytes=52_428_800,
+        )
+    )
+
+    downloaded_recorded_at = now - timedelta(hours=4)
+    downloaded = SyncModuleLocalItem(
+        sync_module_id=sync_module.id,
+        camera_id=backyard.id,
+        camera_name=backyard.name,
+        blink_item_id=2,
+        recorded_at=downloaded_recorded_at,
+        size_bytes=len(clip_bytes),
+        status=LocalItemStatus.DOWNLOADED,
+        downloaded_at=downloaded_recorded_at + timedelta(seconds=45),
+    )
+    session.add(downloaded)
+    await session.flush()
+    downloaded_path = storage.sync_module_clip_path(
+        sync_module.id, downloaded.id, downloaded_recorded_at
+    )
+    await storage.write(downloaded_path, clip_bytes)
+    downloaded.storage_path = str(downloaded_path)
+
+    session.add(
+        SyncModuleLocalItem(
+            sync_module_id=sync_module.id,
+            camera_id=front_door.id,
+            camera_name=front_door.name,
+            blink_item_id=3,
+            recorded_at=now - timedelta(hours=8),
+            size_bytes=41_943_040,
+            status=LocalItemStatus.ERROR,
+            last_error="Failed to prepare this clip from the Sync Module - device busy.",
+        )
     )
 
 
