@@ -1,4 +1,4 @@
-import { expect, openSettingsSection, seededCameras, test } from "../fixtures";
+import { expect, openSettingsSection, seededCameras, seededSyncModule, test } from "../fixtures";
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/settings");
@@ -60,6 +60,18 @@ test("Alerts panel enables Discord and saves a webhook URL", async ({ page }) =>
   await page.getByTestId("discord-webhook").fill("https://discord.com/api/webhooks/123/abc");
   await page.getByTestId("save-alerts").click();
   await expect(page.getByText("Alert settings saved")).toBeVisible();
+});
+
+test("Sync Module panel shows the seeded identity, read-only", async ({ page }) => {
+  await openSettingsSection(page, "Sync Module");
+  const row = page.locator('[data-testid^="settings-sync-module-row-"]', {
+    hasText: seededSyncModule.name,
+  });
+  await expect(row).toBeVisible();
+  await expect(row).toContainText(seededSyncModule.serial);
+  await expect(row).toContainText(seededSyncModule.firmwareVersion);
+  await expect(row).toContainText("Enabled");
+  await expect(row.locator("button")).toHaveCount(0);
 });
 
 test("Vehicles panel lists the seeded cameras to protect", async ({ page }) => {

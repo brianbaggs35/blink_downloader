@@ -15,6 +15,7 @@ test("every admin section is reachable directly via ?tab=, with About last in th
     "AI Provider",
     "Biometrics",
     "Cameras",
+    "Sync Module",
     "Vehicles",
     "Alerts",
     "Live View",
