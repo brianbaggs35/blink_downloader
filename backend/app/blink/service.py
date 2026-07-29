@@ -58,6 +58,10 @@ class BlinkCameraInfo:
     battery: str | None
     thumbnail_path: str | None
     motion_enabled: bool
+    motion_action_type: str
+    """blinkpy's own "default"/"mini"/"doorbell" dispatch bucket for this
+    camera's motion-detection endpoint - not the same thing as camera_type
+    above (the raw Blink product codename, e.g. "catalina")."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,13 +139,6 @@ class BlinkService(Protocol):
         ...
 
     async def get_sync_modules(self) -> list[BlinkSyncModuleInfo]: ...
-
-    async def get_camera_motion_bucket(self, camera_id: str) -> str:
-        """blinkpy's own "default"/"mini"/"doorbell" dispatch bucket for
-        this camera - the value its motion-detection endpoints require.
-        Not the same thing as BlinkCameraInfo.camera_type (the raw Blink
-        product codename, e.g. "catalina")."""
-        ...
 
     async def set_sync_module_arm(self, network_id: str, armed: bool) -> None: ...
 
@@ -252,17 +249,6 @@ class BlinkPyService:
                 return sync_module
         raise SyncModuleNotFoundError(f"No sync module with network id {network_id}.")
 
-    async def _find_camera_via_sync(self, camera_id: str) -> Any:
-        # Unlike _find_camera, this relies on _ensure_sync() (not
-        # _ensure_full()) having actually populated self._blink.cameras -
-        # needed for blinkpy-internal attributes (like camera_type) that
-        # only exist on the real camera object, not in BlinkCameraInfo.
-        await self._ensure_sync()
-        for camera in self._blink.cameras.values():
-            if str(camera.camera_id) == camera_id:
-                return camera
-        raise CameraNotFoundError(f"No camera with id {camera_id} on this Blink account.")
-
     async def get_cameras(self) -> list[BlinkCameraInfo]:
         await self._ensure_full()
         cameras: list[BlinkCameraInfo] = []
@@ -277,6 +263,10 @@ class BlinkPyService:
                     battery=attrs.get("battery"),
                     thumbnail_path=attrs.get("thumbnail"),
                     motion_enabled=bool(attrs.get("motion_enabled", False)),
+                    # camera.camera_type (the instance attribute, not attrs
+                    # above) is blinkpy's own dispatch bucket - it has no key
+                    # in the attributes dict at all.
+                    motion_action_type=str(camera.camera_type) or "default",
                 )
             )
         return cameras
@@ -389,10 +379,6 @@ class BlinkPyService:
                 )
             )
         return modules
-
-    async def get_camera_motion_bucket(self, camera_id: str) -> str:
-        camera = await self._find_camera_via_sync(camera_id)
-        return str(camera.camera_type) or "default"
 
     async def set_sync_module_arm(self, network_id: str, armed: bool) -> None:
         await self._ensure_light()

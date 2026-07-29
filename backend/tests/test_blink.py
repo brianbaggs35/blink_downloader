@@ -239,6 +239,7 @@ async def test_get_cameras_maps_attributes() -> None:
             battery="ok",
             thumbnail_path="/media/thumb1.jpg",
             motion_enabled=True,
+            motion_action_type="default",
         )
     ]
     blink.get_homescreen.assert_awaited_once()
@@ -560,26 +561,22 @@ async def test_get_sync_modules_is_physical_hub_false_for_a_sync_less_owl() -> N
     assert modules[0].local_storage_compatible is False
 
 
-async def test_get_camera_motion_bucket_returns_blinkpys_dispatch_bucket() -> None:
+def _minimal_attrs(camera_id: str) -> dict[str, Any]:
+    return {"camera_id": camera_id, "network_id": "10", "name": "Cam", "type": "owl"}
+
+
+async def test_get_cameras_reports_the_real_motion_action_type_bucket() -> None:
     service, _auth, blink = _make_service()
-    blink.cameras = {"mini": FakeCamera({"camera_id": "2"}, camera_type="mini")}
-    assert await service.get_camera_motion_bucket("2") == "mini"
+    blink.cameras = {"mini": FakeCamera(_minimal_attrs("2"), camera_type="mini")}
+    cameras = await service.get_cameras()
+    assert cameras[0].motion_action_type == "mini"
 
 
-async def test_get_camera_motion_bucket_defaults_to_default_for_an_empty_bucket() -> None:
+async def test_get_cameras_defaults_an_empty_motion_action_type_bucket() -> None:
     service, _auth, blink = _make_service()
-    blink.cameras = {"cam": FakeCamera({"camera_id": "1"}, camera_type="")}
-    assert await service.get_camera_motion_bucket("1") == "default"
-
-
-async def test_get_camera_motion_bucket_raises_when_camera_not_found() -> None:
-    service, _auth, blink = _make_service()
-    # A non-matching camera present (not an empty dict) so the loop actually
-    # iterates past one entry before exhausting, rather than trivially
-    # skipping a zero-length collection - covers the "keep looking" branch.
-    blink.cameras = {"other": FakeCamera({"camera_id": "1"})}
-    with pytest.raises(CameraNotFoundError):
-        await service.get_camera_motion_bucket("missing")
+    blink.cameras = {"cam": FakeCamera(_minimal_attrs("1"), camera_type="")}
+    cameras = await service.get_cameras()
+    assert cameras[0].motion_action_type == "default"
 
 
 async def test_set_sync_module_arm_calls_request_system_arm(

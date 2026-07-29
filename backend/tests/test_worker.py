@@ -32,6 +32,11 @@ from app.worker.tasks.archive import (
 )
 from app.worker.tasks.blink_sync import SYNC_JOB_NAME
 from app.worker.tasks.download import DOWNLOAD_JOB_NAME
+from app.worker.tasks.sync_module import (
+    DELETE_LOCAL_ITEM_JOB_NAME,
+    DOWNLOAD_LOCAL_ITEM_JOB_NAME,
+    REFRESH_LOCAL_STORAGE_JOB_NAME,
+)
 from tests.conftest import PlainSettings
 
 
@@ -89,6 +94,9 @@ def test_worker_settings_wired() -> None:
         ARCHIVE_CLIP_JOB_NAME,
         AUTO_ARCHIVE_CLIP_JOB_NAME,
         RESTORE_CLIP_JOB_NAME,
+        REFRESH_LOCAL_STORAGE_JOB_NAME,
+        DOWNLOAD_LOCAL_ITEM_JOB_NAME,
+        DELETE_LOCAL_ITEM_JOB_NAME,
     }
     assert len(WorkerSettings.cron_jobs) == 1
     expected = RedisSettings.from_dsn(os.environ["BLINK_REDIS_URL"])
@@ -106,6 +114,9 @@ def test_worker_settings_wired() -> None:
         ARCHIVE_CLIP_JOB_NAME,
         AUTO_ARCHIVE_CLIP_JOB_NAME,
         RESTORE_CLIP_JOB_NAME,
+        REFRESH_LOCAL_STORAGE_JOB_NAME,
+        DOWNLOAD_LOCAL_ITEM_JOB_NAME,
+        DELETE_LOCAL_ITEM_JOB_NAME,
     ],
 )
 def test_worker_functions_have_retry_limits(job_name: str) -> None:

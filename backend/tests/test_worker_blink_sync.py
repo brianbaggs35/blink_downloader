@@ -19,15 +19,23 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.blink.models import BlinkAccount, BlinkAccountStatus, Camera, Clip
-from app.blink.service import BlinkAuthError, BlinkCameraInfo, BlinkError, BlinkMediaItem
+from app.blink.service import (
+    BlinkAuthError,
+    BlinkCameraInfo,
+    BlinkError,
+    BlinkMediaItem,
+    BlinkSyncModuleInfo,
+)
 from app.config import get_settings
 from app.security.crypto import SecretBox
+from app.sync_module.models import SyncModule
 from app.worker.tasks.blink_sync import SYNC_JOB_NAME, sync_blink_account
 from app.worker.tasks.download import DOWNLOAD_JOB_NAME
 
 
 class FakeBlinkService:
     next_cameras: ClassVar[list[BlinkCameraInfo]] = []
+    next_sync_modules: ClassVar[list[BlinkSyncModuleInfo]] = []
     next_media: ClassVar[list[BlinkMediaItem]] = []
     next_get_cameras_error: ClassVar[Exception | None] = None
     next_list_media_error: ClassVar[Exception | None] = None
@@ -36,6 +44,7 @@ class FakeBlinkService:
     def __init__(self, token_data: dict[str, Any]) -> None:
         self.token_data_in = dict(token_data)
         self.cameras_result = FakeBlinkService.next_cameras
+        self.sync_modules_result = FakeBlinkService.next_sync_modules
         self.media_result = FakeBlinkService.next_media
         self.get_cameras_error = FakeBlinkService.next_get_cameras_error
         self.list_media_error = FakeBlinkService.next_list_media_error
@@ -47,6 +56,9 @@ class FakeBlinkService:
         if self.get_cameras_error:
             raise self.get_cameras_error
         return self.cameras_result
+
+    async def get_sync_modules(self) -> list[BlinkSyncModuleInfo]:
+        return self.sync_modules_result
 
     async def list_media(self, since: datetime | None = None) -> list[BlinkMediaItem]:
         self.since_received = since
@@ -66,6 +78,7 @@ class FakeBlinkService:
 def _reset_fake_service(monkeypatch: pytest.MonkeyPatch) -> None:
     FakeBlinkService.instances = []
     FakeBlinkService.next_cameras = []
+    FakeBlinkService.next_sync_modules = []
     FakeBlinkService.next_media = []
     FakeBlinkService.next_get_cameras_error = None
     FakeBlinkService.next_list_media_error = None
@@ -94,8 +107,26 @@ def _camera_info(name: str = "Front Door", **overrides: Any) -> BlinkCameraInfo:
         "battery": "ok",
         "thumbnail_path": "/media/thumb.jpg",
         "motion_enabled": True,
+        "motion_action_type": "default",
     }
     return BlinkCameraInfo(**{**defaults, **overrides})
+
+
+def _sync_module_info(**overrides: Any) -> BlinkSyncModuleInfo:
+    defaults: dict[str, Any] = {
+        "network_id": "net-1",
+        "sync_id": "sync-1",
+        "name": "Home",
+        "serial": "SN123",
+        "firmware_version": "2.1.0",
+        "is_physical_hub": True,
+        "armed": True,
+        "online": True,
+        "local_storage_compatible": True,
+        "local_storage_enabled": True,
+        "local_storage_active": True,
+    }
+    return BlinkSyncModuleInfo(**{**defaults, **overrides})
 
 
 def _media_item(camera_name: str = "Front Door", **overrides: Any) -> BlinkMediaItem:
@@ -123,6 +154,7 @@ async def test_full_sync_upserts_camera_and_new_clip(worker_ctx: dict[str, Any])
         account_id = account.id
 
     FakeBlinkService.next_cameras = [_camera_info()]
+    FakeBlinkService.next_sync_modules = [_sync_module_info()]
     FakeBlinkService.next_media = [_media_item()]
 
     result = await sync_blink_account(worker_ctx)
@@ -138,6 +170,14 @@ async def test_full_sync_upserts_camera_and_new_clip(worker_ctx: dict[str, Any])
         camera = (await session.execute(select(Camera))).scalar_one()
         assert camera.name == "Front Door"
         assert camera.blink_camera_id == "cam-1"
+        assert camera.motion_enabled is True
+        assert camera.motion_action_type == "default"
+
+        sync_module = (await session.execute(select(SyncModule))).scalar_one()
+        assert sync_module.network_id == "net-1"
+        assert sync_module.name == "Home"
+        assert sync_module.armed is True
+        assert sync_module.local_storage_active is True
 
         clip = (await session.execute(select(Clip))).scalar_one()
         assert clip.blink_clip_id == "/media/clip1.mp4"
@@ -210,10 +250,12 @@ async def test_second_sync_updates_existing_camera_and_skips_duplicate_clip(
         await _make_account(session)
 
     FakeBlinkService.next_cameras = [_camera_info(battery="ok")]
+    FakeBlinkService.next_sync_modules = [_sync_module_info(armed=True)]
     FakeBlinkService.next_media = [_media_item()]
     await sync_blink_account(worker_ctx)
 
     FakeBlinkService.next_cameras = [_camera_info(battery="low")]
+    FakeBlinkService.next_sync_modules = [_sync_module_info(armed=False)]
     FakeBlinkService.next_media = [_media_item()]  # same clip again
     await sync_blink_account(worker_ctx)
 
@@ -221,6 +263,10 @@ async def test_second_sync_updates_existing_camera_and_skips_duplicate_clip(
         cameras = (await session.execute(select(Camera))).scalars().all()
         assert len(cameras) == 1
         assert cameras[0].battery == "low"  # updated, not duplicated
+
+        sync_modules = (await session.execute(select(SyncModule))).scalars().all()
+        assert len(sync_modules) == 1
+        assert sync_modules[0].armed is False  # updated, not duplicated
 
         clips = (await session.execute(select(Clip))).scalars().all()
         assert len(clips) == 1  # not duplicated

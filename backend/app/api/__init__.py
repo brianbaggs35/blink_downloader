@@ -14,6 +14,7 @@ from app.api.livefeed import router as livefeed_router
 from app.api.settings import router as settings_router
 from app.api.setup import router as setup_router
 from app.api.storage import router as storage_router
+from app.api.sync_modules import router as sync_modules_router
 from app.api.users_admin import router as users_admin_router
 from app.api.vehicles import router as vehicles_router
 from app.users.auth import auth_backend, fastapi_users
@@ -40,3 +41,4 @@ api_router.include_router(alerts_router)
 api_router.include_router(ai_stats_router)
 api_router.include_router(integrations_router)
 api_router.include_router(storage_router)
+api_router.include_router(sync_modules_router)
