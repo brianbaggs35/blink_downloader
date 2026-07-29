@@ -303,102 +303,106 @@ const lastRefreshedLabel = computed(() => {
       {{ loadError }}
     </Message>
 
-    <DataTable
+    <div
       v-else
-      :value="items"
-      data-key="id"
-      size="small"
-      data-testid="local-storage-table"
+      class="table-scroll"
     >
-      <template #empty>
-        <p class="muted">
-          No files found yet. Try refreshing.
-        </p>
-      </template>
-      <Column
-        field="camera_name"
-        header="Camera"
+      <DataTable
+        :value="items"
+        data-key="id"
+        size="small"
+        data-testid="local-storage-table"
       >
-        <template #body="{ data }: { data: SyncModuleLocalItemRead }">
-          <span>{{ data.camera_name }}</span>
-          <span
-            v-if="!data.camera_id"
-            class="muted"
-          > (unmatched)</span>
-        </template>
-      </Column>
-      <Column header="Recorded">
-        <template #body="{ data }: { data: SyncModuleLocalItemRead }">
-          {{ formatDateTime(data.recorded_at) }}
-        </template>
-      </Column>
-      <Column header="Size">
-        <template #body="{ data }: { data: SyncModuleLocalItemRead }">
-          {{ formatFileSize(data.size_bytes) }}
-        </template>
-      </Column>
-      <Column header="Status">
-        <template #body="{ data }: { data: SyncModuleLocalItemRead }">
-          <Tag
-            :value="itemStatusLabel(data.status)"
-            :severity="itemStatusSeverity(data.status)"
-            :data-testid="`item-status-${data.id}`"
-          />
-          <p
-            v-if="data.status === 'error' && data.last_error"
-            class="muted item-error"
-          >
-            {{ data.last_error }}
+        <template #empty>
+          <p class="muted">
+            No files found yet. Try refreshing.
           </p>
         </template>
-      </Column>
-      <Column
-        v-if="auth.isAdmin"
-        header="Actions"
-      >
-        <template #body="{ data }: { data: SyncModuleLocalItemRead }">
-          <div class="item-actions">
-            <Button
-              v-if="data.status === 'available' || data.status === 'error'"
-              label="Download"
-              icon="pi pi-download"
-              size="small"
-              text
-              :loading="isBusy(data)"
-              :data-testid="`download-item-${data.id}`"
-              @click="triggerDownload(data)"
-            />
+        <Column
+          field="camera_name"
+          header="Camera"
+        >
+          <template #body="{ data }: { data: SyncModuleLocalItemRead }">
+            <span>{{ data.camera_name }}</span>
             <span
-              v-else-if="data.status === 'preparing' || data.status === 'downloading'"
+              v-if="!data.camera_id"
               class="muted"
+            > (unmatched)</span>
+          </template>
+        </Column>
+        <Column header="Recorded">
+          <template #body="{ data }: { data: SyncModuleLocalItemRead }">
+            {{ formatDateTime(data.recorded_at) }}
+          </template>
+        </Column>
+        <Column header="Size">
+          <template #body="{ data }: { data: SyncModuleLocalItemRead }">
+            {{ formatFileSize(data.size_bytes) }}
+          </template>
+        </Column>
+        <Column header="Status">
+          <template #body="{ data }: { data: SyncModuleLocalItemRead }">
+            <Tag
+              :value="itemStatusLabel(data.status)"
+              :severity="itemStatusSeverity(data.status)"
+              :data-testid="`item-status-${data.id}`"
+            />
+            <p
+              v-if="data.status === 'error' && data.last_error"
+              class="muted item-error"
             >
-              {{ data.status === "preparing" ? "Preparing…" : "Downloading…" }}
-            </span>
-            <template v-if="data.status === 'downloaded'">
+              {{ data.last_error }}
+            </p>
+          </template>
+        </Column>
+        <Column
+          v-if="auth.isAdmin"
+          header="Actions"
+        >
+          <template #body="{ data }: { data: SyncModuleLocalItemRead }">
+            <div class="item-actions">
               <Button
-                as="a"
-                :href="syncModuleLocalStorageItemFileUrl(syncModuleId, data.id)"
+                v-if="data.status === 'available' || data.status === 'error'"
                 label="Download"
                 icon="pi pi-download"
                 size="small"
                 text
-                :data-testid="`open-item-${data.id}`"
-              />
-              <Button
-                label="Delete"
-                icon="pi pi-trash"
-                size="small"
-                text
-                severity="danger"
                 :loading="isBusy(data)"
-                :data-testid="`delete-item-${data.id}`"
-                @click="confirmDeleteItem(data)"
+                :data-testid="`download-item-${data.id}`"
+                @click="triggerDownload(data)"
               />
-            </template>
-          </div>
-        </template>
-      </Column>
-    </DataTable>
+              <span
+                v-else-if="data.status === 'preparing' || data.status === 'downloading'"
+                class="muted"
+              >
+                {{ data.status === "preparing" ? "Preparing…" : "Downloading…" }}
+              </span>
+              <template v-if="data.status === 'downloaded'">
+                <Button
+                  as="a"
+                  :href="syncModuleLocalStorageItemFileUrl(syncModuleId, data.id)"
+                  label="Download"
+                  icon="pi pi-download"
+                  size="small"
+                  text
+                  :data-testid="`open-item-${data.id}`"
+                />
+                <Button
+                  label="Delete"
+                  icon="pi pi-trash"
+                  size="small"
+                  text
+                  severity="danger"
+                  :loading="isBusy(data)"
+                  :data-testid="`delete-item-${data.id}`"
+                  @click="confirmDeleteItem(data)"
+                />
+              </template>
+            </div>
+          </template>
+        </Column>
+      </DataTable>
+    </div>
   </div>
 </template>
 
@@ -413,6 +417,10 @@ const lastRefreshedLabel = computed(() => {
 
 .blink-dark .local-storage {
   border-color: var(--p-surface-800);
+}
+
+.table-scroll {
+  overflow-x: auto;
 }
 
 .browser-header {
@@ -460,5 +468,9 @@ const lastRefreshedLabel = computed(() => {
   align-items: center;
   gap: 4px;
   flex-wrap: wrap;
+}
+
+.item-actions :deep(a) {
+  text-decoration: none;
 }
 </style>

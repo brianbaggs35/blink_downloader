@@ -431,6 +431,24 @@ async def test_get_local_storage_item_file_404_for_unknown_item(
     assert response.status_code == 404
 
 
+async def test_get_local_storage_item_file_404_when_missing_from_disk(
+    admin_client: AsyncClient, app: FastAPI, tmp_path: Any
+) -> None:
+    account = await _make_account(app)
+    sync_module = await _make_sync_module(app, account)
+    item = await _make_local_item(app, sync_module)
+    async with app.state.sessionmaker() as session:
+        row = await session.get(SyncModuleLocalItem, item.id)
+        assert row is not None
+        row.storage_path = str(tmp_path / "missing.mp4")
+        await session.commit()
+
+    response = await admin_client.get(
+        f"/api/sync-modules/{sync_module.id}/local-storage/items/{item.id}/file"
+    )
+    assert response.status_code == 404
+
+
 async def test_get_local_storage_item_file_serves_the_downloaded_file(
     admin_client: AsyncClient, app: FastAPI, tmp_path: Any
 ) -> None:
