@@ -9,6 +9,7 @@ enabling/disabling a camera).
 """
 
 import uuid
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -20,6 +21,7 @@ from app.blink.schemas import BulkActionResponse
 from app.blink.service import BlinkError
 from app.config import get_settings
 from app.db import get_session
+from app.logs import get_logger
 from app.sync_module.models import SyncModule, SyncModuleLocalItem
 from app.sync_module.schemas import (
     MotionDetectionUpdate,
@@ -45,6 +47,7 @@ from app.worker.tasks.sync_module import (
 )
 
 router = APIRouter(prefix="/sync-modules", tags=["sync-modules"])
+logger = get_logger(__name__)
 
 
 def _sync_module_read(sync_module: SyncModule, camera_count: int) -> SyncModuleRead:
@@ -107,6 +110,21 @@ async def _get_camera_or_404(
         if camera.id == camera_id:
             return camera
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Camera not found.")
+
+
+def _local_item_file_or_404(storage_path: str | None) -> Path:
+    if storage_path is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="This clip hasn't been downloaded yet."
+        )
+    path = Path(storage_path)
+    if not path.exists():
+        logger.error("sync_modules.file_missing_on_disk", path=storage_path)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="This clip's file is missing from storage.",
+        )
+    return path
 
 
 async def _get_local_item_or_404(
@@ -264,8 +282,5 @@ async def get_local_storage_item_file_route(
 ) -> FileResponse:
     sync_module = await _get_sync_module_or_404(session, sync_module_id)
     item = await _get_local_item_or_404(session, sync_module, item_id)
-    if item.storage_path is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="This clip hasn't been downloaded yet."
-        )
-    return FileResponse(item.storage_path, media_type="video/mp4", filename=f"{item.id}.mp4")
+    path = _local_item_file_or_404(item.storage_path)
+    return FileResponse(path, media_type="video/mp4", filename=f"{item.id}.mp4")
