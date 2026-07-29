@@ -16,14 +16,14 @@ async function mountLinks(path: string, isAdmin = true) {
 // Top-level destinations are real <a> links; the Settings accordion's own
 // nested sections are also <a> links (so they can be deep-linked/opened in
 // a new tab) but carry an extra .nav-subitem class - excluded here so these
-// assertions cover just the ten top-level pages, independent of whether the
+// assertions cover just the eleven top-level pages, independent of whether the
 // accordion happens to be expanded (v-show keeps hidden children in the DOM).
 function topLevelLinks(wrapper: VueWrapper) {
   return wrapper.findAll("a.nav-item:not(.nav-subitem)");
 }
 
 describe("NavLinks", () => {
-  it("renders the ten top-level destinations in product order", async () => {
+  it("renders the eleven top-level destinations in product order", async () => {
     const wrapper = await mountLinks("/");
     const labels = topLevelLinks(wrapper).map((node) => node.find("span").text());
     expect(labels).toEqual([
@@ -31,6 +31,7 @@ describe("NavLinks", () => {
       "Library",
       "Status",
       "Live View",
+      "Sync Module",
       "Storage",
       "Connect",
       "AI",
@@ -48,6 +49,7 @@ describe("NavLinks", () => {
       "/",
       "/status",
       "/live",
+      "/sync-module",
       "/storage",
       "/integrations",
       "/ai",
@@ -135,6 +137,7 @@ describe("NavLinks", () => {
         "AI Provider",
         "Biometrics",
         "Cameras",
+        "Sync Module",
         "Vehicles",
         "Alerts",
         "Live View",
