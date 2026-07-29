@@ -16,7 +16,13 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.blink.models import BlinkAccount, BlinkAccountStatus, Camera, Clip
-from app.blink.service import BlinkAuthError, BlinkCameraInfo, BlinkError, BlinkPyService
+from app.blink.service import (
+    BlinkAuthError,
+    BlinkCameraInfo,
+    BlinkError,
+    BlinkPyService,
+    BlinkSyncModuleInfo,
+)
 from app.config import Settings, get_settings
 from app.logs import get_logger
 from app.security.crypto import SecretBox
@@ -25,6 +31,7 @@ from app.settings.service import (
     resolve_blink_initial_sync_days,
     resolve_blink_sync_interval_seconds,
 )
+from app.sync_module.models import SyncModule
 from app.worker.tasks.download import DOWNLOAD_JOB_NAME
 
 logger = get_logger(__name__)
@@ -60,6 +67,7 @@ async def _run_sync(session: AsyncSession, settings: Settings, ctx: dict[Any, An
     service = BlinkPyService(token_data)
     try:
         cameras = await service.get_cameras()
+        sync_modules = await service.get_sync_modules()
         since = account.last_sync or (
             datetime.now(UTC)
             - timedelta(days=await resolve_blink_initial_sync_days(session, settings))
@@ -81,6 +89,7 @@ async def _run_sync(session: AsyncSession, settings: Settings, ctx: dict[Any, An
         await service.close()
 
     cameras_by_name = await _upsert_cameras(session, account, cameras)
+    await _upsert_sync_modules(session, account, sync_modules)
     new_clips = await _insert_new_clips(session, cameras_by_name, media_items)
 
     account.status = BlinkAccountStatus.ACTIVE
@@ -130,6 +139,8 @@ async def _upsert_cameras(
                 camera_type=info.camera_type,
                 battery=info.battery,
                 thumbnail_path=info.thumbnail_path,
+                motion_enabled=info.motion_enabled,
+                motion_action_type=info.motion_action_type,
                 last_synced_at=datetime.now(UTC),
             )
             .on_conflict_do_update(
@@ -139,6 +150,8 @@ async def _upsert_cameras(
                     "camera_type": info.camera_type,
                     "battery": info.battery,
                     "thumbnail_path": info.thumbnail_path,
+                    "motion_enabled": info.motion_enabled,
+                    "motion_action_type": info.motion_action_type,
                     "last_synced_at": datetime.now(UTC),
                 },
             )
@@ -179,3 +192,54 @@ async def _insert_new_clips(
         if row is not None:
             new_clips.append((row[0], row[1]))
     return new_clips
+
+
+async def _upsert_sync_modules(
+    session: AsyncSession, account: BlinkAccount, sync_modules: list[BlinkSyncModuleInfo]
+) -> None:
+    """Cheap identity/arm/online/local-storage-flags state, piggybacked on
+    this same sync cycle - the expensive part (the local-storage manifest
+    itself) is never folded in here, only ever refreshed on demand from the
+    Sync Module tab (see app.worker.tasks.sync_module)."""
+    for info in sync_modules:
+        stmt = (
+            insert(SyncModule)
+            .values(
+                blink_account_id=account.id,
+                network_id=info.network_id,
+                sync_id=info.sync_id,
+                name=info.name,
+                serial=info.serial,
+                firmware_version=info.firmware_version,
+                is_physical_hub=info.is_physical_hub,
+                armed=info.armed,
+                online=info.online,
+                local_storage_compatible=info.local_storage_compatible,
+                local_storage_enabled=info.local_storage_enabled,
+                local_storage_active=info.local_storage_active,
+                last_synced_at=datetime.now(UTC),
+            )
+            .on_conflict_do_update(
+                index_elements=[SyncModule.blink_account_id, SyncModule.network_id],
+                set_={
+                    "sync_id": info.sync_id,
+                    "name": info.name,
+                    "serial": info.serial,
+                    "firmware_version": info.firmware_version,
+                    "is_physical_hub": info.is_physical_hub,
+                    "armed": info.armed,
+                    "online": info.online,
+                    "local_storage_compatible": info.local_storage_compatible,
+                    "local_storage_enabled": info.local_storage_enabled,
+                    "local_storage_active": info.local_storage_active,
+                    "last_synced_at": datetime.now(UTC),
+                },
+            )
+            # RETURNING so a row already loaded in this session's identity
+            # map (e.g. by a caller that queried it earlier) gets refreshed
+            # with the new values - see _upsert_cameras above for the same
+            # pattern, and app.sync_module.service's _reconcile_local_items
+            # docstring for why this app's sessions need it explicitly.
+            .returning(SyncModule)
+        )
+        (await session.execute(stmt)).scalar_one()

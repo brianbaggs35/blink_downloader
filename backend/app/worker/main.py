@@ -25,6 +25,14 @@ from app.worker.tasks.archive import (
 )
 from app.worker.tasks.blink_sync import SYNC_JOB_NAME, sync_blink_account
 from app.worker.tasks.download import download_clip
+from app.worker.tasks.sync_module import (
+    DELETE_LOCAL_ITEM_JOB_NAME,
+    DOWNLOAD_LOCAL_ITEM_JOB_NAME,
+    REFRESH_LOCAL_STORAGE_JOB_NAME,
+    delete_sync_module_local_item_job,
+    download_sync_module_local_item_job,
+    refresh_sync_module_local_storage_job,
+)
 
 logger = get_logger(__name__)
 
@@ -70,6 +78,24 @@ class WorkerSettings:
         func(archive_clip_job, name=ARCHIVE_CLIP_JOB_NAME, max_tries=2, timeout=300),
         func(auto_archive_clip_job, name=AUTO_ARCHIVE_CLIP_JOB_NAME, max_tries=2, timeout=300),
         func(restore_clip_job, name=RESTORE_CLIP_JOB_NAME, max_tries=2, timeout=300),
+        func(
+            refresh_sync_module_local_storage_job,
+            name=REFRESH_LOCAL_STORAGE_JOB_NAME,
+            max_tries=2,
+            timeout=180,
+        ),
+        func(
+            download_sync_module_local_item_job,
+            name=DOWNLOAD_LOCAL_ITEM_JOB_NAME,
+            max_tries=2,
+            timeout=180,
+        ),
+        func(
+            delete_sync_module_local_item_job,
+            name=DELETE_LOCAL_ITEM_JOB_NAME,
+            max_tries=2,
+            timeout=60,
+        ),
     ]
     cron_jobs: ClassVar[list[Any]] = [cron(heartbeat, second=0, run_at_startup=True)]
     on_startup = staticmethod(startup)
