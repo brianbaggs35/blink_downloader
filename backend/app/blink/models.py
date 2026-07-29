@@ -71,6 +71,14 @@ class Camera(Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     camera_type: Mapped[str] = mapped_column(Text, nullable=False)
     enabled: Mapped[bool] = mapped_column(default=True, server_default="true")
+    motion_enabled: Mapped[bool] = mapped_column(default=True, server_default="true")
+    # blinkpy's own "default"/"mini"/"doorbell" dispatch bucket for this
+    # camera's motion-detection endpoint - NOT the same thing as camera_type
+    # above (that's the raw Blink product codename, e.g. "catalina"; this is
+    # a separate, small, fixed vocabulary the motion API itself requires).
+    motion_action_type: Mapped[str] = mapped_column(
+        Text, default="default", server_default="default"
+    )
     battery: Mapped[str | None] = mapped_column(Text)
     thumbnail_path: Mapped[str | None] = mapped_column(Text)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
