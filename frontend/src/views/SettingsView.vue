@@ -25,6 +25,7 @@ import SettingsBiometricsPanel from "@/components/SettingsBiometricsPanel.vue";
 import SettingsCamerasPanel from "@/components/SettingsCamerasPanel.vue";
 import SettingsLiveViewPanel from "@/components/SettingsLiveViewPanel.vue";
 import SettingsSecurityFeedPanel from "@/components/SettingsSecurityFeedPanel.vue";
+import SettingsSyncModulePanel from "@/components/SettingsSyncModulePanel.vue";
 import SettingsUsersPanel from "@/components/SettingsUsersPanel.vue";
 import SettingsVehiclesPanel from "@/components/SettingsVehiclesPanel.vue";
 import { useTheme } from "@/composables/useTheme";
@@ -50,6 +51,7 @@ const ADMIN_ONLY_TABS = new Set([
   "ai",
   "biometrics",
   "cameras",
+  "sync-module",
   "vehicles",
   "alerts",
   "live-view",
@@ -191,7 +193,7 @@ async function saveBlinkSyncSettings(): Promise<void> {
   <section>
     <PageHeader
       title="Settings"
-      description="Your profile, security, appearance, and — for admins — Blink, AI, biometrics, cameras, vehicles, alerts, and household access."
+      description="Your profile, security, appearance, and — for admins — Blink, AI, biometrics, cameras, the Sync Module, vehicles, alerts, and household access."
     />
 
     <div class="settings-layout">
@@ -387,6 +389,7 @@ async function saveBlinkSyncSettings(): Promise<void> {
         <SettingsAiProviderPanel v-else-if="activeTab === 'ai' && auth.isAdmin" />
         <SettingsBiometricsPanel v-else-if="activeTab === 'biometrics' && auth.isAdmin" />
         <SettingsCamerasPanel v-else-if="activeTab === 'cameras' && auth.isAdmin" />
+        <SettingsSyncModulePanel v-else-if="activeTab === 'sync-module' && auth.isAdmin" />
         <SettingsVehiclesPanel v-else-if="activeTab === 'vehicles' && auth.isAdmin" />
         <SettingsAlertsPanel v-else-if="activeTab === 'alerts' && auth.isAdmin" />
         <SettingsLiveViewPanel v-else-if="activeTab === 'live-view' && auth.isAdmin" />

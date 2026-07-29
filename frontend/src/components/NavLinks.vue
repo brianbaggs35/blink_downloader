@@ -24,11 +24,12 @@ interface SettingsSection {
 }
 
 // Order is part of the product spec: Security Feed, Library, Status, Live
-// View, Storage, Connect, AI, AI Usage, Vehicles, Biometrics, Settings.
-// Security Feed sits first - Brian asked for it "near the top" as the
-// closest thing to an at-a-glance live dashboard. Integrations lives in its
-// own group (not nested under Archive/Storage) since future integrations
-// may have nothing to do with storage.
+// View, Sync Module, Storage, Connect, AI, AI Usage, Vehicles, Biometrics,
+// Settings. Security Feed sits first - Brian asked for it "near the top" as
+// the closest thing to an at-a-glance live dashboard. Integrations lives in
+// its own group (not nested under Archive/Storage) since future integrations
+// may have nothing to do with storage. Devices sits right after Monitor -
+// arm/disarm is arguably the single most safety-critical action in the app.
 const GROUPS: NavGroup[] = [
   {
     label: "Monitor",
@@ -38,6 +39,10 @@ const GROUPS: NavGroup[] = [
       { label: "Status", icon: "pi pi-wave-pulse", to: { name: "status" } },
       { label: "Live View", icon: "pi pi-video", to: { name: "live-view" } },
     ],
+  },
+  {
+    label: "Devices",
+    items: [{ label: "Sync Module", icon: "pi pi-shield", to: { name: "sync-module" } }],
   },
   {
     label: "Archive",
@@ -76,6 +81,7 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
   { value: "ai", label: "AI Provider", icon: "pi pi-sparkles", adminOnly: true },
   { value: "biometrics", label: "Biometrics", icon: "pi pi-id-card", adminOnly: true },
   { value: "cameras", label: "Cameras", icon: "pi pi-video", adminOnly: true },
+  { value: "sync-module", label: "Sync Module", icon: "pi pi-shield", adminOnly: true },
   { value: "vehicles", label: "Vehicles", icon: "pi pi-car", adminOnly: true },
   { value: "alerts", label: "Alerts", icon: "pi pi-bell", adminOnly: true },
   { value: "live-view", label: "Live View", icon: "pi pi-eye", adminOnly: true },

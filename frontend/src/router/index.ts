@@ -14,6 +14,7 @@ import SettingsView from "@/views/SettingsView.vue";
 import SetupView from "@/views/SetupView.vue";
 import StatusView from "@/views/StatusView.vue";
 import StorageView from "@/views/StorageView.vue";
+import SyncModuleView from "@/views/SyncModuleView.vue";
 import VehiclesView from "@/views/VehiclesView.vue";
 
 export const routes = [
@@ -33,6 +34,12 @@ export const routes = [
       { path: "status", name: "status", component: StatusView, meta: { title: "Status" } },
       { path: "live", name: "live-view", component: LiveView, meta: { title: "Live View" } },
       { path: "storage", name: "storage", component: StorageView, meta: { title: "Storage" } },
+      {
+        path: "sync-module",
+        name: "sync-module",
+        component: SyncModuleView,
+        meta: { title: "Sync Module" },
+      },
       {
         path: "integrations",
         name: "integrations",
