@@ -16,6 +16,7 @@ from app.db import Base
 from app.integrations import models as integrations_models  # noqa: F401
 from app.livefeed import models as livefeed_models  # noqa: F401
 from app.settings import models as settings_models  # noqa: F401
+from app.sync_module import models as sync_module_models  # noqa: F401
 from app.users import models  # noqa: F401  — register tables on Base.metadata
 from app.vehicles import models as vehicle_models  # noqa: F401
 
