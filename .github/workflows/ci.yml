@@ -129,6 +129,10 @@ jobs:
         with:
           dockerfile: docker/frontend.Dockerfile
           config: .hadolint.yaml
+      - uses: hadolint/hadolint-action@v3.3.0
+        with:
+          dockerfile: docker/app.Dockerfile
+          config: .hadolint.yaml
 
   docker-build:
     name: Docker · prod images build + Trivy scan
@@ -170,6 +174,48 @@ jobs:
           tags: blink-frontend:ci
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
+      - name: Build consolidated app image (what actually ships)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/app.Dockerfile
+          target: prod
+          push: false
+          load: true
+          pull: true
+          tags: blink-app:ci
+          cache-from: type=gha,scope=app
+          cache-to: type=gha,mode=max,scope=app
+      - name: Smoke-test the app image actually boots
+        run: docker run --rm blink-app:ci /app/.venv/bin/python -c "import app.main"
+      - name: Scan app image (Trivy, readable)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: blink-app:ci
+          format: table
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+          version: v0.72.0
+      - name: Scan app image (Trivy, SARIF)
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: blink-app:ci
+          format: sarif
+          output: trivy-app.sarif
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "0"
+          version: v0.72.0
+      - name: Upload app Trivy results to the Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-app.sarif
+          category: trivy-app
       - name: Scan backend image (Trivy, readable)
         uses: aquasecurity/trivy-action@v0.36.0
         with:

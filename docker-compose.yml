@@ -2,32 +2,17 @@
 name: blink
 
 services:
-  frontend:
+  # Frontend (nginx) + backend API + worker, one image/container - see
+  # docker/app.Dockerfile. Dev and e2e still run these as separate
+  # containers (docker-compose.dev.yml / docker-compose.test.yml).
+  app:
     build:
       context: .
-      dockerfile: docker/frontend.Dockerfile
+      dockerfile: docker/app.Dockerfile
       target: prod
     ports:
       - "${BLINK_HTTP_PORT:-80}:8080"
       - "${BLINK_HTTPS_PORT:-443}:8443"
-    volumes:
-      - ./docker/certs:/etc/nginx/certs:ro
-    depends_on:
-      backend:
-        condition: service_healthy
-    read_only: true
-    tmpfs:
-      - /tmp
-    cap_drop: [ALL]
-    security_opt:
-      - no-new-privileges:true
-    restart: unless-stopped
-
-  backend:
-    build:
-      context: .
-      dockerfile: docker/backend.Dockerfile
-      target: prod
     environment:
       BLINK_ENVIRONMENT: production
       BLINK_DATABASE_URL: postgresql+asyncpg://blink:${POSTGRES_PASSWORD}@postgres:5432/blink
@@ -37,6 +22,7 @@ services:
       BLINK_STORAGE_DIR: /data/clips
       BLINK_BIOMETRICS_MODEL_CACHE_DIR: /data/insightface
     volumes:
+      - ./docker/certs:/etc/nginx/certs:ro
       - clips:/data/clips
       - insightface:/data/insightface
     depends_on:
@@ -63,38 +49,6 @@ services:
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
-
-  worker:
-    build:
-      context: .
-      dockerfile: docker/backend.Dockerfile
-      target: prod
-    command: ["/app/.venv/bin/arq", "app.worker.main.WorkerSettings"]
-    environment:
-      BLINK_ENVIRONMENT: production
-      BLINK_DATABASE_URL: postgresql+asyncpg://blink:${POSTGRES_PASSWORD}@postgres:5432/blink
-      BLINK_REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      BLINK_SECRET_KEY: ${BLINK_SECRET_KEY}
-      BLINK_ENCRYPTION_KEY: ${BLINK_ENCRYPTION_KEY}
-      BLINK_STORAGE_DIR: /data/clips
-      BLINK_BIOMETRICS_MODEL_CACHE_DIR: /data/insightface
-    volumes:
-      - clips:/data/clips
-      - insightface:/data/insightface
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
-    read_only: true
-    tmpfs:
-      - /tmp
-    cap_drop: [ALL]
-    security_opt:
-      - no-new-privileges:true
-    restart: unless-stopped
     # arq finishes an in-flight job (an AI provider call, a biometrics model
     # download, ...) before exiting on SIGTERM rather than abandoning it
     # mid-request; Compose's 10s default would SIGKILL well before that.
@@ -103,7 +57,7 @@ services:
   migrate:
     build:
       context: .
-      dockerfile: docker/backend.Dockerfile
+      dockerfile: docker/app.Dockerfile
       target: prod
     command: ["/app/.venv/bin/alembic", "upgrade", "head"]
     environment:
