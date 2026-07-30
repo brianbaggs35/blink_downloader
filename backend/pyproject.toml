@@ -1,6 +1,6 @@
 [project]
 name = "blink-backend"
-version = "1.0.0"
+version = "1.1.0"
 description = "Blink AI Security Platform — API and background worker"
 readme = "README.md"
 requires-python = ">=3.14"

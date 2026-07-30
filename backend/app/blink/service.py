@@ -193,9 +193,13 @@ def _parse_created_at(value: str) -> datetime:
 class BlinkPyService:
     """Adapter over blinkpy's ``Auth``/``Blink`` pair.
 
-    ``full`` startup (auth + homescreen + camera/network setup) is only
-    needed for camera/media listing; a plain clip download only needs a
-    valid auth header and the base URL, so it skips the extra API calls.
+    ``full`` startup (auth + homescreen) is enough for clip listing/download,
+    which only need a valid auth header and the base URL. Camera lookup needs
+    the heavier ``sync`` startup instead: blinkpy only ever populates
+    ``Blink.cameras`` inside ``setup_post_verify()`` (``Blink.__init__`` starts
+    it as an empty dict, and ``get_homescreen()`` never touches it) - so
+    anything that reads ``self._blink.cameras`` must go through
+    ``_ensure_sync()``, not ``_ensure_full()`` alone.
     """
 
     def __init__(self, token_data: dict[str, Any]) -> None:
@@ -229,9 +233,9 @@ class BlinkPyService:
     async def _ensure_sync(self) -> None:
         """Populates self._blink.sync/.cameras via blinkpy's full
         setup_post_verify() flow - needed for sync-module/local-storage
-        features, which _ensure_full() alone doesn't provide (it only
-        fetches the homescreen). Independent of _ensure_full()'s other
-        callers (get_cameras, _find_camera, ...), which are unaffected."""
+        features, and for get_cameras()/_find_camera() (see the class
+        docstring): _ensure_full() alone never populates self._blink.cameras,
+        it only fetches the homescreen."""
         if self._started_sync:
             return
         await self._ensure_full()

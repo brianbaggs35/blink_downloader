@@ -144,7 +144,7 @@ create-admin: ## Create (or reset) an admin account on the dev stack - prompts f
 	$(COMPOSE_DEV) exec backend uv run python -m app.cli create-admin
 
 create-admin-prod: ## Create (or reset) an admin account on the prod stack - prompts for email/password
-	$(COMPOSE_PROD) exec backend python -m app.cli create-admin
+	$(COMPOSE_PROD) exec app python -m app.cli create-admin
 
 clean: ## Stop everything and remove volumes (DESTROYS local data)
 	$(COMPOSE_PROD) down -v --remove-orphans 2>/dev/null || true

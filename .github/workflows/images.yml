@@ -12,15 +12,8 @@ permissions:
 
 jobs:
   publish:
-    name: ${{ matrix.image }} (amd64 + arm64)
+    name: app image (amd64 + arm64)
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - image: backend
-            dockerfile: docker/backend.Dockerfile
-          - image: frontend
-            dockerfile: docker/frontend.Dockerfile
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-qemu-action@v4
@@ -33,7 +26,7 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/${{ github.repository }}/${{ matrix.image }}
+          images: ghcr.io/${{ github.repository }}
           flavor: |
             latest=auto
           tags: |
@@ -44,11 +37,11 @@ jobs:
       - uses: docker/build-push-action@v7
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: docker/app.Dockerfile
           target: prod
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          cache-from: type=gha,scope=app
+          cache-to: type=gha,mode=max,scope=app
