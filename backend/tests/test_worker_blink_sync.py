@@ -39,6 +39,7 @@ class FakeBlinkService:
     next_media: ClassVar[list[BlinkMediaItem]] = []
     next_get_cameras_error: ClassVar[Exception | None] = None
     next_list_media_error: ClassVar[Exception | None] = None
+    next_get_sync_modules_error: ClassVar[Exception | None] = None
     instances: ClassVar[list[FakeBlinkService]] = []
 
     def __init__(self, token_data: dict[str, Any]) -> None:
@@ -48,6 +49,7 @@ class FakeBlinkService:
         self.media_result = FakeBlinkService.next_media
         self.get_cameras_error = FakeBlinkService.next_get_cameras_error
         self.list_media_error = FakeBlinkService.next_list_media_error
+        self.get_sync_modules_error = FakeBlinkService.next_get_sync_modules_error
         self.since_received: datetime | None = None
         self.closed = False
         FakeBlinkService.instances.append(self)
@@ -58,6 +60,8 @@ class FakeBlinkService:
         return self.cameras_result
 
     async def get_sync_modules(self) -> list[BlinkSyncModuleInfo]:
+        if self.get_sync_modules_error:
+            raise self.get_sync_modules_error
         return self.sync_modules_result
 
     async def list_media(self, since: datetime | None = None) -> list[BlinkMediaItem]:
@@ -82,6 +86,7 @@ def _reset_fake_service(monkeypatch: pytest.MonkeyPatch) -> None:
     FakeBlinkService.next_media = []
     FakeBlinkService.next_get_cameras_error = None
     FakeBlinkService.next_list_media_error = None
+    FakeBlinkService.next_get_sync_modules_error = None
     monkeypatch.setattr("app.worker.tasks.blink_sync.BlinkPyService", FakeBlinkService)
 
 
@@ -186,6 +191,35 @@ async def test_full_sync_upserts_camera_and_new_clip(worker_ctx: dict[str, Any])
     worker_ctx["redis"].enqueue_job.assert_any_call(
         DOWNLOAD_JOB_NAME, clip_id=str(clip.id), auto_analyze=True
     )
+
+
+async def test_sync_module_fetch_failure_does_not_block_camera_and_clip_sync(
+    worker_ctx: dict[str, Any],
+) -> None:
+    """Regression test: sync-module discovery is a secondary feature
+    piggybacked onto this cycle - a failure there (even an undeclared
+    exception type escaping blinkpy, not just a clean BlinkError) must never
+    prevent the camera/clip data already fetched from being persisted."""
+    async with worker_ctx["sessionmaker"]() as session:
+        await _make_account(session)
+
+    FakeBlinkService.next_cameras = [_camera_info()]
+    FakeBlinkService.next_media = [_media_item()]
+    FakeBlinkService.next_get_sync_modules_error = RuntimeError("blinkpy internals blew up")
+
+    result = await sync_blink_account(worker_ctx)
+    assert result == "ok"
+
+    async with worker_ctx["sessionmaker"]() as session:
+        camera = (await session.execute(select(Camera))).scalar_one()
+        assert camera.blink_camera_id == "cam-1"
+
+        clip = (await session.execute(select(Clip))).scalar_one()
+        assert clip.camera_id == camera.id
+
+        sync_modules = (await session.execute(select(SyncModule))).scalars().all()
+        assert sync_modules == []
+    assert FakeBlinkService.instances[-1].closed is True
 
 
 async def test_caps_auto_analysis_to_the_most_recent_clips_in_a_large_batch(
