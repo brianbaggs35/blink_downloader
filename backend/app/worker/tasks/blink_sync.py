@@ -66,25 +66,43 @@ async def _run_sync(session: AsyncSession, settings: Settings, ctx: dict[Any, An
     token_data = json.loads(box.decrypt(account.encrypted_token_data))
     service = BlinkPyService(token_data)
     try:
-        cameras = await service.get_cameras()
-        sync_modules = await service.get_sync_modules()
-        since = account.last_sync or (
-            datetime.now(UTC)
-            - timedelta(days=await resolve_blink_initial_sync_days(session, settings))
-        )
-        media_items = await service.list_media(since=since)
-    except BlinkAuthError as exc:
-        account.status = BlinkAccountStatus.ERROR
-        account.last_error = str(exc)
-        await session.commit()
-        logger.warning("blink.sync_auth_failed", account_id=str(account.id), error=str(exc))
-        return "auth_error"
-    except BlinkError as exc:
-        account.status = BlinkAccountStatus.ERROR
-        account.last_error = str(exc)
-        await session.commit()
-        logger.warning("blink.sync_failed", account_id=str(account.id), error=str(exc))
-        return "error"
+        try:
+            cameras = await service.get_cameras()
+            since = account.last_sync or (
+                datetime.now(UTC)
+                - timedelta(days=await resolve_blink_initial_sync_days(session, settings))
+            )
+            media_items = await service.list_media(since=since)
+        except BlinkAuthError as exc:
+            account.status = BlinkAccountStatus.ERROR
+            account.last_error = str(exc)
+            await session.commit()
+            logger.warning("blink.sync_auth_failed", account_id=str(account.id), error=str(exc))
+            return "auth_error"
+        except BlinkError as exc:
+            account.status = BlinkAccountStatus.ERROR
+            account.last_error = str(exc)
+            await session.commit()
+            logger.warning("blink.sync_failed", account_id=str(account.id), error=str(exc))
+            return "error"
+
+        # Sync-module discovery (arm state, local-storage flags) is a
+        # secondary feature piggybacked on this same cycle - it must never
+        # block the camera/clip pipeline above, which already succeeded.
+        # blinkpy's setup_post_verify() (which this calls into) walks
+        # setup_networks/setup_camera_list/setup_sync_module per network, and
+        # setup_sync_module's own BlinkSyncModule.start() runs outside
+        # blinkpy's own try/except - a single bad network response can raise
+        # a raw, undeclared exception rather than a clean BlinkError, so this
+        # catches broadly the same way app.ai.providers does at its own
+        # third-party-SDK boundary.
+        try:
+            sync_modules = await service.get_sync_modules()
+        except Exception as exc:
+            logger.warning(
+                "blink.sync_modules_fetch_failed", account_id=str(account.id), error=str(exc)
+            )
+            sync_modules = []
     finally:
         await service.close()
 
