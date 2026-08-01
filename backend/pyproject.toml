@@ -32,7 +32,7 @@ dependencies = [
     # OAuth token lifecycle (msal; file operations go straight to Microsoft
     # Graph over httpx, already a dependency - Microsoft has no separate
     # "OneDrive files" SDK). All pure Python, no native extensions.
-    "boto3>=1.40.0",
+    "boto3>=1.43.59",
     "google-auth-oauthlib>=1.4.0",
     "google-api-python-client>=2.198.0",
     "msal>=1.37.0",
