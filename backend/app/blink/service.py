@@ -14,6 +14,7 @@ handled by :mod:`app.blink.linker`.
 # pyright: reportUnknownArgumentType=false
 # pyright: reportUnknownVariableType=false
 
+import asyncio
 import string
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -23,8 +24,15 @@ from aiohttp import ClientResponseError
 from blinkpy import api
 from blinkpy.auth import Auth, LoginError, TokenRefreshFailed, UnauthorizedError
 from blinkpy.blinkpy import Blink, BlinkSetupError
-from blinkpy.helpers.util import local_storage_clip_url_template
+from blinkpy.helpers.util import backoff_seconds, local_storage_clip_url_template
 from blinkpy.sync_module import BlinkLotus, BlinkOwl
+
+# Matches blinkpy's own LocalStorageMediaItem.download_video/delete_video
+# default - these two methods reimplement that retry loop instead of calling
+# it directly because the app addresses clips by (network_id, sync_id,
+# manifest_id, item_id) primitives read back from the DB, not a live
+# LocalStorageMediaItem instance held across a request/job boundary.
+_LOCAL_STORAGE_MAX_RETRIES = 4
 
 
 class BlinkError(Exception):
@@ -414,18 +422,30 @@ class BlinkPyService:
         await self._ensure_sync()
         sync_module = self._find_sync_module(network_id)
         is_physical_hub = not isinstance(sync_module, (BlinkOwl, BlinkLotus))
-        # Reaches into _local_storage - see get_sync_modules' comment above.
-        if not is_physical_hub or not sync_module._local_storage["compatible"]:
+        # The public "local_storage" property, not the private "compatible"
+        # dict entry, is the flag update_local_storage_manifest() itself
+        # gates on - a sync module can be USB-capable hardware (compatible)
+        # but not currently active (no drive inserted right now, or the
+        # feature toggled off), in which case blinkpy silently no-ops rather
+        # than raising, which the manifest_stale check below would otherwise
+        # surface as a confusing generic BlinkError instead of this more
+        # accurate exception. The "compatible" entry still has no public
+        # accessor - see get_sync_modules' comment above.
+        if (
+            not is_physical_hub
+            or not sync_module._local_storage["compatible"]
+            or not sync_module.local_storage
+        ):
             raise LocalStorageUnavailableError(
-                f"Network {network_id} has no local (USB) storage to browse."
+                f"Network {network_id} has no active local (USB) storage to browse."
             )
         try:
             await sync_module.update_local_storage_manifest()
         except ClientResponseError as exc:
             raise BlinkAuthError(str(exc)) from exc
-        local_storage = sync_module._local_storage
-        if local_storage["manifest_stale"]:
+        if not sync_module.local_storage_manifest_ready:
             raise BlinkError(f"Could not refresh the local storage manifest for {network_id}.")
+        local_storage = sync_module._local_storage
         items = [
             BlinkLocalStorageItem(
                 item_id=item.id,
@@ -469,26 +489,43 @@ class BlinkPyService:
     ) -> bytes:
         await self._ensure_light()
         url = self._local_storage_clip_url(network_id, sync_id, manifest_id, item_id)
-        try:
-            response = await api.http_get(self._blink, url, json=False)
-        except ClientResponseError as exc:
-            raise BlinkAuthError(str(exc)) from exc
-        return await response.read()
+        # Mirrors blinkpy's own LocalStorageMediaItem.download_video: the sync
+        # module can still be uploading the clip to Blink's cloud after
+        # prepare_local_storage_clip() returns (blinkpy's own wait_for_command
+        # discards its ready/not-ready result), so a non-200 here can just
+        # mean "not ready yet" rather than a real failure.
+        for retry in range(_LOCAL_STORAGE_MAX_RETRIES):
+            try:
+                response = await api.http_get(self._blink, url, json=False)
+            except ClientResponseError as exc:
+                raise BlinkAuthError(str(exc)) from exc
+            if response.status == 200:
+                return await response.read()
+            await asyncio.sleep(backoff_seconds(retry=retry, default_time=3))
+        raise BlinkError(
+            f"Could not download local storage clip {item_id} on network {network_id} "
+            f"after {_LOCAL_STORAGE_MAX_RETRIES} attempts."
+        )
 
     async def delete_local_storage_clip(
         self, network_id: str, sync_id: str, manifest_id: str, item_id: int
     ) -> bool:
         await self._ensure_light()
         # Same URL prepare/download use, with "request" swapped for "delete"
-        # - mirrors blinkpy's own LocalStorageMediaItem.delete_video.
+        # - mirrors blinkpy's own LocalStorageMediaItem.delete_video,
+        # including its retry/backoff (the sync module can be briefly busy).
         url = self._local_storage_clip_url(network_id, sync_id, manifest_id, item_id).replace(
             "request", "delete"
         )
-        try:
-            response = await api.http_post(self._blink, url, json=False)
-        except ClientResponseError as exc:
-            raise BlinkAuthError(str(exc)) from exc
-        return bool(response.status == 200)
+        for retry in range(_LOCAL_STORAGE_MAX_RETRIES):
+            try:
+                response = await api.http_post(self._blink, url, json=False)
+            except ClientResponseError as exc:
+                raise BlinkAuthError(str(exc)) from exc
+            if response.status == 200:
+                return True
+            await asyncio.sleep(backoff_seconds(retry=retry, default_time=3))
+        return False
 
     @property
     def token_data(self) -> dict[str, Any]:

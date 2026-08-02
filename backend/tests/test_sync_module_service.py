@@ -48,7 +48,7 @@ from tests.conftest import PlainSettings
 
 class FakeBlinkService:
     next_manifest: ClassVar[BlinkLocalStorageManifest | None] = None
-    next_download: ClassVar[bytes] = b"clip-bytes"
+    next_download: ClassVar[bytes] = b"x" * 1024
     next_delete_result: ClassVar[bool] = True
     next_error: ClassVar[Exception | None] = None
     calls: ClassVar[list[str]] = []
@@ -117,7 +117,7 @@ def _reset_fake_service(monkeypatch: pytest.MonkeyPatch) -> None:
     FakeBlinkService.calls = []
     FakeBlinkService.next_error = None
     FakeBlinkService.next_manifest = None
-    FakeBlinkService.next_download = b"clip-bytes"
+    FakeBlinkService.next_download = b"x" * 1024
     FakeBlinkService.next_delete_result = True
     monkeypatch.setattr("app.sync_module.service.BlinkPyService", FakeBlinkService)
 
@@ -595,6 +595,35 @@ async def test_download_local_storage_item_writes_the_file(
     assert item.status == LocalItemStatus.DOWNLOADED
     assert item.storage_path is not None
     assert item.downloaded_at is not None
+
+
+async def test_download_local_storage_item_rejects_a_size_mismatch(
+    app_session: AsyncSession, tmp_path: Any
+) -> None:
+    # A truncated/garbage download (network blip, sync module still
+    # uploading, etc.) must not be accepted as a valid clip just because
+    # bytes came back - nothing else in this path checks the byte count
+    # against what the manifest itself already told us to expect.
+    account = await _make_account(app_session)
+    sync_module = await _make_sync_module(app_session, account)
+    item = SyncModuleLocalItem(
+        sync_module_id=sync_module.id,
+        camera_name="Front Door",
+        blink_item_id=1,
+        recorded_at=datetime.now(UTC),
+        size_bytes=2048,
+    )
+    app_session.add(item)
+    await app_session.commit()
+    storage = get_clip_storage(tmp_path)
+    FakeBlinkService.next_download = b"truncated"
+
+    with pytest.raises(BlinkError, match="truncated"):
+        await download_local_storage_item(app_session, get_settings(), storage, item, sync_module)
+
+    await app_session.refresh(item)
+    assert item.storage_path is None
+    assert item.status != LocalItemStatus.DOWNLOADED
 
 
 async def test_download_local_storage_item_raises_without_a_manifest(

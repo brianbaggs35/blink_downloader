@@ -138,6 +138,10 @@ class FakeSyncModule:
     def local_storage(self) -> bool:
         return bool(self._local_storage["status"])
 
+    @property
+    def local_storage_manifest_ready(self) -> bool:
+        return not self._local_storage["manifest_stale"]
+
 
 class FakeAuth:
     instances: ClassVar[list[FakeAuth]] = []
@@ -732,6 +736,21 @@ async def test_refresh_local_storage_manifest_raises_when_not_compatible() -> No
         await service.refresh_local_storage_manifest("10")
 
 
+async def test_refresh_local_storage_manifest_raises_when_not_active() -> None:
+    # Compatible hardware (a USB slot exists) that isn't currently active (no
+    # drive inserted right now, or the feature toggled off) must be rejected
+    # the same way as incompatible hardware - blinkpy's own
+    # update_local_storage_manifest() silently no-ops in this exact case
+    # rather than raising, which would otherwise surface as a confusing
+    # generic BlinkError from the manifest_stale check below instead.
+    service, _auth, blink = _make_service()
+    sync_module = FakeSyncModule("10", local_storage_compatible=True, local_storage_active=False)
+    blink.sync = {"Home": sync_module}
+    with pytest.raises(LocalStorageUnavailableError):
+        await service.refresh_local_storage_manifest("10")
+    sync_module.update_local_storage_manifest.assert_not_awaited()
+
+
 async def test_refresh_local_storage_manifest_raises_when_it_stays_stale() -> None:
     service, _auth, blink = _make_service()
     sync_module = FakeSyncModule("10")
@@ -771,10 +790,45 @@ async def test_prepare_local_storage_clip_maps_auth_errors(monkeypatch: pytest.M
 async def test_download_local_storage_clip_returns_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
     service, _auth, _blink = _make_service()
     response = AsyncMock()
+    response.status = 200
     response.read = AsyncMock(return_value=b"clip-bytes")
     monkeypatch.setattr("app.blink.service.api.http_get", AsyncMock(return_value=response))
     data = await service.download_local_storage_clip("10", "sync-1", "manifest-1", 42)
     assert data == b"clip-bytes"
+
+
+async def test_download_local_storage_clip_retries_until_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The sync module can still be uploading the clip to Blink's cloud when
+    # the first download attempt lands - a non-200 here means "not ready
+    # yet", not a real failure, same as blinkpy's own download_video.
+    service, _auth, _blink = _make_service()
+    not_ready = AsyncMock()
+    not_ready.status = 404
+    ready = AsyncMock()
+    ready.status = 200
+    ready.read = AsyncMock(return_value=b"clip-bytes")
+    monkeypatch.setattr(
+        "app.blink.service.api.http_get", AsyncMock(side_effect=[not_ready, not_ready, ready])
+    )
+    monkeypatch.setattr("app.blink.service.asyncio.sleep", AsyncMock())
+    data = await service.download_local_storage_clip("10", "sync-1", "manifest-1", 42)
+    assert data == b"clip-bytes"
+
+
+async def test_download_local_storage_clip_raises_after_exhausting_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _auth, _blink = _make_service()
+    never_ready = AsyncMock()
+    never_ready.status = 404
+    monkeypatch.setattr(
+        "app.blink.service.api.http_get", AsyncMock(return_value=never_ready)
+    )
+    monkeypatch.setattr("app.blink.service.asyncio.sleep", AsyncMock())
+    with pytest.raises(BlinkError):
+        await service.download_local_storage_clip("10", "sync-1", "manifest-1", 42)
 
 
 async def test_download_local_storage_clip_maps_auth_errors(
@@ -797,12 +851,26 @@ async def test_delete_local_storage_clip_returns_true_on_200(
     assert await service.delete_local_storage_clip("10", "sync-1", "manifest-1", 42) is True
 
 
+async def test_delete_local_storage_clip_retries_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _auth, _blink = _make_service()
+    busy = Mock(status=500)
+    ok = Mock(status=200)
+    monkeypatch.setattr(
+        "app.blink.service.api.http_post", AsyncMock(side_effect=[busy, ok])
+    )
+    monkeypatch.setattr("app.blink.service.asyncio.sleep", AsyncMock())
+    assert await service.delete_local_storage_clip("10", "sync-1", "manifest-1", 42) is True
+
+
 async def test_delete_local_storage_clip_returns_false_on_non_200(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service, _auth, _blink = _make_service()
     response = Mock(status=500)
     monkeypatch.setattr("app.blink.service.api.http_post", AsyncMock(return_value=response))
+    monkeypatch.setattr("app.blink.service.asyncio.sleep", AsyncMock())
     assert await service.delete_local_storage_clip("10", "sync-1", "manifest-1", 42) is False
 
 
