@@ -41,10 +41,21 @@ async def update_ai_settings(
     _apply_api_key("tier1_encrypted_api_key", row, box, payload.tier1_api_key)
 
     row.tier2_enabled = payload.tier2_enabled
-    row.tier2_provider = payload.tier2_provider
     row.tier2_model = payload.tier2_model
-    row.tier2_base_url = payload.tier2_base_url
-    _apply_api_key("tier2_encrypted_api_key", row, box, payload.tier2_api_key)
+    row.tier2_linked_to_tier1 = payload.tier2_linked_to_tier1
+    if payload.tier2_linked_to_tier1:
+        # Copy tier1's already-resolved values, including the ciphertext
+        # (same app-wide encryption key) - never decrypt/re-encrypt, and
+        # never touch payload.tier2_api_key, so a linked tier2 can share
+        # tier1's key without that key ever needing to round-trip in
+        # plaintext to the frontend.
+        row.tier2_provider = row.tier1_provider
+        row.tier2_base_url = row.tier1_base_url
+        row.tier2_encrypted_api_key = row.tier1_encrypted_api_key
+    else:
+        row.tier2_provider = payload.tier2_provider
+        row.tier2_base_url = payload.tier2_base_url
+        _apply_api_key("tier2_encrypted_api_key", row, box, payload.tier2_api_key)
 
     row.keyframes_per_clip = payload.keyframes_per_clip
     row.tier2_suspicion_threshold = payload.tier2_suspicion_threshold

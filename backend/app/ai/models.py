@@ -88,6 +88,14 @@ class AISettings(Base):
     tier2_model: Mapped[str | None] = mapped_column(Text)
     tier2_encrypted_api_key: Mapped[str | None] = mapped_column(Text)
     tier2_base_url: Mapped[str | None] = mapped_column(Text)
+    tier2_linked_to_tier1: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    """When true, tier2_provider/tier2_encrypted_api_key/tier2_base_url are
+    kept in lockstep with tier1's on every save (see
+    app.ai.service.update_ai_settings) so a household can point tier2 at a
+    stronger model from the same provider/account without re-entering the
+    API key. tier2_model is always independent."""
 
     # Advanced (optional — sensible defaults let most households never touch
     # these): how many keyframes per clip, the tier1 suspicion score that
