@@ -598,7 +598,7 @@ async def test_download_local_storage_item_writes_the_file(
 
 
 async def test_download_local_storage_item_rejects_a_size_mismatch(
-    app_session: AsyncSession, tmp_path: Any
+    app_session: AsyncSession, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A truncated/garbage download (network blip, sync module still
     # uploading, etc.) must not be accepted as a valid clip just because
@@ -616,10 +616,11 @@ async def test_download_local_storage_item_rejects_a_size_mismatch(
     app_session.add(item)
     await app_session.commit()
     storage = get_clip_storage(tmp_path)
-    FakeBlinkService.next_download = b"truncated"
+    monkeypatch.setattr(FakeBlinkService, "next_download", b"truncated")
+    settings = get_settings()
 
     with pytest.raises(BlinkError, match="truncated"):
-        await download_local_storage_item(app_session, get_settings(), storage, item, sync_module)
+        await download_local_storage_item(app_session, settings, storage, item, sync_module)
 
     await app_session.refresh(item)
     assert item.storage_path is None
