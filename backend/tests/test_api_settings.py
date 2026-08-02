@@ -547,8 +547,10 @@ async def test_ai_test_connection_success(admin_client: AsyncClient) -> None:
     assert FakeConnectionProvider.received_api_key == "sk-x"
 
 
-async def test_ai_test_connection_reports_failure_without_a_500(admin_client: AsyncClient) -> None:
-    FakeConnectionProvider.should_fail = True
+async def test_ai_test_connection_reports_failure_without_a_500(
+    admin_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(FakeConnectionProvider, "should_fail", True)
     response = await admin_client.post(
         "/api/settings/ai/test-connection",
         json={"tier": "tier1", "provider": "openai", "model": "gpt-5-nano", "api_key": "sk-x"},
@@ -634,8 +636,10 @@ async def test_ai_test_analysis_success_reports_the_model_response(
     assert "0.05" in body["detail"]
 
 
-async def test_ai_test_analysis_reports_failure_without_a_500(admin_client: AsyncClient) -> None:
-    FakeConnectionProvider.should_fail = True
+async def test_ai_test_analysis_reports_failure_without_a_500(
+    admin_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(FakeConnectionProvider, "should_fail", True)
     response = await admin_client.post(
         "/api/settings/ai/test-analysis",
         json={"tier": "tier1", "provider": "openai", "model": "gpt-5-nano", "api_key": "sk-x"},
@@ -708,8 +712,10 @@ async def test_ai_list_models_rejects_unsupported_providers(admin_client: AsyncC
     assert body["models"] == []
 
 
-async def test_ai_list_models_reports_failure_without_a_500(admin_client: AsyncClient) -> None:
-    FakeOllamaListProvider.should_fail = True
+async def test_ai_list_models_reports_failure_without_a_500(
+    admin_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(FakeOllamaListProvider, "should_fail", True)
     response = await admin_client.post(
         "/api/settings/ai/list-models",
         json={"tier": "tier1", "provider": "ollama", "api_key": None},

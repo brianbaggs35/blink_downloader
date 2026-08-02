@@ -11,6 +11,7 @@ import Skeleton from "primevue/skeleton";
 import ToggleSwitch from "primevue/toggleswitch";
 import { useToast } from "primevue/usetoast";
 import { computed, onMounted, reactive, ref, watch } from "vue";
+import type { Ref } from "vue";
 
 import {
   ApiError,
@@ -284,28 +285,29 @@ function testCredentialSource(tierName: "tier1" | "tier2"): TestCredentialSource
   };
 }
 
+interface TierTestRefs {
+  testing: Ref<boolean>;
+  result: Ref<{ ok: boolean; detail: string } | null>;
+}
+
+function tierTestRefs(tierName: "tier1" | "tier2", kind: "connection" | "analysis"): TierTestRefs {
+  if (tierName === "tier1") {
+    return kind === "connection"
+      ? { testing: testingTier1, result: tier1TestResult }
+      : { testing: testingTier1Analysis, result: tier1AnalysisResult };
+  }
+  return kind === "connection"
+    ? { testing: testingTier2, result: tier2TestResult }
+    : { testing: testingTier2Analysis, result: tier2AnalysisResult };
+}
+
 async function runTierTest(
   tierName: "tier1" | "tier2",
   kind: "connection" | "analysis",
 ): Promise<void> {
   const form = tierName === "tier1" ? tier1 : tier2;
   const source = testCredentialSource(tierName);
-  const testing =
-    kind === "connection"
-      ? tierName === "tier1"
-        ? testingTier1
-        : testingTier2
-      : tierName === "tier1"
-        ? testingTier1Analysis
-        : testingTier2Analysis;
-  const result =
-    kind === "connection"
-      ? tierName === "tier1"
-        ? tier1TestResult
-        : tier2TestResult
-      : tierName === "tier1"
-        ? tier1AnalysisResult
-        : tier2AnalysisResult;
+  const { testing, result } = tierTestRefs(tierName, kind);
   if (!source.provider || !form.model) {
     result.value = { ok: false, detail: "Choose a provider and model first." };
     return;
@@ -396,7 +398,10 @@ const tier2KeyPlaceholder = computed(() =>
           Tier 1 — first pass
         </h4>
         <div class="tier-grid">
-          <label class="field">
+          <label
+            class="field"
+            for="tier1-provider"
+          >
             <span class="field-label">Provider</span>
             <Select
               v-model="tier1.provider"
@@ -405,16 +410,21 @@ const tier2KeyPlaceholder = computed(() =>
               option-value="value"
               placeholder="Choose a provider"
               fluid
+              label-id="tier1-provider"
               data-testid="tier1-provider"
             />
           </label>
-          <label class="field">
+          <label
+            class="field"
+            for="tier1-model"
+          >
             <span class="field-label">Model</span>
             <AutoComplete
               v-model="tier1.model"
               :suggestions="tier1ModelSuggestions"
               dropdown
               fluid
+              input-id="tier1-model"
               :placeholder="tier1.provider ? MODEL_PLACEHOLDER[tier1.provider] : ''"
               :pt="{ pcInputText: { root: { 'data-testid': 'tier1-model' } } }"
               @complete="onModelComplete('tier1', $event)"
@@ -442,13 +452,17 @@ const tier2KeyPlaceholder = computed(() =>
               </span>
             </div>
           </label>
-          <label class="field">
+          <label
+            class="field"
+            for="tier1-api-key"
+          >
             <span class="field-label">API key</span>
             <Password
               v-model="tier1.apiKeyInput"
               :feedback="false"
               toggle-mask
               fluid
+              input-id="tier1-api-key"
               :placeholder="tier1KeyPlaceholder"
               data-testid="tier1-api-key"
             />
@@ -456,9 +470,11 @@ const tier2KeyPlaceholder = computed(() =>
           <label
             v-if="!isCloudProvider(tier1.provider)"
             class="field"
+            for="tier1-base-url"
           >
             <span class="field-label">Base URL (optional)</span>
             <InputText
+              id="tier1-base-url"
               v-model="tier1.baseUrl"
               :placeholder="tier1.provider ? BASE_URL_PLACEHOLDER[tier1.provider] : ''"
               fluid
@@ -562,6 +578,7 @@ const tier2KeyPlaceholder = computed(() =>
             <label
               v-if="!tier2LinkedToTier1"
               class="field"
+              for="tier2-provider"
             >
               <span class="field-label">Provider</span>
               <Select
@@ -571,16 +588,21 @@ const tier2KeyPlaceholder = computed(() =>
                 option-value="value"
                 placeholder="Choose a provider"
                 fluid
+                label-id="tier2-provider"
                 data-testid="tier2-provider"
               />
             </label>
-            <label class="field">
+            <label
+              class="field"
+              for="tier2-model"
+            >
               <span class="field-label">Model</span>
               <AutoComplete
                 v-model="tier2.model"
                 :suggestions="tier2ModelSuggestions"
                 dropdown
                 fluid
+                input-id="tier2-model"
                 :placeholder="effectiveTier2Provider ? MODEL_PLACEHOLDER[effectiveTier2Provider] : ''"
                 :pt="{ pcInputText: { root: { 'data-testid': 'tier2-model' } } }"
                 @complete="onModelComplete('tier2', $event)"
@@ -611,6 +633,7 @@ const tier2KeyPlaceholder = computed(() =>
             <label
               v-if="!tier2LinkedToTier1"
               class="field"
+              for="tier2-api-key"
             >
               <span class="field-label">API key</span>
               <Password
@@ -618,6 +641,7 @@ const tier2KeyPlaceholder = computed(() =>
                 :feedback="false"
                 toggle-mask
                 fluid
+                input-id="tier2-api-key"
                 :placeholder="tier2KeyPlaceholder"
                 data-testid="tier2-api-key"
               />
@@ -625,9 +649,11 @@ const tier2KeyPlaceholder = computed(() =>
             <label
               v-if="!tier2LinkedToTier1 && !isCloudProvider(tier2.provider)"
               class="field"
+              for="tier2-base-url"
             >
               <span class="field-label">Base URL (optional)</span>
               <InputText
+                id="tier2-base-url"
                 v-model="tier2.baseUrl"
                 :placeholder="tier2.provider ? BASE_URL_PLACEHOLDER[tier2.provider] : ''"
                 fluid
@@ -692,7 +718,10 @@ const tier2KeyPlaceholder = computed(() =>
           Tuning
         </h4>
         <div class="tier-grid">
-          <label class="field">
+          <label
+            class="field"
+            for="keyframes-per-clip"
+          >
             <span class="field-label">Keyframes per clip</span>
             <InputNumber
               v-model="keyframesPerClip"
@@ -700,10 +729,14 @@ const tier2KeyPlaceholder = computed(() =>
               :max="12"
               show-buttons
               fluid
+              input-id="keyframes-per-clip"
               data-testid="keyframes-per-clip"
             />
           </label>
-          <label class="field">
+          <label
+            class="field"
+            for="suspicion-threshold"
+          >
             <span class="field-label">Tier 2 suspicion threshold</span>
             <InputNumber
               v-model="tier2SuspicionThreshold"
@@ -713,10 +746,14 @@ const tier2KeyPlaceholder = computed(() =>
               :min-fraction-digits="2"
               show-buttons
               fluid
+              input-id="suspicion-threshold"
               data-testid="suspicion-threshold"
             />
           </label>
-          <label class="field">
+          <label
+            class="field"
+            for="feedback-context-count"
+          >
             <span class="field-label">Feedback examples per prompt</span>
             <InputNumber
               v-model="feedbackContextCount"
@@ -724,6 +761,7 @@ const tier2KeyPlaceholder = computed(() =>
               :max="20"
               show-buttons
               fluid
+              input-id="feedback-context-count"
               data-testid="feedback-context-count"
             />
           </label>
