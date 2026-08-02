@@ -51,7 +51,12 @@ async def _make_demo_clip_bytes() -> bytes:
     """A tiny, deterministic, synthetic MP4 - real enough for ffmpeg's own
     probing/thumbnailing/playback to work on, without needing a real Blink
     recording checked into the repo or downloaded at seed time."""
-    path = f"/tmp/blink-e2e-seed-{uuid.uuid4()}.mp4"  # noqa: S108 # nosec B108
+    # /tmp usage is intentional here, not a vulnerability: this is e2e/dev
+    # seed-only code (never runs in production), the filename is
+    # UUID-randomized (defeats the predictable-path/symlink attack this rule
+    # class warns about), and the file is used and removed within this same
+    # function.
+    path = f"/tmp/blink-e2e-seed-{uuid.uuid4()}.mp4"  # noqa: S108 # nosec B108 # NOSONAR
     proc = await asyncio.create_subprocess_exec(
         "ffmpeg",
         "-y",
@@ -77,7 +82,8 @@ async def _make_demo_preview_bytes(seed: int) -> bytes:
     latest snapshot so Live View and Security Feed have something real to
     render without a live Blink connection. `seed` varies the pattern so
     different cameras' tiles are visibly distinct in a screenshot."""
-    path = f"/tmp/blink-e2e-preview-{uuid.uuid4()}.jpg"  # noqa: S108 # nosec B108
+    # See _make_demo_clip_bytes' identical comment above - same reasoning.
+    path = f"/tmp/blink-e2e-preview-{uuid.uuid4()}.jpg"  # noqa: S108 # nosec B108 # NOSONAR
     proc = await asyncio.create_subprocess_exec(
         "ffmpeg",
         "-y",
