@@ -121,6 +121,25 @@ async def test_openai_analyze_returns_parsed_result() -> None:
     assert result.output_tokens == 20
 
 
+@pytest.mark.parametrize("model", ["gpt-4o", "gpt-4-turbo", "gpt-5", "gpt-5-nano"])
+async def test_openai_analyze_sends_max_completion_tokens_not_max_tokens(model: str) -> None:
+    """OpenAI's newer/reasoning-family models (the GPT-5 line) reject
+    max_tokens outright and require max_completion_tokens; GPT-4-class models
+    accept max_completion_tokens too, as the documented modern replacement -
+    so the same kwarg must be sent for every model, with no branching."""
+    provider = OpenAIProvider(model, api_key="sk-test")
+    mock_create = AsyncMock(
+        return_value=_openai_response(
+            json.dumps(VALID_RESULT), SimpleNamespace(prompt_tokens=1, completion_tokens=1)
+        )
+    )
+    provider._client.chat.completions.create = mock_create  # type: ignore[method-assign]
+    await provider.analyze(make_request())
+    _args, kwargs = mock_create.call_args
+    assert kwargs["max_completion_tokens"] == 1024
+    assert "max_tokens" not in kwargs
+
+
 async def test_openai_analyze_handles_missing_usage() -> None:
     provider = OpenAIProvider("gpt-5-nano", api_key="sk-test")
     provider._client.chat.completions.create = AsyncMock(  # type: ignore[method-assign]
@@ -277,6 +296,24 @@ async def test_ollama_test_connection_success_and_failure() -> None:
     provider._client.list = AsyncMock(side_effect=RuntimeError("down"))  # type: ignore[method-assign]
     with pytest.raises(AIProviderError, match="Could not reach Ollama"):
         await provider.test_connection()
+
+
+async def test_ollama_list_models_returns_names() -> None:
+    provider = OllamaProvider("llama3.2-vision", "http://localhost:11434")
+    provider._client.list = AsyncMock(  # type: ignore[method-assign]
+        return_value=SimpleNamespace(
+            models=[SimpleNamespace(model="llava:latest"), SimpleNamespace(model="moondream:2b")]
+        )
+    )
+    models = await provider.list_models()
+    assert models == ["llava:latest", "moondream:2b"]
+
+
+async def test_ollama_list_models_wraps_errors() -> None:
+    provider = OllamaProvider("llama3.2-vision", "http://localhost:11434")
+    provider._client.list = AsyncMock(side_effect=RuntimeError("down"))  # type: ignore[method-assign]
+    with pytest.raises(AIProviderError, match="Could not list Ollama models"):
+        await provider.list_models()
 
 
 # ---------------------------------------------------------------- Moondream
