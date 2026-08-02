@@ -86,6 +86,95 @@ def suspicion_label_for(score: float) -> SuspicionLabel:
     return SuspicionLabel.ROUTINE
 
 
+async def _maybe_escalate_to_tier2(
+    session: AsyncSession,
+    settings: AISettings,
+    camera: Camera,
+    keyframes: list[bytes],
+    baseline_context: str | None,
+    feedback_examples: list[str] | None,
+    vehicle: Vehicle | None,
+    tier1_result: AnalysisResult,
+    clip_id: uuid.UUID,
+    encryption_key: str,
+    usage_rows: list[AIUsage],
+) -> tuple[AnalysisResult, AnalysisTier, bool]:
+    """Escalates to tier2 when tier1's suspicion score crosses the
+    configured threshold and tier2 is actually configured; otherwise returns
+    tier1's own result/tier unchanged. Appends tier2's usage row (if the
+    call was attempted) to the shared usage_rows list either way."""
+    should_escalate = (
+        settings.tier2_enabled
+        and tier1_result.suspicion_score >= settings.tier2_suspicion_threshold
+    )
+    if not should_escalate:
+        return tier1_result, AnalysisTier.TIER1, False
+    if settings.tier2_provider is None or not settings.tier2_model:
+        logger.info("ai.tier2_requested_but_unconfigured", clip_id=str(clip_id))
+        return tier1_result, AnalysisTier.TIER1, False
+
+    escalation_request = AnalysisRequest(
+        images=keyframes,
+        camera_context=camera.security_context,
+        baseline_context=baseline_context,
+        feedback_examples=list(feedback_examples or []),
+        detect_people_for_proximity=vehicle is not None,
+        vehicle_description=vehicle.description if vehicle is not None else None,
+        prior_tier_summary=(
+            f"{tier1_result.summary} (preliminary suspicion: {tier1_result.suspicion_score:.2f})"
+        ),
+    )
+    tier2_result, tier2_usage = await _call_tier(
+        session, settings, AnalysisTier.TIER2, escalation_request, clip_id, encryption_key
+    )
+    usage_rows.append(tier2_usage)
+    if tier2_result is not None:
+        return tier2_result, AnalysisTier.TIER2, True
+    return tier1_result, AnalysisTier.TIER1, False
+
+
+async def _maybe_recognize_faces(
+    session: AsyncSession,
+    clip_id: uuid.UUID,
+    keyframes: list[bytes],
+    entities: list[DetectedEntityResult],
+    biometrics_settings: BiometricsSettings | None,
+    biometrics_model_cache_dir: Path | None,
+) -> dict[uuid.UUID, float]:
+    """Biometrics is strictly additive: a model-download hiccup or a bad
+    frame must never throw away a VLM analysis that already succeeded (and
+    was already paid for/rate-limited against) - swallowed here so the
+    caller's Analysis row is still saved, just without a recognized-person
+    upgrade for this pass. The next analysis (auto or manual re-analyze)
+    gets another chance."""
+    if not (
+        biometrics_settings is not None
+        and biometrics_model_cache_dir is not None
+        and biometrics_settings.enabled
+    ):
+        return {}
+    try:
+        return await _recognize_and_label(
+            session, keyframes, entities, biometrics_settings, biometrics_model_cache_dir
+        )
+    except (ModelLoadError, RecognitionError) as exc:
+        logger.warning("biometrics.recognition_skipped", clip_id=str(clip_id), error=str(exc))
+        return {}
+
+
+def _vehicle_proximity_payload(
+    vehicle: Vehicle | None, proximity: ProximityEstimate | None
+) -> dict[str, object] | None:
+    if vehicle is None or proximity is None:
+        return None
+    return {
+        "vehicle_id": str(vehicle.id),
+        "distance_feet": proximity.distance_feet,
+        "error_margin_feet": proximity.error_margin_feet,
+        "breached_threshold": proximity.breached,
+    }
+
+
 async def run_analysis(
     session: AsyncSession,
     clip: Clip,
@@ -125,56 +214,28 @@ async def run_analysis(
     if tier1_result is None:
         raise AnalysisSkippedError("Tier 1 analysis failed; see ai_usage for the error.")
 
-    final_result, final_tier, escalated = tier1_result, AnalysisTier.TIER1, False
-    should_escalate = (
-        settings.tier2_enabled
-        and tier1_result.suspicion_score >= settings.tier2_suspicion_threshold
+    final_result, final_tier, escalated = await _maybe_escalate_to_tier2(
+        session,
+        settings,
+        camera,
+        keyframes,
+        baseline_context,
+        feedback_examples,
+        vehicle,
+        tier1_result,
+        clip.id,
+        encryption_key,
+        usage_rows,
     )
-    if should_escalate:
-        if settings.tier2_provider is None or not settings.tier2_model:
-            logger.info("ai.tier2_requested_but_unconfigured", clip_id=str(clip.id))
-        else:
-            escalation_request = AnalysisRequest(
-                images=keyframes,
-                camera_context=camera.security_context,
-                baseline_context=baseline_context,
-                feedback_examples=list(feedback_examples or []),
-                detect_people_for_proximity=vehicle is not None,
-                vehicle_description=vehicle.description if vehicle is not None else None,
-                prior_tier_summary=(
-                    f"{tier1_result.summary} "
-                    f"(preliminary suspicion: {tier1_result.suspicion_score:.2f})"
-                ),
-            )
-            tier2_result, tier2_usage = await _call_tier(
-                session, settings, AnalysisTier.TIER2, escalation_request, clip.id, encryption_key
-            )
-            usage_rows.append(tier2_usage)
-            if tier2_result is not None:
-                final_result, final_tier, escalated = tier2_result, AnalysisTier.TIER2, True
 
-    recognized_scores: dict[uuid.UUID, float] = {}
-    if (
-        biometrics_settings is not None
-        and biometrics_model_cache_dir is not None
-        and biometrics_settings.enabled
-    ):
-        try:
-            recognized_scores = await _recognize_and_label(
-                session,
-                keyframes,
-                final_result.entities,
-                biometrics_settings,
-                biometrics_model_cache_dir,
-            )
-        except (ModelLoadError, RecognitionError) as exc:
-            # Biometrics is strictly additive: a model-download hiccup or a
-            # bad frame must never throw away a VLM analysis that already
-            # succeeded (and was already paid for/rate-limited against).
-            # This clip's Analysis is still saved below, just without a
-            # recognized-person upgrade for this pass — the next analysis
-            # (auto or manual re-analyze) gets another chance.
-            logger.warning("biometrics.recognition_skipped", clip_id=str(clip.id), error=str(exc))
+    recognized_scores = await _maybe_recognize_faces(
+        session,
+        clip.id,
+        keyframes,
+        final_result.entities,
+        biometrics_settings,
+        biometrics_model_cache_dir,
+    )
 
     # A trusted household member never trips the label/event/alert just for
     # being recognized - checked here (after recognition, before anything is
@@ -203,16 +264,7 @@ async def run_analysis(
         tier2_provider=settings.tier2_provider if escalated else None,
         tier2_model=settings.tier2_model if escalated else None,
         detected_entities=[_entity_to_dict(e) for e in final_result.entities],
-        vehicle_proximity=(
-            {
-                "vehicle_id": str(vehicle.id),
-                "distance_feet": proximity.distance_feet,
-                "error_margin_feet": proximity.error_margin_feet,
-                "breached_threshold": proximity.breached,
-            }
-            if vehicle is not None and proximity is not None
-            else None
-        ),
+        vehicle_proximity=_vehicle_proximity_payload(vehicle, proximity),
     )
     session.add(analysis)
     await session.flush()
@@ -446,6 +498,22 @@ async def _record_proximity_breach(
     await session.execute(stmt)
 
 
+def _record_frame_matches(
+    index: int,
+    faces: list[DetectedFace],
+    matches: list[FaceMatch | None],
+    best_score: dict[uuid.UUID, float],
+    first_frame_matches: list[tuple[DetectedFace, FaceMatch]],
+) -> None:
+    for face, match in zip(faces, matches, strict=True):
+        if match is None:
+            continue
+        if index == 0:
+            first_frame_matches.append((face, match))
+        if match.person_id not in best_score or match.score > best_score[match.person_id]:
+            best_score[match.person_id] = match.score
+
+
 async def _recognize_and_label(
     session: AsyncSession,
     keyframes: list[bytes],
@@ -478,13 +546,7 @@ async def _recognize_and_label(
         if not faces:
             continue
         matches = await match_faces(session, faces, biometrics_settings.recognition_threshold)
-        for face, match in zip(faces, matches, strict=True):
-            if match is None:
-                continue
-            if index == 0:
-                first_frame_matches.append((face, match))
-            if match.person_id not in best_score or match.score > best_score[match.person_id]:
-                best_score[match.person_id] = match.score
+        _record_frame_matches(index, faces, matches, best_score, first_frame_matches)
 
     if first_frame_matches:
         names = await _person_names(session, {match.person_id for _, match in first_frame_matches})

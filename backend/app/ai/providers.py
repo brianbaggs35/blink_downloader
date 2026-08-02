@@ -480,28 +480,32 @@ _TEST_PIXEL_DATA_URI = (
 )
 
 
+def _require_api_key(provider_name: str, api_key: str | None) -> str:
+    if not api_key:
+        raise AIProviderError(f"{provider_name} requires an API key.")
+    return api_key
+
+
 def build_provider(
     kind: AIProviderKind, model: str, api_key: str | None, base_url: str | None
 ) -> AIProvider:
     if kind is AIProviderKind.OPENAI:
-        if not api_key:
-            raise AIProviderError("OpenAI requires an API key.")
-        return OpenAIProvider(model, api_key, base_url)
+        return OpenAIProvider(model, _require_api_key("OpenAI", api_key), base_url)
     if kind is AIProviderKind.ANTHROPIC:
-        if not api_key:
-            raise AIProviderError("Anthropic requires an API key.")
-        return AnthropicProvider(model, api_key, base_url)
+        return AnthropicProvider(model, _require_api_key("Anthropic", api_key), base_url)
     if kind is AIProviderKind.OLLAMA:
         return OllamaProvider(model, base_url or DEFAULT_OLLAMA_LOCAL_URL)
     if kind is AIProviderKind.OLLAMA_CLOUD:
-        if not api_key:
-            raise AIProviderError("Ollama Cloud requires an API key.")
-        return OllamaProvider(model, base_url or DEFAULT_OLLAMA_CLOUD_URL, api_key)
+        return OllamaProvider(
+            model, base_url or DEFAULT_OLLAMA_CLOUD_URL, _require_api_key("Ollama Cloud", api_key)
+        )
     if kind is AIProviderKind.MOONDREAM:
         return MoondreamProvider(model, base_url or DEFAULT_MOONDREAM_LOCAL_URL)
     if kind is AIProviderKind.MOONDREAM_CLOUD:
-        if not api_key:
-            raise AIProviderError("Moondream Cloud requires an API key.")
-        return MoondreamProvider(model, base_url or DEFAULT_MOONDREAM_CLOUD_URL, api_key)
+        return MoondreamProvider(
+            model,
+            base_url or DEFAULT_MOONDREAM_CLOUD_URL,
+            _require_api_key("Moondream Cloud", api_key),
+        )
     msg = f"Unsupported provider: {kind}"
     raise AIProviderError(msg)
