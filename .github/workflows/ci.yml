@@ -130,7 +130,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: frontend/coverage/lcov.info
+          files: frontend/coverage/cobertura-coverage.xml
           flags: frontend
           fail_ci_if_error: false
 
@@ -374,4 +374,15 @@ jobs:
         with:
           name: e2e-coverage-report
           path: e2e/coverage
-          retention-days: 7
+
+  sonarqube:
+    name: SonarQube
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # disabling shallow clones improves relevancy of analysis
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
