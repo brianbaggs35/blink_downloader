@@ -59,6 +59,8 @@ from app.users.auth import current_active_user, current_superuser
 
 router = APIRouter(prefix="/biometrics", tags=["biometrics"])
 
+_JPEG_MEDIA_TYPE = "image/jpeg"
+
 
 async def _storage(session: AsyncSession) -> ClipStorage:
     return get_clip_storage(await resolve_storage_dir(session, get_settings()))
@@ -210,7 +212,7 @@ async def person_thumbnail_route(
 ) -> FileResponse:
     person = await _get_person_or_404(session, person_id)
     path = _file_or_404(person.thumbnail_path, "thumbnail")
-    return FileResponse(path, media_type="image/jpeg", content_disposition_type="inline")
+    return FileResponse(path, media_type=_JPEG_MEDIA_TYPE, content_disposition_type="inline")
 
 
 @router.get("/people/{person_id}/faces", response_model=list[FaceEmbeddingRead])
@@ -233,7 +235,7 @@ async def face_thumbnail_route(
     person = await _get_person_or_404(session, person_id)
     face = _get_face_or_404(person, face_id)
     path = _file_or_404(face.thumbnail_path, "face sample")
-    return FileResponse(path, media_type="image/jpeg", content_disposition_type="inline")
+    return FileResponse(path, media_type=_JPEG_MEDIA_TYPE, content_disposition_type="inline")
 
 
 @router.delete("/people/{person_id}/faces/{face_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -262,7 +264,7 @@ async def clip_frame_route(
         frame = await extract_clip_frame(session, clip_id, frame_seconds)
     except ClipFrameError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    return Response(content=frame, media_type="image/jpeg")
+    return Response(content=frame, media_type=_JPEG_MEDIA_TYPE)
 
 
 @router.get("/clips/{clip_id}/detect-faces", response_model=list[DetectedFaceRead])

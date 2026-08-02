@@ -37,6 +37,9 @@ class MotionNotSupportedError(Exception):
     (a Mini camera, which mirrors its Sync Module's own armed state)."""
 
 
+_NETWORK_CALLS_DISABLED_MESSAGE = "Live Blink calls are disabled in this environment."
+
+
 async def list_sync_modules(session: AsyncSession) -> Sequence[SyncModule]:
     stmt = select(SyncModule).order_by(SyncModule.name)
     return (await session.execute(stmt)).scalars().all()
@@ -84,7 +87,7 @@ async def arm_sync_module(
     session: AsyncSession, settings: Settings, sync_module: SyncModule, armed: bool
 ) -> SyncModule:
     if settings.disable_blink_network_calls:
-        raise BlinkError("Live Blink calls are disabled in this environment.")
+        raise BlinkError(_NETWORK_CALLS_DISABLED_MESSAGE)
 
     account = await _load_account(session, sync_module)
     service = _build_service(settings, account)
@@ -116,7 +119,7 @@ async def set_camera_motion_detection(
             "Mini cameras follow the Sync Module's armed state, not an independent toggle."
         )
     if settings.disable_blink_network_calls:
-        raise BlinkError("Live Blink calls are disabled in this environment.")
+        raise BlinkError(_NETWORK_CALLS_DISABLED_MESSAGE)
 
     account = await _load_account(session, sync_module)
     service = _build_service(settings, account)
@@ -153,7 +156,7 @@ async def bulk_set_camera_motion_detection(
     if not applicable:
         return 0, 0
     if settings.disable_blink_network_calls:
-        raise BlinkError("Live Blink calls are disabled in this environment.")
+        raise BlinkError(_NETWORK_CALLS_DISABLED_MESSAGE)
 
     account = await _load_account(session, sync_module)
     service = _build_service(settings, account)
@@ -195,7 +198,7 @@ async def refresh_local_storage_manifest(
     await session.commit()
 
     if settings.disable_blink_network_calls:
-        raise BlinkError("Live Blink calls are disabled in this environment.")
+        raise BlinkError(_NETWORK_CALLS_DISABLED_MESSAGE)
 
     account = await _load_account(session, sync_module)
     service = _build_service(settings, account)
@@ -295,7 +298,7 @@ async def download_local_storage_item(
     await session.commit()
 
     if settings.disable_blink_network_calls:
-        raise BlinkError("Live Blink calls are disabled in this environment.")
+        raise BlinkError(_NETWORK_CALLS_DISABLED_MESSAGE)
 
     account = await _load_account(session, sync_module)
     service = _build_service(settings, account)
@@ -343,7 +346,7 @@ async def delete_local_storage_item(
     if sync_module.sync_id is None or sync_module.local_storage_manifest_id is None:
         raise BlinkError("No local storage manifest available yet - refresh first.")
     if settings.disable_blink_network_calls:
-        raise BlinkError("Live Blink calls are disabled in this environment.")
+        raise BlinkError(_NETWORK_CALLS_DISABLED_MESSAGE)
 
     account = await _load_account(session, sync_module)
     service = _build_service(settings, account)
