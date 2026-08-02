@@ -233,6 +233,10 @@ class OpenAIProvider:
                         "strict": True,
                     },
                 },
+                # max_completion_tokens, never max_tokens: GPT-5-class models
+                # reject max_tokens outright, while GPT-4-class models accept
+                # max_completion_tokens as its documented replacement - so
+                # this one kwarg is correct for every model, unconditionally.
                 max_completion_tokens=1024,
             )
         except Exception as exc:
@@ -368,6 +372,16 @@ class OllamaProvider:
             await self._client.list()
         except Exception as exc:
             raise AIProviderError(f"Could not reach Ollama: {exc}") from exc
+
+    async def list_models(self) -> list[str]:
+        """The models this Ollama server actually has pulled/available - lets
+        the settings UI offer a real, always-accurate picker instead of a
+        static guess, unlike the fixed-catalog providers."""
+        try:
+            response = await self._client.list()
+        except Exception as exc:
+            raise AIProviderError(f"Could not list Ollama models: {exc}") from exc
+        return [str(item.model) for item in response.models]
 
 
 class MoondreamProvider:
