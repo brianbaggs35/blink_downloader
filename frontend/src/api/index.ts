@@ -55,6 +55,8 @@ export type AISettingsRead = components["schemas"]["AISettingsRead"];
 export type AISettingsUpdate = components["schemas"]["AISettingsUpdate"];
 export type AIConnectionTestRequest = components["schemas"]["AIConnectionTestRequest"];
 export type AIConnectionTestResponse = components["schemas"]["AIConnectionTestResponse"];
+export type AIModelListRequest = components["schemas"]["AIModelListRequest"];
+export type AIModelListResponse = components["schemas"]["AIModelListResponse"];
 
 export type AnalysisRead = components["schemas"]["AnalysisRead"];
 export type DetectedEntityRead = components["schemas"]["DetectedEntityRead"];
@@ -470,6 +472,12 @@ export function testAiConnection(
  * model name and response format actually work, not just reachability. */
 export function testAiAnalysis(body: AIConnectionTestRequest): Promise<AIConnectionTestResponse> {
   return api<AIConnectionTestResponse>("/settings/ai/test-analysis", { json: body });
+}
+
+/** Only meaningful for Ollama (local/cloud) - lists the models actually
+ * available on that server, rather than a static guess. */
+export function listAiModels(body: AIModelListRequest): Promise<AIModelListResponse> {
+  return api<AIModelListResponse>("/settings/ai/list-models", { json: body });
 }
 
 // ---------------------------------------------------------------- Vehicles

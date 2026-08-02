@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AutoComplete, { type AutoCompleteCompleteEvent } from "primevue/autocomplete";
 import Button from "primevue/button";
 import Checkbox from "primevue/checkbox";
 import InputNumber from "primevue/inputnumber";
@@ -9,9 +10,17 @@ import Select from "primevue/select";
 import Skeleton from "primevue/skeleton";
 import ToggleSwitch from "primevue/toggleswitch";
 import { useToast } from "primevue/usetoast";
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 
-import { ApiError, getAiSettings, testAiAnalysis, testAiConnection, updateAiSettings } from "@/api";
+import {
+  ApiError,
+  getAiSettings,
+  listAiModels,
+  testAiAnalysis,
+  testAiConnection,
+  updateAiSettings,
+} from "@/api";
+import { filterModelSuggestions, isCloudProvider, isOllamaProvider } from "@/lib/aiProviderCatalog";
 
 import type { AIProviderKind } from "@/api";
 
@@ -73,9 +82,70 @@ const enabled = ref(false);
 const tier1 = reactive<TierForm>(emptyTier());
 const tier2Enabled = ref(true);
 const tier2 = reactive<TierForm>(emptyTier());
+const tier2LinkedToTier1 = ref(false);
 const keyframesPerClip = ref(4);
 const tier2SuspicionThreshold = ref(0.5);
 const feedbackContextCount = ref(5);
+
+const tier1ModelSuggestions = ref<string[]>([]);
+const tier2ModelSuggestions = ref<string[]>([]);
+// Set once "Fetch models" succeeds for Ollama - takes priority over the
+// static catalog (see filterModelSuggestions). Reset whenever the provider
+// changes, so a stale list from a different server is never shown.
+const tier1FetchedModels = ref<string[] | null>(null);
+const tier2FetchedModels = ref<string[] | null>(null);
+const tier1FetchingModels = ref(false);
+const tier2FetchingModels = ref(false);
+const tier1FetchModelsError = ref("");
+const tier2FetchModelsError = ref("");
+
+function onModelComplete(tier: "tier1" | "tier2", event: AutoCompleteCompleteEvent): void {
+  const provider = tier === "tier1" ? tier1.provider : effectiveTier2Provider.value;
+  const suggestions = tier === "tier1" ? tier1ModelSuggestions : tier2ModelSuggestions;
+  const fetched = tier === "tier1" ? tier1FetchedModels.value : tier2FetchedModels.value;
+  suggestions.value = filterModelSuggestions(provider, event.query, fetched);
+}
+
+async function fetchModels(tierName: "tier1" | "tier2"): Promise<void> {
+  const fetchedModels = tierName === "tier1" ? tier1FetchedModels : tier2FetchedModels;
+  const fetching = tierName === "tier1" ? tier1FetchingModels : tier2FetchingModels;
+  const fetchError = tierName === "tier1" ? tier1FetchModelsError : tier2FetchModelsError;
+  const source = testCredentialSource(tierName);
+  fetching.value = true;
+  fetchError.value = "";
+  try {
+    const response = await listAiModels({
+      tier: source.tier,
+      // The Fetch-models button only renders when isOllamaProvider(...) is
+      // already true, so source.provider is never null here.
+      provider: source.provider!,
+      api_key: source.apiKeyInput || null,
+      base_url: source.baseUrl || null,
+    });
+    if (response.ok) {
+      fetchedModels.value = response.models ?? [];
+    } else {
+      fetchError.value = response.detail ?? "Could not fetch models.";
+    }
+  } catch (caught) {
+    fetchError.value = caught instanceof ApiError ? caught.message : "Could not fetch models.";
+  } finally {
+    fetching.value = false;
+  }
+}
+
+// Tier 2's provider fields are hidden while linked, so anything needing
+// "whichever provider tier 2 will actually use" reads through this instead.
+const effectiveTier2Provider = computed<AIProviderKind | null>(() =>
+  tier2LinkedToTier1.value ? tier1.provider : tier2.provider,
+);
+
+function providerLabel(kind: AIProviderKind | null): string {
+  // Only ever called with tier1.provider from behind a v-if="...&& tier1.provider"
+  // guard, so the fallback is unreachable through real UI interaction.
+  /* v8 ignore next */
+  return PROVIDER_OPTIONS.find((option) => option.value === kind)?.label ?? "";
+}
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -92,6 +162,7 @@ async function load(): Promise<void> {
     tier2.model = settings.tier2_model ?? "";
     tier2.apiKeySet = settings.tier2_api_key_set;
     tier2.baseUrl = settings.tier2_base_url ?? "";
+    tier2LinkedToTier1.value = settings.tier2_linked_to_tier1;
     keyframesPerClip.value = settings.keyframes_per_clip;
     tier2SuspicionThreshold.value = settings.tier2_suspicion_threshold;
     feedbackContextCount.value = settings.feedback_context_count;
@@ -104,11 +175,41 @@ async function load(): Promise<void> {
 
 onMounted(load);
 
+// Drop a now-hidden/stale base URL on a cloud provider. resolvedBaseUrl()
+// already keeps a cloud provider's saved value null regardless, so this is
+// purely so the (otherwise-hidden) field doesn't hold a stale value if the
+// user switches back to a self-hosted provider later in the same session.
+watch(
+  () => tier1.provider,
+  () => {
+    tier1FetchedModels.value = null;
+    if (isCloudProvider(tier1.provider)) {
+      tier1.baseUrl = "";
+    }
+    if (!tier1.provider) {
+      tier2LinkedToTier1.value = false;
+    }
+  },
+);
+watch(
+  () => tier2.provider,
+  () => {
+    tier2FetchedModels.value = null;
+    if (isCloudProvider(tier2.provider)) {
+      tier2.baseUrl = "";
+    }
+  },
+);
+
 function resolvedApiKey(tier: TierForm): string | null {
   if (tier.apiKeyInput) {
     return tier.apiKeyInput;
   }
   return tier.clearApiKey ? "" : null;
+}
+
+function resolvedBaseUrl(provider: AIProviderKind | null, baseUrl: string): string | null {
+  return isCloudProvider(provider) ? null : baseUrl || null;
 }
 
 async function save(): Promise<void> {
@@ -120,12 +221,13 @@ async function save(): Promise<void> {
       tier1_provider: tier1.provider,
       tier1_model: tier1.model || null,
       tier1_api_key: resolvedApiKey(tier1),
-      tier1_base_url: tier1.baseUrl || null,
+      tier1_base_url: resolvedBaseUrl(tier1.provider, tier1.baseUrl),
       tier2_enabled: tier2Enabled.value,
       tier2_provider: tier2.provider,
       tier2_model: tier2.model || null,
       tier2_api_key: resolvedApiKey(tier2),
-      tier2_base_url: tier2.baseUrl || null,
+      tier2_base_url: resolvedBaseUrl(tier2.provider, tier2.baseUrl),
+      tier2_linked_to_tier1: tier2LinkedToTier1.value,
       keyframes_per_clip: keyframesPerClip.value,
       tier2_suspicion_threshold: tier2SuspicionThreshold.value,
       feedback_context_count: feedbackContextCount.value,
@@ -154,11 +256,40 @@ const testingTier2Analysis = ref(false);
 const tier1AnalysisResult = ref<{ ok: boolean; detail: string } | null>(null);
 const tier2AnalysisResult = ref<{ ok: boolean; detail: string } | null>(null);
 
+interface TestCredentialSource {
+  tier: "tier1" | "tier2";
+  provider: AIProviderKind | null;
+  apiKeyInput: string;
+  baseUrl: string;
+}
+
+// Tier 2's own fields are inert while linked - route the test call through
+// tier1's live form values, with tier:"tier1" so an omitted key falls back
+// to tier1's saved one, not tier2's stale one.
+function testCredentialSource(tierName: "tier1" | "tier2"): TestCredentialSource {
+  if (tierName === "tier2" && tier2LinkedToTier1.value) {
+    return {
+      tier: "tier1",
+      provider: tier1.provider,
+      apiKeyInput: tier1.apiKeyInput,
+      baseUrl: tier1.baseUrl,
+    };
+  }
+  const form = tierName === "tier1" ? tier1 : tier2;
+  return {
+    tier: tierName,
+    provider: form.provider,
+    apiKeyInput: form.apiKeyInput,
+    baseUrl: form.baseUrl,
+  };
+}
+
 async function runTierTest(
   tierName: "tier1" | "tier2",
   kind: "connection" | "analysis",
 ): Promise<void> {
   const form = tierName === "tier1" ? tier1 : tier2;
+  const source = testCredentialSource(tierName);
   const testing =
     kind === "connection"
       ? tierName === "tier1"
@@ -175,7 +306,7 @@ async function runTierTest(
       : tierName === "tier1"
         ? tier1AnalysisResult
         : tier2AnalysisResult;
-  if (!form.provider || !form.model) {
+  if (!source.provider || !form.model) {
     result.value = { ok: false, detail: "Choose a provider and model first." };
     return;
   }
@@ -184,11 +315,11 @@ async function runTierTest(
   try {
     const call = kind === "connection" ? testAiConnection : testAiAnalysis;
     const response = await call({
-      tier: tierName,
-      provider: form.provider,
+      tier: source.tier,
+      provider: source.provider,
       model: form.model,
-      api_key: form.apiKeyInput || null,
-      base_url: form.baseUrl || null,
+      api_key: source.apiKeyInput || null,
+      base_url: source.baseUrl || null,
     });
     const fallback = response.ok ? "Connected." : "Failed.";
     result.value = { ok: response.ok, detail: response.detail ?? fallback };
@@ -279,12 +410,37 @@ const tier2KeyPlaceholder = computed(() =>
           </label>
           <label class="field">
             <span class="field-label">Model</span>
-            <InputText
+            <AutoComplete
               v-model="tier1.model"
-              :placeholder="tier1.provider ? MODEL_PLACEHOLDER[tier1.provider] : ''"
+              :suggestions="tier1ModelSuggestions"
+              dropdown
               fluid
-              data-testid="tier1-model"
+              :placeholder="tier1.provider ? MODEL_PLACEHOLDER[tier1.provider] : ''"
+              :pt="{ pcInputText: { root: { 'data-testid': 'tier1-model' } } }"
+              @complete="onModelComplete('tier1', $event)"
             />
+            <div
+              v-if="isOllamaProvider(tier1.provider)"
+              class="fetch-models-row"
+            >
+              <Button
+                type="button"
+                label="Fetch models"
+                severity="secondary"
+                text
+                size="small"
+                :loading="tier1FetchingModels"
+                data-testid="tier1-fetch-models"
+                @click="fetchModels('tier1')"
+              />
+              <span
+                v-if="tier1FetchModelsError"
+                class="fetch-models-error"
+                data-testid="tier1-fetch-models-error"
+              >
+                {{ tier1FetchModelsError }}
+              </span>
+            </div>
           </label>
           <label class="field">
             <span class="field-label">API key</span>
@@ -297,7 +453,10 @@ const tier2KeyPlaceholder = computed(() =>
               data-testid="tier1-api-key"
             />
           </label>
-          <label class="field">
+          <label
+            v-if="!isCloudProvider(tier1.provider)"
+            class="field"
+          >
             <span class="field-label">Base URL (optional)</span>
             <InputText
               v-model="tier1.baseUrl"
@@ -375,8 +534,35 @@ const tier2KeyPlaceholder = computed(() =>
         </div>
 
         <template v-if="tier2Enabled">
+          <label class="toggle-row link-tier1-row">
+            <ToggleSwitch
+              v-model="tier2LinkedToTier1"
+              :disabled="!tier1.provider"
+              data-testid="tier2-link-to-tier1"
+            />
+            <div>
+              <p class="toggle-label">
+                Use Tier 1's provider &amp; API key
+              </p>
+              <p class="muted">
+                Keep the same provider and API key as Tier 1 — you can still choose a different
+                model below.
+              </p>
+            </div>
+          </label>
+          <p
+            v-if="tier2LinkedToTier1 && tier1.provider"
+            class="linked-note"
+            data-testid="tier2-linked-note"
+          >
+            Using Tier 1's provider ({{ providerLabel(tier1.provider) }}) and API key.
+          </p>
+
           <div class="tier-grid">
-            <label class="field">
+            <label
+              v-if="!tier2LinkedToTier1"
+              class="field"
+            >
               <span class="field-label">Provider</span>
               <Select
                 v-model="tier2.provider"
@@ -390,14 +576,42 @@ const tier2KeyPlaceholder = computed(() =>
             </label>
             <label class="field">
               <span class="field-label">Model</span>
-              <InputText
+              <AutoComplete
                 v-model="tier2.model"
-                :placeholder="tier2.provider ? MODEL_PLACEHOLDER[tier2.provider] : ''"
+                :suggestions="tier2ModelSuggestions"
+                dropdown
                 fluid
-                data-testid="tier2-model"
+                :placeholder="effectiveTier2Provider ? MODEL_PLACEHOLDER[effectiveTier2Provider] : ''"
+                :pt="{ pcInputText: { root: { 'data-testid': 'tier2-model' } } }"
+                @complete="onModelComplete('tier2', $event)"
               />
+              <div
+                v-if="isOllamaProvider(effectiveTier2Provider)"
+                class="fetch-models-row"
+              >
+                <Button
+                  type="button"
+                  label="Fetch models"
+                  severity="secondary"
+                  text
+                  size="small"
+                  :loading="tier2FetchingModels"
+                  data-testid="tier2-fetch-models"
+                  @click="fetchModels('tier2')"
+                />
+                <span
+                  v-if="tier2FetchModelsError"
+                  class="fetch-models-error"
+                  data-testid="tier2-fetch-models-error"
+                >
+                  {{ tier2FetchModelsError }}
+                </span>
+              </div>
             </label>
-            <label class="field">
+            <label
+              v-if="!tier2LinkedToTier1"
+              class="field"
+            >
               <span class="field-label">API key</span>
               <Password
                 v-model="tier2.apiKeyInput"
@@ -408,7 +622,10 @@ const tier2KeyPlaceholder = computed(() =>
                 data-testid="tier2-api-key"
               />
             </label>
-            <label class="field">
+            <label
+              v-if="!tier2LinkedToTier1 && !isCloudProvider(tier2.provider)"
+              class="field"
+            >
               <span class="field-label">Base URL (optional)</span>
               <InputText
                 v-model="tier2.baseUrl"
@@ -419,7 +636,7 @@ const tier2KeyPlaceholder = computed(() =>
             </label>
           </div>
           <label
-            v-if="tier2.apiKeySet"
+            v-if="!tier2LinkedToTier1 && tier2.apiKeySet"
             class="clear-key"
           >
             <Checkbox
@@ -633,6 +850,25 @@ const tier2KeyPlaceholder = computed(() =>
 
 .blink-dark .clear-key {
   color: var(--p-surface-300);
+}
+
+.linked-note {
+  margin: -6px 0 0;
+  font-size: 0.82rem;
+  font-style: italic;
+  color: var(--p-surface-500);
+}
+
+.fetch-models-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fetch-models-error {
+  font-size: 0.78rem;
+  color: var(--p-red-500);
 }
 
 .test-row {

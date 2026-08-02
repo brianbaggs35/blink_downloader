@@ -861,6 +861,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/ai/list-models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * List Ai Models
+         * @description Only Ollama exposes a real "what's actually installed" list - OpenAI/
+         *     Anthropic/Moondream use the app's static curated picker instead (see
+         *     frontend's aiProviderCatalog.ts).
+         */
+        post: operations["list_ai_models_api_settings_ai_list_models_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/vehicles": {
         parameters: {
             query?: never;
@@ -1411,6 +1433,28 @@ export interface components {
             /** Detail */
             detail?: string | null;
         };
+        /** AIModelListRequest */
+        AIModelListRequest: {
+            /**
+             * Tier
+             * @enum {string}
+             */
+            tier: "tier1" | "tier2";
+            provider: components["schemas"]["AIProviderKind"];
+            /** Api Key */
+            api_key?: string | null;
+            /** Base Url */
+            base_url?: string | null;
+        };
+        /** AIModelListResponse */
+        AIModelListResponse: {
+            /** Ok */
+            ok: boolean;
+            /** Detail */
+            detail?: string | null;
+            /** Models */
+            models?: string[];
+        };
         /**
          * AIProviderKind
          * @enum {string}
@@ -1436,6 +1480,8 @@ export interface components {
             tier2_api_key_set: boolean;
             /** Tier2 Base Url */
             tier2_base_url: string | null;
+            /** Tier2 Linked To Tier1 */
+            tier2_linked_to_tier1: boolean;
             /** Keyframes Per Clip */
             keyframes_per_clip: number;
             /** Tier2 Suspicion Threshold */
@@ -1466,6 +1512,11 @@ export interface components {
             tier2_api_key?: string | null;
             /** Tier2 Base Url */
             tier2_base_url?: string | null;
+            /**
+             * Tier2 Linked To Tier1
+             * @default false
+             */
+            tier2_linked_to_tier1: boolean;
             /**
              * Keyframes Per Clip
              * @default 4
@@ -4802,6 +4853,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AIConnectionTestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_ai_models_api_settings_ai_list_models_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AIModelListRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIModelListResponse"];
                 };
             };
             /** @description Validation Error */
