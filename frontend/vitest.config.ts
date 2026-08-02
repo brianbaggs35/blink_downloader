@@ -13,6 +13,7 @@ export default mergeConfig(
         provider: "v8",
         include: ["src/**/*.{ts,vue}"],
         exclude: ["src/main.ts", "src/api/schema.d.ts", "src/vite-env.d.ts"],
+        reporter: ["text", "html", "lcov"],
         thresholds: {
           lines: 90,
           functions: 90,
