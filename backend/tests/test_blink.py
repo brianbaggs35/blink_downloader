@@ -243,6 +243,10 @@ async def test_get_cameras_maps_attributes() -> None:
         )
     ]
     blink.get_homescreen.assert_awaited_once()
+    # blinkpy only ever populates Blink.cameras inside setup_post_verify() -
+    # get_cameras() must go through the sync startup, not just the full one,
+    # or every real (non-test) call returns an empty list forever.
+    blink.setup_post_verify.assert_awaited_once()
 
 
 async def test_get_cameras_defaults_missing_optional_fields() -> None:
@@ -269,6 +273,33 @@ async def test_full_startup_only_happens_once(monkeypatch: pytest.MonkeyPatch) -
     await service.get_cameras()
     await service.get_cameras()
     blink.get_homescreen.assert_awaited_once()
+    blink.setup_post_verify.assert_awaited_once()
+
+
+async def test_full_startup_cache_is_shared_across_entry_points() -> None:
+    """get_cameras() now reaches _ensure_full() via _ensure_sync(), which has
+    its own separate cache guard - list_media() still calls _ensure_full()
+    directly, so this is the only remaining path that exercises _ensure_full
+    finding itself already started."""
+    service, _auth, blink = _make_service()
+    blink.cameras = {}
+    await service.get_cameras()
+    await service.list_media()
+    blink.get_homescreen.assert_awaited_once()
+
+
+async def test_get_cameras_raises_when_sync_setup_fails() -> None:
+    service, _auth, blink = _make_service()
+    blink.setup_post_verify = AsyncMock(return_value=False)
+    with pytest.raises(BlinkError):
+        await service.get_cameras()
+
+
+async def test_find_camera_triggers_setup_post_verify() -> None:
+    service, _auth, blink = _make_service()
+    _put_camera(blink)
+    await service.record_clip("1")
+    blink.setup_post_verify.assert_awaited_once()
 
 
 async def test_list_media_maps_items_and_skips_incomplete() -> None:

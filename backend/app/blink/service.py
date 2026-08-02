@@ -254,7 +254,7 @@ class BlinkPyService:
         raise SyncModuleNotFoundError(f"No sync module with network id {network_id}.")
 
     async def get_cameras(self) -> list[BlinkCameraInfo]:
-        await self._ensure_full()
+        await self._ensure_sync()
         cameras: list[BlinkCameraInfo] = []
         for camera in self._blink.cameras.values():
             attrs = camera.attributes
@@ -320,7 +320,7 @@ class BlinkPyService:
         return await response.read()
 
     async def _find_camera(self, camera_id: str) -> Any:
-        await self._ensure_full()
+        await self._ensure_sync()
         for camera in self._blink.cameras.values():
             # By stable camera_id, never by dict key/name - blinkpy indexes
             # self._blink.cameras by display name, which two cameras on one
