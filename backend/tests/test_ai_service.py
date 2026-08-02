@@ -105,3 +105,87 @@ async def test_update_applies_to_tier2_independently(app_session: AsyncSession) 
     assert row.tier2_model == "claude-sonnet-5"
     assert row.tier2_base_url == "https://api.anthropic.com"
     assert row.tier2_encrypted_api_key is not None
+
+
+async def test_default_tier2_linked_to_tier1_is_false(app_session: AsyncSession) -> None:
+    row = await get_ai_settings(app_session)
+    assert row.tier2_linked_to_tier1 is False
+
+
+async def test_update_links_tier2_to_tier1_provider_and_key(app_session: AsyncSession) -> None:
+    encryption_key = get_settings().encryption_key
+    payload = AISettingsUpdate(
+        enabled=True,
+        tier1_provider=AIProviderKind.OPENAI,
+        tier1_model="gpt-5-nano",
+        tier1_api_key="sk-tier1-secret",
+        tier1_base_url="https://tier1.example.com",
+        tier2_enabled=True,
+        tier2_linked_to_tier1=True,
+        # Deliberately different from tier1 - must be ignored/overridden.
+        tier2_provider=AIProviderKind.ANTHROPIC,
+        tier2_model="gpt-5",  # the one field that must stay independent
+        tier2_api_key="sk-tier2-should-be-ignored",
+        tier2_base_url="https://tier2-should-be-ignored.example.com",
+    )
+    row = await update_ai_settings(app_session, payload, encryption_key)
+    assert row.tier2_linked_to_tier1 is True
+    assert row.tier2_provider == AIProviderKind.OPENAI
+    assert row.tier2_base_url == "https://tier1.example.com"
+    assert row.tier2_encrypted_api_key == row.tier1_encrypted_api_key
+    assert row.tier2_model == "gpt-5"  # model selection stays independent
+
+
+async def test_update_linked_tier2_follows_tier1_key_rotation(app_session: AsyncSession) -> None:
+    encryption_key = get_settings().encryption_key
+    first = AISettingsUpdate(
+        enabled=True,
+        tier1_provider=AIProviderKind.OPENAI,
+        tier1_model="gpt-5-nano",
+        tier1_api_key="sk-original",
+        tier2_linked_to_tier1=True,
+        tier2_model="gpt-5",
+    )
+    row = await update_ai_settings(app_session, first, encryption_key)
+    linked_key_after_first_save = row.tier2_encrypted_api_key
+
+    second = AISettingsUpdate(
+        enabled=True,
+        tier1_provider=AIProviderKind.OPENAI,
+        tier1_model="gpt-5-nano",
+        tier1_api_key="sk-rotated",
+        tier2_linked_to_tier1=True,
+        tier2_model="gpt-5",
+    )
+    row = await update_ai_settings(app_session, second, encryption_key)
+    assert row.tier2_encrypted_api_key == row.tier1_encrypted_api_key
+    assert row.tier2_encrypted_api_key != linked_key_after_first_save
+
+
+async def test_update_unlinking_tier2_restores_independent_fields(
+    app_session: AsyncSession,
+) -> None:
+    encryption_key = get_settings().encryption_key
+    linked = AISettingsUpdate(
+        enabled=True,
+        tier1_provider=AIProviderKind.OPENAI,
+        tier1_model="gpt-5-nano",
+        tier1_api_key="sk-tier1",
+        tier2_linked_to_tier1=True,
+        tier2_model="gpt-5",
+    )
+    await update_ai_settings(app_session, linked, encryption_key)
+
+    unlinked = AISettingsUpdate(
+        enabled=True,
+        tier1_provider=AIProviderKind.OPENAI,
+        tier1_model="gpt-5-nano",
+        tier2_linked_to_tier1=False,
+        tier2_provider=AIProviderKind.ANTHROPIC,
+        tier2_model="claude-sonnet-5",
+        tier2_api_key="sk-tier2-independent",
+    )
+    row = await update_ai_settings(app_session, unlinked, encryption_key)
+    assert row.tier2_linked_to_tier1 is False
+    assert row.tier2_provider == AIProviderKind.ANTHROPIC
+    assert row.tier2_encrypted_api_key != row.tier1_encrypted_api_key

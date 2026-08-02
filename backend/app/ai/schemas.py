@@ -20,6 +20,7 @@ class AISettingsRead(BaseModel):
     tier2_model: str | None
     tier2_api_key_set: bool
     tier2_base_url: str | None
+    tier2_linked_to_tier1: bool
     keyframes_per_clip: int
     tier2_suspicion_threshold: float
     feedback_context_count: int
@@ -38,6 +39,10 @@ class AISettingsUpdate(BaseModel):
     tier2_model: str | None = None
     tier2_api_key: str | None = None
     tier2_base_url: str | None = None
+    tier2_linked_to_tier1: bool = False
+    """When true, tier2_provider/tier2_api_key/tier2_base_url are ignored and
+    tier1's resolved values are copied onto tier2 instead - see
+    app.ai.service.update_ai_settings."""
 
     keyframes_per_clip: int = Field(default=4, ge=1, le=12)
     tier2_suspicion_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
@@ -56,6 +61,20 @@ class AIConnectionTestRequest(BaseModel):
 class AIConnectionTestResponse(BaseModel):
     ok: bool
     detail: str | None = None
+
+
+class AIModelListRequest(BaseModel):
+    tier: Literal["tier1", "tier2"]
+    provider: AIProviderKind
+    api_key: str | None = None
+    """Omit to fetch with the already-saved key for this tier, if any."""
+    base_url: str | None = None
+
+
+class AIModelListResponse(BaseModel):
+    ok: bool
+    detail: str | None = None
+    models: list[str] = Field(default_factory=list)
 
 
 class DetectedEntityRead(BaseModel):

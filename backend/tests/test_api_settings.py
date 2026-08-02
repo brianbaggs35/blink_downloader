@@ -431,6 +431,33 @@ async def test_ai_put_omitting_key_leaves_it_set(admin_client: AsyncClient) -> N
     assert body["tier1_api_key_set"] is True  # untouched, not cleared
 
 
+async def test_ai_put_links_tier2_to_tier1_without_echoing_the_key(
+    admin_client: AsyncClient,
+) -> None:
+    response = await admin_client.put(
+        "/api/settings/ai",
+        json={
+            "enabled": True,
+            "tier1_provider": "openai",
+            "tier1_model": "gpt-5-nano",
+            "tier1_api_key": "sk-tier1-secret",
+            "tier2_linked_to_tier1": True,
+            "tier2_model": "gpt-5",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["tier2_linked_to_tier1"] is True
+    assert body["tier2_provider"] == "openai"
+    assert body["tier2_api_key_set"] is True
+    assert body["tier2_model"] == "gpt-5"
+    assert "sk-tier1-secret" not in response.text
+
+    followup = await admin_client.get("/api/settings/ai")
+    assert followup.json()["tier2_linked_to_tier1"] is True
+    assert followup.json()["tier2_provider"] == "openai"
+
+
 async def test_ai_put_rejects_out_of_range_keyframes(admin_client: AsyncClient) -> None:
     response = await admin_client.put(
         "/api/settings/ai", json={"enabled": False, "keyframes_per_clip": 0}
@@ -474,11 +501,32 @@ def _fake_build_provider(
     return FakeConnectionProvider(model, api_key, base_url)
 
 
+class FakeOllamaListProvider:
+    received_base_url: ClassVar[str | None] = None
+    received_api_key: ClassVar[str | None] = None
+    should_fail: ClassVar[bool] = False
+    models: ClassVar[list[str]] = ["llava:latest", "moondream:2b"]
+
+    def __init__(self, model: str, base_url: str, api_key: str | None = None) -> None:
+        del model
+        FakeOllamaListProvider.received_base_url = base_url
+        FakeOllamaListProvider.received_api_key = api_key
+
+    async def list_models(self) -> list[str]:
+        if FakeOllamaListProvider.should_fail:
+            raise AIProviderError("could not list models")
+        return FakeOllamaListProvider.models
+
+
 @pytest.fixture(autouse=True)
 def _reset_fake_connection_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     FakeConnectionProvider.received_api_key = None
     FakeConnectionProvider.should_fail = False
     monkeypatch.setattr("app.api.settings.build_provider", _fake_build_provider)
+    FakeOllamaListProvider.received_base_url = None
+    FakeOllamaListProvider.received_api_key = None
+    FakeOllamaListProvider.should_fail = False
+    monkeypatch.setattr("app.api.settings.OllamaProvider", FakeOllamaListProvider)
 
 
 async def test_ai_test_connection_requires_admin(viewer_client: AsyncClient) -> None:
@@ -595,6 +643,99 @@ async def test_ai_test_analysis_reports_failure_without_a_500(admin_client: Asyn
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is False
+
+
+# --------------------------------------------------------- AI list-models
+
+
+async def test_ai_list_models_requires_admin(viewer_client: AsyncClient) -> None:
+    response = await viewer_client.post(
+        "/api/settings/ai/list-models",
+        json={"tier": "tier1", "provider": "ollama", "api_key": None},
+    )
+    assert response.status_code == 403
+
+
+async def test_ai_list_models_returns_models_for_ollama(admin_client: AsyncClient) -> None:
+    response = await admin_client.post(
+        "/api/settings/ai/list-models",
+        json={"tier": "tier1", "provider": "ollama", "api_key": "unused"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["models"] == ["llava:latest", "moondream:2b"]
+
+
+async def test_ai_list_models_defaults_the_base_url_per_ollama_variant(
+    admin_client: AsyncClient,
+) -> None:
+    await admin_client.post(
+        "/api/settings/ai/list-models",
+        json={"tier": "tier1", "provider": "ollama", "api_key": None},
+    )
+    assert FakeOllamaListProvider.received_base_url == "http://localhost:11434"
+
+    await admin_client.post(
+        "/api/settings/ai/list-models",
+        json={"tier": "tier1", "provider": "ollama_cloud", "api_key": "sk-cloud"},
+    )
+    assert FakeOllamaListProvider.received_base_url == "https://ollama.com"
+    assert FakeOllamaListProvider.received_api_key == "sk-cloud"
+
+
+async def test_ai_list_models_honors_an_explicit_base_url(admin_client: AsyncClient) -> None:
+    await admin_client.post(
+        "/api/settings/ai/list-models",
+        json={
+            "tier": "tier1",
+            "provider": "ollama",
+            "api_key": None,
+            "base_url": "http://ollama-box.local:11434",
+        },
+    )
+    assert FakeOllamaListProvider.received_base_url == "http://ollama-box.local:11434"
+
+
+async def test_ai_list_models_rejects_unsupported_providers(admin_client: AsyncClient) -> None:
+    response = await admin_client.post(
+        "/api/settings/ai/list-models",
+        json={"tier": "tier1", "provider": "openai", "api_key": "sk-x"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is False
+    assert body["models"] == []
+
+
+async def test_ai_list_models_reports_failure_without_a_500(admin_client: AsyncClient) -> None:
+    FakeOllamaListProvider.should_fail = True
+    response = await admin_client.post(
+        "/api/settings/ai/list-models",
+        json={"tier": "tier1", "provider": "ollama", "api_key": None},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is False
+
+
+async def test_ai_list_models_falls_back_to_the_saved_key_when_omitted(
+    admin_client: AsyncClient,
+) -> None:
+    await admin_client.put(
+        "/api/settings/ai",
+        json={
+            "enabled": True,
+            "tier1_provider": "ollama_cloud",
+            "tier1_model": "llava",
+            "tier1_api_key": "sk-saved",
+        },
+    )
+    await admin_client.post(
+        "/api/settings/ai/list-models",
+        json={"tier": "tier1", "provider": "ollama_cloud", "api_key": None},
+    )
+    assert FakeOllamaListProvider.received_api_key == "sk-saved"
 
 
 # ------------------------------------------------------- blink sync tuning

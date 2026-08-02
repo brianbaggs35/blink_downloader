@@ -11,11 +11,20 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.models import AISettings
-from app.ai.providers import AIProviderError, AnalysisRequest, build_provider
+from app.ai.models import AIProviderKind, AISettings
+from app.ai.providers import (
+    DEFAULT_OLLAMA_CLOUD_URL,
+    DEFAULT_OLLAMA_LOCAL_URL,
+    AIProviderError,
+    AnalysisRequest,
+    OllamaProvider,
+    build_provider,
+)
 from app.ai.schemas import (
     AIConnectionTestRequest,
     AIConnectionTestResponse,
+    AIModelListRequest,
+    AIModelListResponse,
     AISettingsRead,
     AISettingsUpdate,
 )
@@ -277,6 +286,7 @@ def _ai_settings_read(row: AISettings) -> AISettingsRead:
         tier2_model=row.tier2_model,
         tier2_api_key_set=bool(row.tier2_encrypted_api_key),
         tier2_base_url=row.tier2_base_url,
+        tier2_linked_to_tier1=row.tier2_linked_to_tier1,
         keyframes_per_clip=row.keyframes_per_clip,
         tier2_suspicion_threshold=row.tier2_suspicion_threshold,
         feedback_context_count=row.feedback_context_count,
@@ -302,15 +312,13 @@ async def update_ai_provider_settings(
     return _ai_settings_read(row)
 
 
-async def _resolve_test_api_key(
-    session: AsyncSession, payload: AIConnectionTestRequest
+async def _resolve_saved_api_key(
+    session: AsyncSession, tier: str, api_key: str | None
 ) -> str | None:
-    if payload.api_key:
-        return payload.api_key
+    if api_key:
+        return api_key
     row = await get_ai_settings(session)
-    encrypted = (
-        row.tier1_encrypted_api_key if payload.tier == "tier1" else row.tier2_encrypted_api_key
-    )
+    encrypted = row.tier1_encrypted_api_key if tier == "tier1" else row.tier2_encrypted_api_key
     return SecretBox(get_settings().encryption_key).decrypt(encrypted) if encrypted else None
 
 
@@ -320,7 +328,7 @@ async def test_ai_connection(
     session: Annotated[AsyncSession, Depends(get_session)],
     _user: Annotated[object, Depends(current_superuser)],
 ) -> AIConnectionTestResponse:
-    api_key = await _resolve_test_api_key(session, payload)
+    api_key = await _resolve_saved_api_key(session, payload.tier, payload.api_key)
     try:
         provider = build_provider(payload.provider, payload.model, api_key, payload.base_url)
         await provider.test_connection()
@@ -348,7 +356,7 @@ async def test_ai_analysis(
     test-connection (reachability/auth only), this also proves the model
     name is valid and its response actually parses, at the cost of a real
     (tiny) inference call."""
-    api_key = await _resolve_test_api_key(session, payload)
+    api_key = await _resolve_saved_api_key(session, payload.tier, payload.api_key)
     try:
         provider = build_provider(payload.provider, payload.model, api_key, payload.base_url)
         result = await provider.analyze(AnalysisRequest(images=[_sample_test_image()]))
@@ -358,3 +366,33 @@ async def test_ai_analysis(
         ok=True,
         detail=f'Model responded: "{result.summary}" (suspicion {result.suspicion_score:.2f}).',
     )
+
+
+_OLLAMA_KINDS = (AIProviderKind.OLLAMA, AIProviderKind.OLLAMA_CLOUD)
+
+
+@router.post("/ai/list-models", response_model=AIModelListResponse)
+async def list_ai_models(
+    payload: AIModelListRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _user: Annotated[object, Depends(current_superuser)],
+) -> AIModelListResponse:
+    """Only Ollama exposes a real "what's actually installed" list - OpenAI/
+    Anthropic/Moondream use the app's static curated picker instead (see
+    frontend's aiProviderCatalog.ts)."""
+    if payload.provider not in _OLLAMA_KINDS:
+        return AIModelListResponse(
+            ok=False, detail="Fetching a model list isn't supported for this provider."
+        )
+    api_key = await _resolve_saved_api_key(session, payload.tier, payload.api_key)
+    default_url = (
+        DEFAULT_OLLAMA_CLOUD_URL
+        if payload.provider is AIProviderKind.OLLAMA_CLOUD
+        else DEFAULT_OLLAMA_LOCAL_URL
+    )
+    provider = OllamaProvider(model="", base_url=payload.base_url or default_url, api_key=api_key)
+    try:
+        models = await provider.list_models()
+    except AIProviderError as exc:
+        return AIModelListResponse(ok=False, detail=str(exc))
+    return AIModelListResponse(ok=True, models=models)
