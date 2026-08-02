@@ -43,7 +43,7 @@ from app.worker.tasks.sync_module import (
 
 class FakeBlinkService:
     next_manifest: ClassVar[Any] = None
-    next_download: ClassVar[bytes] = b"clip-bytes"
+    next_download: ClassVar[bytes] = b"x" * 1024
     next_delete_result: ClassVar[bool] = True
     next_error: ClassVar[Exception | None] = None
     instances: ClassVar[list[FakeBlinkService]] = []
@@ -91,7 +91,7 @@ def _reset_fake_service(monkeypatch: pytest.MonkeyPatch) -> None:
     FakeBlinkService.instances = []
     FakeBlinkService.next_error = None
     FakeBlinkService.next_manifest = None
-    FakeBlinkService.next_download = b"clip-bytes"
+    FakeBlinkService.next_download = b"x" * 1024
     FakeBlinkService.next_delete_result = True
     monkeypatch.setattr("app.sync_module.service.BlinkPyService", FakeBlinkService)
 

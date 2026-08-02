@@ -322,6 +322,12 @@ async def download_local_storage_item(
     finally:
         await service.close()
 
+    if len(data) != item.size_bytes:
+        raise BlinkError(
+            f"Downloaded {len(data)} bytes but the manifest reported {item.size_bytes} - "
+            "discarding a likely-truncated download."
+        )
+
     path = storage.sync_module_clip_path(sync_module.id, item.id, item.recorded_at)
     await storage.write(path, data)
     item.storage_path = str(path)
