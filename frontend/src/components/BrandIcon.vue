@@ -1,33 +1,96 @@
 <script setup lang="ts">
 /**
- * Real per-product brand marks for the two cloud storage integrations that
- * don't have an accurate PrimeIcons equivalent (pi-google/pi-microsoft are
- * generic company "G"/four-square marks, not the actual Drive/OneDrive
- * product icons). Path data from Pictogrammers' Material Design Icons
- * (Apache-2.0, https://github.com/Templarian/MaterialDesign) - see
- * Settings > About > Trademarks for the usual "these are somebody else's
- * trademark" disclaimer that applies to any brand mark, licensed SVG or not.
+ * Real per-product, real-color brand marks for the two cloud storage
+ * integrations that don't have an accurate PrimeIcons equivalent (pi-google/
+ * pi-microsoft are generic company "G"/four-square marks, not the actual
+ * Drive/OneDrive product icons - and both are single-color, which can't
+ * represent either logo's real, multi-color mark anyway).
+ *
+ * Path/color data is redrawn from Wikimedia Commons' "PD-textlogo" SVGs
+ * (google_drive: Google_Drive_icon_(2020).svg; onedrive: the flat
+ * pre-2025-refresh Microsoft_Office_OneDrive_(2019-2025).svg, kept over the
+ * newer gradient-heavy 2025 mark since flat fills stay legible at the small
+ * sizes this renders at and match google_drive's own flat fills - both are
+ * simple enough geometric shapes to be public domain; the Drive/OneDrive
+ * names and marks themselves remain their respective owners' trademarks -
+ * see Settings > About > Trademarks for the usual disclaimer that applies to
+ * any brand mark, public domain shape data or not.
  */
 export type BrandName = "google_drive" | "onedrive";
 
 defineProps<{ name: BrandName }>();
 
-const PATHS: Record<BrandName, string> = {
-  google_drive:
-    "M7.71,3.5L1.15,15L4.58,21L11.13,9.5M9.73,15L6.3,21H19.42L22.85,15M22.28,14L15.42,2H8.58L8.57,2L15.43,14H22.28Z",
-  onedrive:
-    "M18.21 10.29Q19 10.34 19.7 10.68 20.39 11 20.9 11.57 21.41 12.12 21.71 12.83 22 13.54 22 14.34 22 15.18 21.68 15.92 21.36 16.66 20.8 17.21 20.25 17.76 19.5 18.08 18.78 18.41 17.94 18.41H7Q5.97 18.41 5.06 18 4.15 17.61 3.47 16.94 2.79 16.26 2.4 15.35 2 14.44 2 13.41 2 12.59 2.26 11.83 2.5 11.08 3 10.45 3.44 9.82 4.08 9.35 4.72 8.88 5.5 8.63 5.87 8.5 6.21 8.5 6.56 8.43 6.93 8.41H6.94Q7.37 7.75 7.95 7.23 8.5 6.71 9.2 6.34 9.87 6 10.62 5.78 11.37 5.59 12.16 5.59 13.22 5.59 14.2 5.94 15.18 6.29 16 6.91 16.8 7.53 17.37 8.39 17.95 9.26 18.21 10.29M12.16 6.84Q11.05 6.84 10.06 7.3 9.06 7.75 8.36 8.6 8.73 8.7 9.07 8.85 9.4 9 9.73 9.2L13.71 11.58L16 10.62Q16.21 10.53 16.44 10.45 16.67 10.38 16.92 10.33 16.68 9.55 16.21 8.91 15.74 8.27 15.11 7.81 14.5 7.35 13.73 7.1 13 6.84 12.16 6.84M4 15.66L12.27 12.18L9.08 10.26Q8.59 9.97 8.06 9.81 7.5 9.66 6.95 9.66 6.19 9.66 5.5 9.96 4.84 10.26 4.34 10.77 3.84 11.29 3.54 11.97 3.25 12.65 3.25 13.41 3.25 14 3.45 14.59 3.64 15.19 4 15.66M17.94 17.16Q18.41 17.16 18.84 17 19.27 16.86 19.64 16.58L13.61 13L5.03 16.59Q5.47 16.86 5.97 17 6.47 17.16 7 17.16M20.45 15.61Q20.75 15 20.75 14.34 20.75 13.7 20.5 13.17 20.26 12.65 19.85 12.28 19.43 11.91 18.88 11.71 18.32 11.5 17.7 11.5 17.35 11.5 17 11.6 16.66 11.68 16.33 11.81 16 11.93 15.67 12.08 15.35 12.23 15.04 12.37Z",
+interface BrandPath {
+  d: string;
+  fill: string;
+}
+
+const VIEW_BOX: Record<BrandName, string> = {
+  google_drive: "0 0 87.3 78",
+  onedrive: "0 5.5 32 20.5",
+};
+
+const PATHS: Record<BrandName, BrandPath[]> = {
+  google_drive: [
+    {
+      d: "m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z",
+      fill: "#0066da",
+    },
+    {
+      d: "m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z",
+      fill: "#00ac47",
+    },
+    {
+      d: "m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z",
+      fill: "#ea4335",
+    },
+    {
+      d: "m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z",
+      fill: "#00832d",
+    },
+    {
+      d: "m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z",
+      fill: "#2684fc",
+    },
+    {
+      d: "m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z",
+      fill: "#ffba00",
+    },
+  ],
+  onedrive: [
+    {
+      d: "M12.20245,11.19292l.00031-.0011,6.71765,4.02379,4.00293-1.68451.00018.00068A6.4768,6.4768,0,0,1,25.5,13c.14764,0,.29358.0067.43878.01639a10.00075,10.00075,0,0,0-18.041-3.01381C7.932,10.00215,7.9657,10,8,10A7.96073,7.96073,0,0,1,12.20245,11.19292Z",
+      fill: "#0364b8",
+    },
+    {
+      d: "M12.20276,11.19182l-.00031.0011A7.96073,7.96073,0,0,0,8,10c-.0343,0-.06805.00215-.10223.00258A7.99676,7.99676,0,0,0,1.43732,22.57277l5.924-2.49292,2.63342-1.10819,5.86353-2.46746,3.06213-1.28859Z",
+      fill: "#0078d4",
+    },
+    {
+      d: "M25.93878,13.01639C25.79358,13.0067,25.64764,13,25.5,13a6.4768,6.4768,0,0,0-2.57648.53178l-.00018-.00068-4.00293,1.68451,1.16077.69528L23.88611,18.19l1.66009.99438,5.67633,3.40007a6.5002,6.5002,0,0,0-5.28375-9.56805Z",
+      fill: "#1490df",
+    },
+    {
+      d: "M25.5462,19.18437,23.88611,18.19l-3.80493-2.2791-1.16077-.69528L15.85828,16.5042,9.99475,18.97166,7.36133,20.07985l-5.924,2.49292A7.98889,7.98889,0,0,0,8,26H25.5a6.49837,6.49837,0,0,0,5.72253-3.41556Z",
+      fill: "#28a8ea",
+    },
+  ],
 };
 </script>
 
 <template>
   <svg
     class="brand-icon"
-    viewBox="0 0 24 24"
+    :viewBox="VIEW_BOX[name]"
     aria-hidden="true"
     focusable="false"
   >
-    <path :d="PATHS[name]" />
+    <path
+      v-for="path in PATHS[name]"
+      :key="path.d"
+      :d="path.d"
+      :fill="path.fill"
+    />
   </svg>
 </template>
 
@@ -37,7 +100,6 @@ const PATHS: Record<BrandName, string> = {
   height: 1em;
   display: inline-block;
   vertical-align: -0.125em;
-  fill: currentcolor;
   flex-shrink: 0;
 }
 </style>
