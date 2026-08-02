@@ -299,10 +299,10 @@ async function confirmEnroll(): Promise<void> {
   gap: 6px;
   max-height: 240px;
   overflow-y: auto;
-  padding-right: 4px;
   border: 1px solid var(--p-surface-200);
   border-radius: 10px;
   padding: 8px;
+  padding-right: 4px;
 }
 
 .blink-dark .clip-list {

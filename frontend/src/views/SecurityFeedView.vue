@@ -154,7 +154,10 @@ onUnmounted(() => {
 });
 
 function lastUpdatedLabel(camera: CameraRead): string {
-  void clock.value;
+  // Deliberately-unused read: the reactive dependency that makes the "X
+  // minutes ago" label recompute every clock tick, not just when
+  // tileUpdatedAt itself changes.
+  void clock.value; // NOSONAR
   const updated = tileUpdatedAt[camera.id];
   return updated ? formatRelativeTime(updated) : "Loading…";
 }
