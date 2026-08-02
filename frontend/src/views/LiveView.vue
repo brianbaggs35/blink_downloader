@@ -213,7 +213,10 @@ onUnmounted(() => {
 });
 
 function updatedLabel(slot: Slot): string {
-  void clock.value;
+  // Deliberately-unused read: the reactive dependency that makes the "X
+  // minutes ago" label recompute every clock tick, not just when
+  // slot.updatedAt itself changes.
+  void clock.value; // NOSONAR
   return slot.updatedAt ? formatRelativeTime(slot.updatedAt) : "Not loaded yet";
 }
 </script>

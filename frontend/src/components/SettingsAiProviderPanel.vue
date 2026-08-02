@@ -485,10 +485,12 @@ const tier2KeyPlaceholder = computed(() =>
         <label
           v-if="tier1.apiKeySet"
           class="clear-key"
+          for="tier1-clear-key"
         >
           <Checkbox
             v-model="tier1.clearApiKey"
             binary
+            input-id="tier1-clear-key"
             data-testid="tier1-clear-key"
           />
           Remove the saved key on next save
@@ -550,10 +552,14 @@ const tier2KeyPlaceholder = computed(() =>
         </div>
 
         <template v-if="tier2Enabled">
-          <label class="toggle-row link-tier1-row">
+          <label
+            class="toggle-row link-tier1-row"
+            for="tier2-link-to-tier1"
+          >
             <ToggleSwitch
               v-model="tier2LinkedToTier1"
               :disabled="!tier1.provider"
+              input-id="tier2-link-to-tier1"
               data-testid="tier2-link-to-tier1"
             />
             <div>
@@ -664,10 +670,12 @@ const tier2KeyPlaceholder = computed(() =>
           <label
             v-if="!tier2LinkedToTier1 && tier2.apiKeySet"
             class="clear-key"
+            for="tier2-clear-key"
           >
             <Checkbox
               v-model="tier2.clearApiKey"
               binary
+              input-id="tier2-clear-key"
               data-testid="tier2-clear-key"
             />
             Remove the saved key on next save
