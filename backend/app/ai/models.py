@@ -29,6 +29,9 @@ from app.db import Base, str_enum
 
 SINGLETON_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
+_CLIPS_ID_FK = "clips.id"
+_ANALYSES_ID_FK = "analyses.id"
+
 
 class AIProviderKind(StrEnum):
     OPENAI = "openai"
@@ -121,7 +124,7 @@ class Analysis(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     clip_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("clips.id", ondelete="cascade"), nullable=False
+        UUID(as_uuid=True), ForeignKey(_CLIPS_ID_FK, ondelete="cascade"), nullable=False
     )
     is_current: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
 
@@ -166,10 +169,10 @@ class AIUsage(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     analysis_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("analyses.id", ondelete="set null")
+        UUID(as_uuid=True), ForeignKey(_ANALYSES_ID_FK, ondelete="set null")
     )
     clip_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("clips.id", ondelete="cascade"), nullable=False
+        UUID(as_uuid=True), ForeignKey(_CLIPS_ID_FK, ondelete="cascade"), nullable=False
     )
     tier: Mapped[AnalysisTier] = mapped_column(
         str_enum(AnalysisTier, "analysis_tier"), nullable=False
@@ -229,7 +232,7 @@ class Feedback(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     analysis_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("analyses.id", ondelete="cascade"), nullable=False
+        UUID(as_uuid=True), ForeignKey(_ANALYSES_ID_FK, ondelete="cascade"), nullable=False
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="cascade"), nullable=False
@@ -255,10 +258,10 @@ class Event(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     clip_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("clips.id", ondelete="cascade"), nullable=False
+        UUID(as_uuid=True), ForeignKey(_CLIPS_ID_FK, ondelete="cascade"), nullable=False
     )
     analysis_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("analyses.id", ondelete="set null")
+        UUID(as_uuid=True), ForeignKey(_ANALYSES_ID_FK, ondelete="set null")
     )
     camera_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("cameras.id", ondelete="cascade"), nullable=False
