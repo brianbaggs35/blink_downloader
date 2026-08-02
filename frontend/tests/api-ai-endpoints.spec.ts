@@ -11,6 +11,7 @@ import {
   getAlertSettings,
   getClipAnalysis,
   getVehicle,
+  listAiModels,
   listFeedback,
   listProximityEvents,
   listUsers,
@@ -117,6 +118,7 @@ describe("AI settings endpoints", () => {
       tier2_model: null,
       tier2_api_key: null,
       tier2_base_url: null,
+      tier2_linked_to_tier1: false,
       keyframes_per_clip: 4,
       tier2_suspicion_threshold: 0.5,
       feedback_context_count: 5,
@@ -147,6 +149,17 @@ describe("AI settings endpoints", () => {
       base_url: null,
     });
     expect(mock.mock.calls[0]?.[0]).toBe("/api/settings/ai/test-analysis");
+  });
+
+  it("listAiModels posts the tier/provider under test", async () => {
+    const mock = capture(jsonResponse({ ok: true, models: ["llava:latest"] }));
+    await listAiModels({
+      tier: "tier1",
+      provider: "ollama",
+      api_key: null,
+      base_url: null,
+    });
+    expect(mock.mock.calls[0]?.[0]).toBe("/api/settings/ai/list-models");
   });
 });
 

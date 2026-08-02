@@ -1,4 +1,5 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
+import AutoComplete from "primevue/autocomplete";
 import Checkbox from "primevue/checkbox";
 import InputNumber from "primevue/inputnumber";
 import Select from "primevue/select";
@@ -15,6 +16,7 @@ vi.mock("@/api", async (importOriginal) => ({
   updateAiSettings: vi.fn(),
   testAiConnection: vi.fn(),
   testAiAnalysis: vi.fn(),
+  listAiModels: vi.fn(),
 }));
 
 const toastAdd = vi.fn();
@@ -22,12 +24,19 @@ vi.mock("primevue/usetoast", () => ({
   useToast: () => ({ add: toastAdd }),
 }));
 
-import { getAiSettings, testAiAnalysis, testAiConnection, updateAiSettings } from "@/api";
+import {
+  getAiSettings,
+  listAiModels,
+  testAiAnalysis,
+  testAiConnection,
+  updateAiSettings,
+} from "@/api";
 
 const mockedGet = vi.mocked(getAiSettings);
 const mockedUpdate = vi.mocked(updateAiSettings);
 const mockedTest = vi.mocked(testAiConnection);
 const mockedTestAnalysis = vi.mocked(testAiAnalysis);
+const mockedListModels = vi.mocked(listAiModels);
 
 const baseSettings = {
   enabled: true,
@@ -40,6 +49,7 @@ const baseSettings = {
   tier2_model: "claude-haiku-4-5",
   tier2_api_key_set: false,
   tier2_base_url: "https://custom.example.com",
+  tier2_linked_to_tier1: false,
   keyframes_per_clip: 4,
   tier2_suspicion_threshold: 0.5,
   feedback_context_count: 5,
@@ -56,6 +66,7 @@ const emptySettings = {
   tier2_model: null,
   tier2_api_key_set: false,
   tier2_base_url: null,
+  tier2_linked_to_tier1: false,
   keyframes_per_clip: 4,
   tier2_suspicion_threshold: 0.5,
   feedback_context_count: 5,
@@ -400,15 +411,13 @@ describe("SettingsAiProviderPanel field edits", () => {
     mockedGet.mockResolvedValue(baseSettings);
   });
 
-  it("edits tier1 model/base-url and tier2 model/base-url/provider/key, saving all of it", async () => {
+  it("edits tier1/tier2 model, provider, and key, saving all of it - base URL stays null for cloud providers", async () => {
     mockedUpdate.mockResolvedValue(baseSettings);
     const wrapper = mountPanel();
     await flushPromises();
 
     await wrapper.find('[data-testid="tier1-model"]').setValue("gpt-4o");
-    await wrapper.find('[data-testid="tier1-base-url"]').setValue("https://tier1.example.com");
     await wrapper.find('[data-testid="tier2-model"]').setValue("claude-opus-5");
-    await wrapper.find('[data-testid="tier2-base-url"]').setValue("https://tier2.example.com");
     await wrapper.find('[data-testid="tier2-api-key"] input').setValue("tier2-fresh-key");
 
     const selects = wrapper.findAllComponents(Select);
@@ -421,12 +430,46 @@ describe("SettingsAiProviderPanel field edits", () => {
     expect(mockedUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
         tier1_model: "gpt-4o",
-        tier1_base_url: "https://tier1.example.com",
+        tier1_base_url: null, // openai (tier1's provider here) is cloud
         tier2_model: "claude-opus-5",
-        tier2_base_url: "https://tier2.example.com",
+        tier2_base_url: null, // moondream_cloud is cloud too
         tier2_provider: "moondream_cloud",
         tier2_api_key: "tier2-fresh-key",
       }),
+    );
+  });
+
+  it("shows and saves a base URL for self-hosted providers, and clears it when switching to a cloud provider", async () => {
+    mockedUpdate.mockResolvedValue(baseSettings);
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    const selects = wrapper.findAllComponents(Select);
+    await selects[0]!.vm.$emit("update:modelValue", "ollama");
+    await selects[1]!.vm.$emit("update:modelValue", "moondream");
+    await flushPromises();
+
+    await wrapper.find('[data-testid="tier1-base-url"]').setValue("https://tier1.example.com");
+    await wrapper.find('[data-testid="tier2-base-url"]').setValue("https://tier2.example.com");
+
+    await wrapper.find('[data-testid="ai-provider-form"]').trigger("submit.prevent");
+    await flushPromises();
+    expect(mockedUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tier1_base_url: "https://tier1.example.com",
+        tier2_base_url: "https://tier2.example.com",
+      }),
+    );
+
+    // Switching to a cloud provider hides the field and drops its value.
+    await selects[0]!.vm.$emit("update:modelValue", "openai");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="tier1-base-url"]').exists()).toBe(false);
+
+    await wrapper.find('[data-testid="ai-provider-form"]').trigger("submit.prevent");
+    await flushPromises();
+    expect(mockedUpdate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tier1_base_url: null }),
     );
   });
 
@@ -473,6 +516,256 @@ describe("SettingsAiProviderPanel field edits", () => {
         tier2_suspicion_threshold: 0.75,
         feedback_context_count: 10,
       }),
+    );
+  });
+});
+
+describe("SettingsAiProviderPanel tier2 linked to tier1", () => {
+  it("loads the linked flag and disables the toggle without a tier1 provider", async () => {
+    mockedGet.mockResolvedValue({ ...emptySettings, tier2_linked_to_tier1: true });
+    const wrapper = mountPanel();
+    await flushPromises();
+    const toggle = byTestId(wrapper, ToggleSwitch, "tier2-link-to-tier1");
+    expect(toggle.props("modelValue")).toBe(true);
+    expect(toggle.props("disabled")).toBe(true);
+  });
+
+  it("hides tier2's own provider/key/base-url fields and shows a status note when linked", async () => {
+    mockedGet.mockResolvedValue({ ...baseSettings, tier2_linked_to_tier1: true });
+    const wrapper = mountPanel();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="tier2-provider"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="tier2-api-key"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="tier2-linked-note"]').text()).toContain("OpenAI");
+  });
+
+  it("saves tier2_linked_to_tier1 and force-unlinks when tier1's provider is cleared", async () => {
+    mockedUpdate.mockResolvedValue(baseSettings);
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    await byTestId(wrapper, ToggleSwitch, "tier2-link-to-tier1").vm.$emit(
+      "update:modelValue",
+      true,
+    );
+    await flushPromises();
+    await wrapper.find('[data-testid="ai-provider-form"]').trigger("submit.prevent");
+    await flushPromises();
+    expect(mockedUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ tier2_linked_to_tier1: true }),
+    );
+
+    const selects = wrapper.findAllComponents(Select);
+    await selects[0]!.vm.$emit("update:modelValue", null);
+    await flushPromises();
+    expect(byTestId(wrapper, ToggleSwitch, "tier2-link-to-tier1").props("modelValue")).toBe(false);
+  });
+
+  it("routes tier2's connection test through tier1's live credentials when linked", async () => {
+    mockedGet.mockResolvedValue({ ...baseSettings, tier2_linked_to_tier1: true });
+    mockedTest.mockResolvedValue({ ok: true, detail: "Connected." });
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    await wrapper.find('[data-testid="tier2-test"]').trigger("click");
+    await flushPromises();
+    expect(mockedTest).toHaveBeenCalledWith(
+      expect.objectContaining({ tier: "tier1", provider: "openai" }),
+    );
+  });
+});
+
+describe("SettingsAiProviderPanel model suggestions", () => {
+  it("filters tier1 model suggestions from the static catalog via the complete event", async () => {
+    mockedGet.mockResolvedValue(baseSettings);
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    const autocompletes = wrapper.findAllComponents(AutoComplete);
+    await autocompletes[0]!.vm.$emit("complete", { query: "gpt-5" });
+    await flushPromises();
+    const suggestions = autocompletes[0]!.props("suggestions") as string[];
+    expect(suggestions).toContain("gpt-5-nano");
+    expect(suggestions).not.toContain("claude-opus-5");
+  });
+
+  it("returns no suggestions when no provider is chosen yet", async () => {
+    mockedGet.mockResolvedValue(emptySettings);
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    const autocompletes = wrapper.findAllComponents(AutoComplete);
+    await autocompletes[0]!.vm.$emit("complete", { query: "" });
+    await flushPromises();
+    expect(autocompletes[0]!.props("suggestions")).toEqual([]);
+  });
+
+  it("filters tier2's suggestions from tier1's provider when linked", async () => {
+    mockedGet.mockResolvedValue({ ...baseSettings, tier2_linked_to_tier1: true });
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    const autocompletes = wrapper.findAllComponents(AutoComplete);
+    await autocompletes[1]!.vm.$emit("complete", { query: "" });
+    await flushPromises();
+    // tier2 is linked, so its suggestions come from tier1's provider (openai), not anthropic
+    expect(autocompletes[1]!.props("suggestions")).toEqual(
+      expect.arrayContaining(["gpt-4o", "gpt-5"]),
+    );
+  });
+});
+
+describe("SettingsAiProviderPanel fetch models (Ollama)", () => {
+  it("only shows the fetch-models button for ollama-family providers", async () => {
+    mockedGet.mockResolvedValue(baseSettings);
+    const wrapper = mountPanel();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="tier1-fetch-models"]').exists()).toBe(false);
+
+    const selects = wrapper.findAllComponents(Select);
+    await selects[0]!.vm.$emit("update:modelValue", "ollama");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="tier1-fetch-models"]').exists()).toBe(true);
+  });
+
+  it("fetches models and feeds them into the AutoComplete suggestions, overriding the static list", async () => {
+    mockedGet.mockResolvedValue({ ...baseSettings, tier1_provider: "ollama" as const });
+    mockedListModels.mockResolvedValue({ ok: true, models: ["llava:latest", "custom-model"] });
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    await wrapper.find('[data-testid="tier1-fetch-models"]').trigger("click");
+    await flushPromises();
+    expect(mockedListModels).toHaveBeenCalledWith(
+      expect.objectContaining({ tier: "tier1", provider: "ollama" }),
+    );
+
+    const autocompletes = wrapper.findAllComponents(AutoComplete);
+    await autocompletes[0]!.vm.$emit("complete", { query: "" });
+    await flushPromises();
+    expect(autocompletes[0]!.props("suggestions")).toEqual(["llava:latest", "custom-model"]);
+  });
+
+  it("shows the server's error detail when fetching models fails", async () => {
+    mockedGet.mockResolvedValue({ ...baseSettings, tier1_provider: "ollama" as const });
+    mockedListModels.mockResolvedValue({ ok: false, detail: "Could not reach Ollama." });
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    await wrapper.find('[data-testid="tier1-fetch-models"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="tier1-fetch-models-error"]').text()).toBe(
+      "Could not reach Ollama.",
+    );
+  });
+
+  it("falls back to a generic error for a non-API failure", async () => {
+    mockedGet.mockResolvedValue({ ...baseSettings, tier1_provider: "ollama" as const });
+    mockedListModels.mockRejectedValue(new TypeError("network down"));
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    await wrapper.find('[data-testid="tier1-fetch-models"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="tier1-fetch-models-error"]').text()).toBe(
+      "Could not fetch models.",
+    );
+  });
+
+  it("surfaces an ApiError's message when the fetch call itself throws", async () => {
+    mockedGet.mockResolvedValue({ ...baseSettings, tier1_provider: "ollama" as const });
+    mockedListModels.mockRejectedValue(new ApiError(500, "Server exploded"));
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    await wrapper.find('[data-testid="tier1-fetch-models"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="tier1-fetch-models-error"]').text()).toBe(
+      "Server exploded",
+    );
+  });
+
+  it("falls back to a generic detail when the server omits one on failure", async () => {
+    mockedGet.mockResolvedValue({ ...baseSettings, tier1_provider: "ollama" as const });
+    mockedListModels.mockResolvedValue({ ok: false });
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    await wrapper.find('[data-testid="tier1-fetch-models"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="tier1-fetch-models-error"]').text()).toBe(
+      "Could not fetch models.",
+    );
+  });
+
+  it("treats a missing models array on success as empty", async () => {
+    mockedGet.mockResolvedValue({ ...baseSettings, tier1_provider: "ollama" as const });
+    mockedListModels.mockResolvedValue({ ok: true });
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    await wrapper.find('[data-testid="tier1-fetch-models"]').trigger("click");
+    await flushPromises();
+    const autocompletes = wrapper.findAllComponents(AutoComplete);
+    await autocompletes[0]!.vm.$emit("complete", { query: "" });
+    await flushPromises();
+    expect(autocompletes[0]!.props("suggestions")).toEqual([]);
+  });
+
+  it("fetches tier2 models using tier1's credentials when linked", async () => {
+    mockedGet.mockResolvedValue({
+      ...baseSettings,
+      tier1_provider: "ollama" as const,
+      tier2_linked_to_tier1: true,
+    });
+    mockedListModels.mockResolvedValue({ ok: true, models: ["llava:latest"] });
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="tier2-fetch-models"]').exists()).toBe(true);
+    await wrapper.find('[data-testid="tier2-fetch-models"]').trigger("click");
+    await flushPromises();
+    expect(mockedListModels).toHaveBeenCalledWith(
+      expect.objectContaining({ tier: "tier1", provider: "ollama" }),
+    );
+  });
+
+  it("shows tier2's own fetch-models error independently of tier1's", async () => {
+    mockedGet.mockResolvedValue({
+      ...baseSettings,
+      tier1_provider: "ollama" as const,
+      tier2_provider: "ollama_cloud" as const,
+    });
+    mockedListModels.mockResolvedValue({ ok: false, detail: "Tier 2 fetch failed." });
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    await wrapper.find('[data-testid="tier2-fetch-models"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="tier2-fetch-models-error"]').text()).toBe(
+      "Tier 2 fetch failed.",
+    );
+    expect(wrapper.find('[data-testid="tier1-fetch-models-error"]').exists()).toBe(false);
+  });
+
+  it("resets any fetched models when the provider changes", async () => {
+    mockedGet.mockResolvedValue({ ...baseSettings, tier1_provider: "ollama" as const });
+    mockedListModels.mockResolvedValue({ ok: true, models: ["llava:latest"] });
+    const wrapper = mountPanel();
+    await flushPromises();
+    await wrapper.find('[data-testid="tier1-fetch-models"]').trigger("click");
+    await flushPromises();
+
+    const selects = wrapper.findAllComponents(Select);
+    await selects[0]!.vm.$emit("update:modelValue", "moondream");
+    await flushPromises();
+
+    const autocompletes = wrapper.findAllComponents(AutoComplete);
+    await autocompletes[0]!.vm.$emit("complete", { query: "" });
+    await flushPromises();
+    // Falls back to moondream's static catalog, not the stale ollama fetch.
+    expect(autocompletes[0]!.props("suggestions")).toEqual(
+      expect.arrayContaining(["moondream2"]),
     );
   });
 });
