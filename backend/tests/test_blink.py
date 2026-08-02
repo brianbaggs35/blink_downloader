@@ -823,9 +823,7 @@ async def test_download_local_storage_clip_raises_after_exhausting_retries(
     service, _auth, _blink = _make_service()
     never_ready = AsyncMock()
     never_ready.status = 404
-    monkeypatch.setattr(
-        "app.blink.service.api.http_get", AsyncMock(return_value=never_ready)
-    )
+    monkeypatch.setattr("app.blink.service.api.http_get", AsyncMock(return_value=never_ready))
     monkeypatch.setattr("app.blink.service.asyncio.sleep", AsyncMock())
     with pytest.raises(BlinkError):
         await service.download_local_storage_clip("10", "sync-1", "manifest-1", 42)
@@ -857,9 +855,7 @@ async def test_delete_local_storage_clip_retries_then_succeeds(
     service, _auth, _blink = _make_service()
     busy = Mock(status=500)
     ok = Mock(status=200)
-    monkeypatch.setattr(
-        "app.blink.service.api.http_post", AsyncMock(side_effect=[busy, ok])
-    )
+    monkeypatch.setattr("app.blink.service.api.http_post", AsyncMock(side_effect=[busy, ok]))
     monkeypatch.setattr("app.blink.service.asyncio.sleep", AsyncMock())
     assert await service.delete_local_storage_clip("10", "sync-1", "manifest-1", 42) is True
 
