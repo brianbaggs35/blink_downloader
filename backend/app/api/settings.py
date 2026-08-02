@@ -371,7 +371,7 @@ async def test_ai_analysis(
 _OLLAMA_KINDS = (AIProviderKind.OLLAMA, AIProviderKind.OLLAMA_CLOUD)
 
 
-@router.post("/ai/list-models", response_model=AIModelListResponse)
+@router.post("/ai/list-models")
 async def list_ai_models(
     payload: AIModelListRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
