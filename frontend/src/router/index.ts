@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
 
 import { authGuard } from "./guards";
+import { recordPreviousRoute } from "@/composables/useBackNavigation";
 import AppShell from "@/layouts/AppShell.vue";
 import AiUsageView from "@/views/AiUsageView.vue";
 import AiView from "@/views/AiView.vue";
@@ -66,3 +67,4 @@ export const router = createRouter({
 });
 
 router.beforeEach(authGuard);
+router.afterEach(recordPreviousRoute);

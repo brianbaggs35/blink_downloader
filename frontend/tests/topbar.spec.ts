@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createMemoryHistory, createRouter } from "vue-router";
 
 import TopBar from "@/components/TopBar.vue";
+import { recordPreviousRoute, useBackNavigation } from "@/composables/useBackNavigation";
 import { useMobileNav } from "@/composables/useMobileNav";
 import { useAuthStore } from "@/stores/auth";
 import { fakeUser, makePinia, makeRouter, mountGlobal } from "./helpers";
@@ -19,6 +20,7 @@ import { logout } from "@/api";
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(logout).mockResolvedValue(undefined);
+  useBackNavigation().previousRoute.value = null;
 });
 
 async function mountBar(path = "/status") {
@@ -79,5 +81,34 @@ describe("TopBar", () => {
     await wrapper.find('[data-testid="mobile-nav-toggle"]').trigger("click");
     expect(useMobileNav().isOpen.value).toBe(true);
     useMobileNav().close();
+  });
+
+  describe("back button", () => {
+    it("stays hidden on a non-Settings route even with a previous route recorded", async () => {
+      recordPreviousRoute(
+        { name: "settings", matched: [{}] } as never,
+        { name: "vehicles", matched: [{}] } as never,
+      );
+      const { wrapper } = await mountBar("/status");
+      expect(wrapper.find('[data-testid="topbar-back"]').exists()).toBe(false);
+    });
+
+    it("stays hidden on Settings when there's no previous route to return to", async () => {
+      const { wrapper } = await mountBar("/settings");
+      expect(wrapper.find('[data-testid="topbar-back"]').exists()).toBe(false);
+    });
+
+    it("shows on Settings once a previous route is recorded, and navigates back to it", async () => {
+      recordPreviousRoute(
+        { name: "settings", matched: [{}] } as never,
+        { name: "vehicles", matched: [{}] } as never,
+      );
+      const { wrapper, router } = await mountBar("/settings");
+      const back = wrapper.find('[data-testid="topbar-back"]');
+      expect(back.exists()).toBe(true);
+      await back.trigger("click");
+      await flushPromises();
+      expect(router.currentRoute.value.name).toBe("vehicles");
+    });
   });
 });
