@@ -586,6 +586,8 @@ describe("SettingsAiProviderPanel model suggestions", () => {
     await flushPromises();
     const suggestions = autocompletes[0]!.props("suggestions") as string[];
     expect(suggestions).toContain("gpt-5-nano");
+    expect(suggestions).toContain("gpt-5.4-mini");
+    expect(suggestions).toContain("gpt-5.4-nano");
     expect(suggestions).not.toContain("claude-opus-5");
   });
 
