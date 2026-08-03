@@ -46,6 +46,7 @@ function summary(overrides: Partial<StorageSummaryResponse> = {}): StorageSummar
     total_clips: 0,
     total_bytes: 0,
     local_quota_bytes: null,
+    connected_backends: ["local"],
     ...overrides,
   };
 }
@@ -119,7 +120,7 @@ describe("StorageView overview", () => {
 });
 
 describe("StorageView per-backend cards", () => {
-  it("shows clip count and size for each backend, defaulting to zero when absent", async () => {
+  it("shows clip count and size for each connected backend, defaulting to zero when absent", async () => {
     mockedSummary.mockResolvedValue(
       summary({
         by_backend: [{ backend: "s3", clip_count: 3, total_bytes: 2048 }],
@@ -127,6 +128,7 @@ describe("StorageView per-backend cards", () => {
         total_bytes: 2048,
       }),
     );
+    mockedIntegrationSettings.mockResolvedValue(connectedIntegrationSettings());
     const wrapper = await mountView();
     expect(wrapper.find('[data-testid="backend-card-s3"]').text()).toContain("3");
     expect(wrapper.find('[data-testid="backend-card-s3"]').text()).toContain("2.0 KB");
@@ -135,8 +137,9 @@ describe("StorageView per-backend cards", () => {
     expect(wrapper.find('[data-testid="backend-card-onedrive"]').text()).toContain("0");
   });
 
-  it("labels every backend card", async () => {
+  it("labels every connected backend card", async () => {
     mockedSummary.mockResolvedValue(summary());
+    mockedIntegrationSettings.mockResolvedValue(connectedIntegrationSettings());
     const wrapper = await mountView();
     expect(wrapper.find('[data-testid="backend-card-local"]').text()).toContain("Local disk");
     expect(wrapper.find('[data-testid="backend-card-s3"]').text()).toContain("Amazon S3");
@@ -149,22 +152,21 @@ describe("StorageView per-backend cards", () => {
   });
 });
 
-describe("StorageView admin-only connection status", () => {
-  it("shows connected/not-connected tags and a connect action for an admin", async () => {
+describe("StorageView connected-only grid", () => {
+  it("shows only local plus a connected provider for an admin, and a hint about the rest", async () => {
     mockedSummary.mockResolvedValue(summary());
     mockedIntegrationSettings.mockResolvedValue(
       fakeStorageIntegrationSettings({ s3_enabled: true, s3_credentials_set: true }),
     );
     const wrapper = await mountView();
-    expect(wrapper.find('[data-testid="backend-status-s3"]').text()).toBe("Connected");
-    expect(wrapper.find('[data-testid="backend-status-google_drive"]').text()).toBe(
-      "Not connected",
-    );
-    expect(wrapper.find('[data-testid="backend-connect-google_drive"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="backend-connect-s3"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="backend-card-local"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="backend-card-s3"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="backend-card-google_drive"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="backend-card-onedrive"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="storage-hidden-providers-hint"]').exists()).toBe(true);
   });
 
-  it("treats an enabled-but-not-yet-authorized provider as not connected", async () => {
+  it("treats an enabled-but-not-yet-authorized provider as not connected, hiding its card", async () => {
     mockedSummary.mockResolvedValue(summary());
     mockedIntegrationSettings.mockResolvedValue(
       fakeStorageIntegrationSettings({
@@ -175,20 +177,44 @@ describe("StorageView admin-only connection status", () => {
       }),
     );
     const wrapper = await mountView();
-    expect(wrapper.find('[data-testid="backend-status-google_drive"]').text()).toBe(
-      "Not connected",
-    );
-    expect(wrapper.find('[data-testid="backend-status-onedrive"]').text()).toBe("Not connected");
+    expect(wrapper.find('[data-testid="backend-card-google_drive"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="backend-card-onedrive"]').exists()).toBe(false);
   });
 
-  it("does not request integration or storage settings, or show connection chrome, for a viewer", async () => {
+  it("shows every connected provider once none are hidden, without the connect-more hint", async () => {
+    mockedSummary.mockResolvedValue(summary());
+    mockedIntegrationSettings.mockResolvedValue(connectedIntegrationSettings());
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="backend-card-s3"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="backend-card-google_drive"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="backend-card-onedrive"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="storage-hidden-providers-hint"]').exists()).toBe(false);
+  });
+
+  it("shows only local for a viewer when no cloud backend is connected, without requesting admin-only settings", async () => {
     mockedSummary.mockResolvedValue(summary());
     const wrapper = await mountView(false);
     expect(mockedIntegrationSettings).not.toHaveBeenCalled();
     expect(mockedStorageSettings).not.toHaveBeenCalled();
-    expect(wrapper.find('[data-testid="backend-status-s3"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="backend-connect-s3"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="backend-card-local"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="backend-card-s3"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="auto-archive-summary"]').exists()).toBe(false);
+    // The hint is a jumping-off point to an admin-only page, so it's admin-only too.
+    expect(wrapper.find('[data-testid="storage-hidden-providers-hint"]').exists()).toBe(false);
+  });
+
+  it("shows a connected backend's real usage numbers to a viewer via the summary endpoint alone", async () => {
+    mockedSummary.mockResolvedValue(
+      summary({
+        by_backend: [{ backend: "s3", clip_count: 4, total_bytes: 4096 }],
+        connected_backends: ["local", "s3"],
+      }),
+    );
+    const wrapper = await mountView(false);
+    const card = wrapper.find('[data-testid="backend-card-s3"]');
+    expect(card.exists()).toBe(true);
+    expect(card.text()).toContain("4");
+    expect(card.text()).toContain("4.0 KB");
   });
 });
 
@@ -557,16 +583,15 @@ function connectedIntegrationSettings(
 }
 
 describe("StorageView cloud folder browsing", () => {
-  it("shows Browse only for a connected cloud backend, Connect otherwise", async () => {
+  it("shows no card - and no Browse action - for a cloud backend that isn't connected", async () => {
     mockedSummary.mockResolvedValue(summary());
     const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="backend-card-s3"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="backend-browse-s3"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="backend-connect-s3"]').exists()).toBe(true);
 
     mockedIntegrationSettings.mockResolvedValue(connectedIntegrationSettings());
     const connectedWrapper = await mountView();
     expect(connectedWrapper.find('[data-testid="backend-browse-s3"]').exists()).toBe(true);
-    expect(connectedWrapper.find('[data-testid="backend-connect-s3"]').exists()).toBe(false);
   });
 
   it("selects an S3 folder and saves the prefix, preserving every other setting", async () => {
@@ -904,7 +929,7 @@ describe("StorageView auto-archive editing", () => {
 });
 
 describe("StorageView navigation", () => {
-  it("navigates to Integrations from a backend's Connect action", async () => {
+  it("navigates to Integrations from the hidden-providers hint", async () => {
     mockedSummary.mockResolvedValue(summary());
     const pinia = makePinia();
     useAuthStore().user = { ...fakeUser, is_superuser: true };
@@ -912,7 +937,7 @@ describe("StorageView navigation", () => {
     const pushSpy = vi.spyOn(router, "push");
     const wrapper = mount(StorageView, { global: mountGlobal(pinia, router) });
     await flushPromises();
-    await wrapper.find('[data-testid="backend-connect-s3"]').trigger("click");
+    await wrapper.find('[data-testid="storage-go-to-integrations-hint"]').trigger("click");
     expect(pushSpy).toHaveBeenCalledWith({ name: "integrations" });
   });
 

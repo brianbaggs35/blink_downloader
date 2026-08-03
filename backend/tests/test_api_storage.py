@@ -137,6 +137,44 @@ async def test_summary_reports_the_configured_local_quota(admin_client: AsyncCli
     assert response.json()["local_quota_bytes"] == quota
 
 
+async def test_summary_connected_backends_always_includes_local(
+    admin_client: AsyncClient,
+) -> None:
+    response = await admin_client.get("/api/storage/summary")
+    assert response.json()["connected_backends"] == ["local"]
+
+
+async def test_summary_connected_backends_includes_a_configured_cloud_backend(
+    monkeypatch: pytest.MonkeyPatch, admin_client: AsyncClient
+) -> None:
+    class _FakeS3:
+        async def test_connection(self) -> None:
+            pass
+
+    monkeypatch.setattr("app.api.storage.build_s3_client", lambda *_a, **_kw: _FakeS3())
+    response = await admin_client.get("/api/storage/summary")
+    assert set(response.json()["connected_backends"]) == {"local", "s3"}
+
+
+async def test_summary_connected_backends_is_accurate_for_a_non_admin_viewer(
+    monkeypatch: pytest.MonkeyPatch, viewer_client: AsyncClient
+) -> None:
+    """The credential-bearing /settings/storage-integrations endpoint is
+    admin-only, but a viewer must still be able to tell a connected backend
+    apart from a merely-hypothetical one - this endpoint is their only
+    source for that."""
+
+    class _FakeDrive:
+        async def test_connection(self) -> None:
+            pass
+
+    monkeypatch.setattr(
+        "app.api.storage.build_google_drive_client", lambda *_a, **_kw: _FakeDrive()
+    )
+    response = await viewer_client.get("/api/storage/summary")
+    assert set(response.json()["connected_backends"]) == {"local", "google_drive"}
+
+
 # ------------------------------------------------------------------- archive
 
 
