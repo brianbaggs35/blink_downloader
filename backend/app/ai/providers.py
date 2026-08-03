@@ -29,7 +29,8 @@ from typing import Any, Protocol, cast
 import httpx
 from anthropic import AsyncAnthropic
 from ollama import AsyncClient as AsyncOllamaClient
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, Omit, omit
+from openai.types.shared_params import ReasoningEffort
 
 from app.ai.models import AIProviderKind
 from app.logs import get_logger
@@ -205,6 +206,34 @@ def _parse_entities(raw: list[dict[str, Any]]) -> list[DetectedEntityResult]:
     return entities
 
 
+#: GPT-5-family models are reasoning models: hidden chain-of-thought tokens
+#: are drawn from the same budget as max_completion_tokens, and default to
+#: "medium" effort if unspecified. GPT-4-family models aren't reasoning
+#: models at all and error on an unsupported "reasoning_effort" param, so
+#: this can't be sent unconditionally - see _openai_reasoning_effort.
+_REASONING_MODEL_PREFIX = "gpt-5"
+
+
+def _is_openai_reasoning_model(model: str) -> bool:
+    return model.startswith(_REASONING_MODEL_PREFIX)
+
+
+def _openai_reasoning_effort(model: str) -> ReasoningEffort | Omit:
+    """ "low" only for reasoning models - omit param entirely for GPT-4-family,
+    which raises "Unsupported value" if it's present at all.
+
+    "low" rather than "none": OpenAI's own community has reported "none"
+    being silently ignored (reasoning still runs at its default effort,
+    burning the whole token budget on hidden tokens with nothing left for
+    the actual response) when combined with max_completion_tokens - a live,
+    version-specific bug, not stable documented behavior. "low" avoids that
+    specific report while still cutting reasoning-token overhead for this
+    task (a short, well-specified structured extraction, not multi-step
+    reasoning) versus the new "medium" default.
+    """
+    return "low" if _is_openai_reasoning_model(model) else omit
+
+
 class OpenAIProvider:
     def __init__(self, model: str, api_key: str, base_url: str | None = None) -> None:
         self._model = model
@@ -237,7 +266,13 @@ class OpenAIProvider:
                 # reject max_tokens outright, while GPT-4-class models accept
                 # max_completion_tokens as its documented replacement - so
                 # this one kwarg is correct for every model, unconditionally.
-                max_completion_tokens=1024,
+                # 4096 (not 1024): a reasoning model's hidden chain-of-thought
+                # tokens draw from this same budget before any visible
+                # response is written, and can exhaust a tight budget outright
+                # (finish_reason="length", empty content) - 4096 leaves ample
+                # room for that plus this task's compact JSON response.
+                max_completion_tokens=4096,
+                reasoning_effort=_openai_reasoning_effort(self._model),
             )
         except Exception as exc:
             raise AIProviderError(f"OpenAI request failed: {exc}") from exc
