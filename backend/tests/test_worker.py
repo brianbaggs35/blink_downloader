@@ -30,6 +30,7 @@ from app.worker.tasks.archive import (
     AUTO_ARCHIVE_CLIP_JOB_NAME,
     RESTORE_CLIP_JOB_NAME,
 )
+from app.worker.tasks.biometrics import DOWNLOAD_MODEL_JOB_NAME
 from app.worker.tasks.blink_sync import SYNC_JOB_NAME
 from app.worker.tasks.download import DOWNLOAD_JOB_NAME
 from app.worker.tasks.sync_module import (
@@ -45,6 +46,10 @@ async def test_heartbeat_writes_expiring_key(redis: Redis) -> None:
     returned = await heartbeat({"redis": redis})
     stored = await redis.get(HEARTBEAT_KEY)
     assert stored == returned
+    # The fixture's client is constructed with decode_responses=True, so this
+    # is always a str at runtime - redis-py's own stubs don't narrow .get()'s
+    # return type based on that constructor kwarg, hence the assertion.
+    assert isinstance(stored, str)
     datetime.fromisoformat(stored)  # valid ISO timestamp
     ttl = await redis.ttl(HEARTBEAT_KEY)
     assert 0 < ttl <= HEARTBEAT_TTL_SECONDS
@@ -101,6 +106,7 @@ def test_worker_settings_wired() -> None:
         DOWNLOAD_LOCAL_ITEM_JOB_NAME,
         DELETE_LOCAL_ITEM_JOB_NAME,
         PERIODIC_LOCAL_STORAGE_REFRESH_JOB_NAME,
+        DOWNLOAD_MODEL_JOB_NAME,
     }
     assert len(WorkerSettings.cron_jobs) == 1
     expected = RedisSettings.from_dsn(os.environ["BLINK_REDIS_URL"])
@@ -122,6 +128,7 @@ def test_worker_settings_wired() -> None:
         DOWNLOAD_LOCAL_ITEM_JOB_NAME,
         DELETE_LOCAL_ITEM_JOB_NAME,
         PERIODIC_LOCAL_STORAGE_REFRESH_JOB_NAME,
+        DOWNLOAD_MODEL_JOB_NAME,
     ],
 )
 def test_worker_functions_have_retry_limits(job_name: str) -> None:

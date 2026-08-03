@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.models import AIProviderKind, AIUsage, Analysis, AnalysisTier, SuspicionLabel
 from app.biometrics.models import FaceEmbedding, Person, RecognizedFace
-from app.biometrics.service import get_biometrics_settings, verify_model
+from app.biometrics.service import download_biometrics_model, get_biometrics_settings
 from app.blink.models import BlinkAccount, Camera, Clip
 from app.config import get_settings
 from app.db import build_engine, build_sessionmaker
@@ -560,7 +560,9 @@ async def warm_up_biometrics_model() -> None:
         async with sessionmaker() as session:
             biometrics_settings = await get_biometrics_settings(session)
             await session.commit()
-        await verify_model(biometrics_settings, settings.biometrics_model_cache_dir)
+            await download_biometrics_model(
+                session, biometrics_settings, settings.biometrics_model_cache_dir
+            )
         logger.info("seed.biometrics_model_warmed")
     except Exception as exc:
         logger.warning("seed.biometrics_model_warmup_failed", error=str(exc))

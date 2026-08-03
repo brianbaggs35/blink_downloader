@@ -23,6 +23,7 @@ from app.worker.tasks.archive import (
     auto_archive_clip_job,
     restore_clip_job,
 )
+from app.worker.tasks.biometrics import DOWNLOAD_MODEL_JOB_NAME, download_biometrics_model_job
 from app.worker.tasks.blink_sync import SYNC_JOB_NAME, sync_blink_account
 from app.worker.tasks.download import download_clip
 from app.worker.tasks.sync_module import (
@@ -105,6 +106,12 @@ class WorkerSettings:
             name=PERIODIC_LOCAL_STORAGE_REFRESH_JOB_NAME,
             max_tries=1,
             timeout=30,
+        ),
+        func(
+            download_biometrics_model_job,
+            name=DOWNLOAD_MODEL_JOB_NAME,
+            max_tries=2,
+            timeout=300,
         ),
     ]
     cron_jobs: ClassVar[list[Any]] = [cron(heartbeat, second=0, run_at_startup=True)]

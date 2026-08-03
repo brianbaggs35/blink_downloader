@@ -171,29 +171,32 @@ async def test_verify_model_requires_admin(viewer_client: AsyncClient) -> None:
     assert response.status_code == 403
 
 
-async def test_verify_model_returns_providers_on_success(
-    admin_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+async def test_verify_model_starts_a_background_download_and_returns_immediately(
+    admin_client: AsyncClient,
 ) -> None:
-    def _fake_ensure_model_ready(*_args: object, **_kwargs: object) -> list[str]:
-        return ["CPUExecutionProvider"]
-
-    monkeypatch.setattr(biometrics_service, "ensure_model_ready", _fake_ensure_model_ready)
+    """The actual download runs in a worker job (see
+    test_worker_biometrics.py) - this route just flips the durable status
+    and returns right away, so navigating away from Settings can't
+    interrupt it."""
     response = await admin_client.post("/api/biometrics/settings/verify-model")
-    assert response.status_code == 200
+    assert response.status_code == 202
     body = response.json()
-    assert body["providers"] == ["CPUExecutionProvider"]
-    assert body["model_pack"] == "buffalo_l"
+    assert body["model_download_status"] == "downloading"
+    assert body["model_download_error"] is None
+
+    reread = await admin_client.get("/api/biometrics/settings")
+    assert reread.json()["model_download_status"] == "downloading"
 
 
-async def test_verify_model_returns_502_on_failure(
-    admin_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+async def test_verify_model_does_not_start_a_second_download_while_one_is_in_flight(
+    admin_client: AsyncClient,
 ) -> None:
-    def _boom(*_args: object, **_kwargs: object) -> list[str]:
-        raise ModelLoadError("could not download the model")
+    first = await admin_client.post("/api/biometrics/settings/verify-model")
+    assert first.status_code == 202
 
-    monkeypatch.setattr(biometrics_service, "ensure_model_ready", _boom)
-    response = await admin_client.post("/api/biometrics/settings/verify-model")
-    assert response.status_code == 502
+    second = await admin_client.post("/api/biometrics/settings/verify-model")
+    assert second.status_code == 202
+    assert second.json()["model_download_status"] == "downloading"
 
 
 # -------------------------------------------------------------- people CRUD

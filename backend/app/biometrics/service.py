@@ -22,6 +22,7 @@ from app.biometrics.models import (
     SINGLETON_ID,
     BiometricsSettings,
     FaceEmbedding,
+    ModelDownloadStatus,
     Person,
     RecognizedFace,
 )
@@ -69,6 +70,17 @@ async def update_biometrics_settings(
     session: AsyncSession, payload: BiometricsSettingsUpdate
 ) -> BiometricsSettings:
     row = await get_biometrics_settings(session)
+    # A previous "ready" (or "error") result only means something for the
+    # exact model pack + provider preference it was verified against -
+    # switching either one stops the old result from being meaningful,
+    # so it resets rather than keeps showing a now-unrelated status.
+    if (
+        row.model_pack != payload.model_pack
+        or row.execution_provider_preference != payload.execution_provider_preference
+    ):
+        row.model_download_status = ModelDownloadStatus.IDLE
+        row.model_download_error = None
+        row.model_download_providers = []
     row.enabled = payload.enabled
     row.model_pack = payload.model_pack
     row.execution_provider_preference = payload.execution_provider_preference
@@ -78,18 +90,42 @@ async def update_biometrics_settings(
     return row
 
 
-async def verify_model(biometrics_settings: BiometricsSettings, model_cache_dir: Path) -> list[str]:
+async def start_model_download(
+    session: AsyncSession, biometrics_settings: BiometricsSettings
+) -> BiometricsSettings:
+    """Flips the singleton row to "downloading" and returns immediately -
+    the actual download runs in the background (see
+    app.worker.tasks.biometrics), so navigating away from Settings can't
+    interrupt it. Callers (the API route) enqueue the worker job themselves
+    right after calling this."""
+    biometrics_settings.model_download_status = ModelDownloadStatus.DOWNLOADING
+    biometrics_settings.model_download_error = None
+    await session.commit()
+    await session.refresh(biometrics_settings)
+    return biometrics_settings
+
+
+async def download_biometrics_model(
+    session: AsyncSession, biometrics_settings: BiometricsSettings, model_cache_dir: Path
+) -> None:
     """Downloads (if needed) and loads the configured model pack, so an
     admin gets a clear pass/fail right after choosing a model in Settings
     rather than discovering a download problem during the next real clip
-    analysis. Returns the execution providers actually in use. Raises
-    ModelLoadError (see app.biometrics.recognition) on failure."""
-    return await asyncio.to_thread(
+    analysis. Sets the row to "ready" with the resolved providers on
+    success. Raises ModelLoadError (see app.biometrics.recognition) on
+    failure - the caller (a worker job) owns translating that into
+    model_download_status/model_download_error, the same split as
+    app.sync_module.service.refresh_local_storage_manifest."""
+    providers = await asyncio.to_thread(
         ensure_model_ready,
         biometrics_settings.model_pack,
         biometrics_settings.execution_provider_preference,
         model_cache_dir,
     )
+    biometrics_settings.model_download_status = ModelDownloadStatus.READY
+    biometrics_settings.model_download_providers = providers
+    biometrics_settings.model_download_error = None
+    await session.commit()
 
 
 async def list_people(session: AsyncSession) -> Sequence[Person]:

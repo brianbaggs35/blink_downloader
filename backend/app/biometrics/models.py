@@ -15,7 +15,7 @@ from enum import StrEnum
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Text, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base, str_enum
@@ -45,6 +45,19 @@ class ExecutionProviderPreference(StrEnum):
 
     AUTO = "auto"
     CPU = "cpu"
+
+
+class ModelDownloadStatus(StrEnum):
+    """Tracks Settings' "Verify / download model" action as a durable
+    background job (app.worker.tasks.biometrics) rather than a request/
+    response round trip, so navigating away from Settings doesn't interrupt
+    a real download in progress - any later GET (from any page load, not
+    just the one that triggered it) reflects the same server-owned state."""
+
+    IDLE = "idle"
+    DOWNLOADING = "downloading"
+    READY = "ready"
+    ERROR = "error"
 
 
 class Person(Base):
@@ -165,6 +178,17 @@ class BiometricsSettings(Base):
         Float,
         default=DEFAULT_RECOGNITION_THRESHOLD,
         server_default=str(DEFAULT_RECOGNITION_THRESHOLD),
+    )
+
+    model_download_status: Mapped[ModelDownloadStatus] = mapped_column(
+        str_enum(ModelDownloadStatus, "biometrics_model_download_status"),
+        default=ModelDownloadStatus.IDLE,
+        server_default=ModelDownloadStatus.IDLE.name,
+        nullable=False,
+    )
+    model_download_error: Mapped[str | None] = mapped_column(Text)
+    model_download_providers: Mapped[list[str]] = mapped_column(
+        JSONB, default=list, server_default="[]", nullable=False
     )
 
     updated_at: Mapped[datetime] = mapped_column(

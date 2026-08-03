@@ -173,9 +173,12 @@ export interface paths {
         put?: never;
         /**
          * Verify Model Route
-         * @description Downloads/loads the currently-configured model pack right now and
-         *     reports pass/fail, so enabling biometrics in Settings gives an admin
-         *     immediate feedback instead of a silent first-analysis surprise.
+         * @description Kicks off downloading/loading the currently-configured model pack in
+         *     the background and returns immediately - the frontend polls GET
+         *     /settings for the result, so this survives navigating away from
+         *     Settings before it finishes (a cold download can take a while). A
+         *     second click while one's already in flight just returns the current
+         *     state rather than starting a duplicate.
          */
         post: operations["verify_model_route_api_biometrics_settings_verify_model_post"];
         delete?: never;
@@ -1786,6 +1789,11 @@ export interface components {
             recognition_threshold: number;
             /** Available Providers */
             available_providers: string[];
+            model_download_status: components["schemas"]["ModelDownloadStatus"];
+            /** Model Download Error */
+            model_download_error: string | null;
+            /** Model Download Providers */
+            model_download_providers: string[];
             /**
              * Updated At
              * Format: date-time
@@ -2221,6 +2229,16 @@ export interface components {
          * @enum {string}
          */
         LocalStorageStatus: "idle" | "refreshing" | "error";
+        /**
+         * ModelDownloadStatus
+         * @description Tracks Settings' "Verify / download model" action as a durable
+         *     background job (app.worker.tasks.biometrics) rather than a request/
+         *     response round trip, so navigating away from Settings doesn't interrupt
+         *     a real download in progress - any later GET (from any page load, not
+         *     just the one that triggered it) reflects the same server-owned state.
+         * @enum {string}
+         */
+        ModelDownloadStatus: "idle" | "downloading" | "ready" | "error";
         /**
          * ModelPack
          * @description insightface named model packs, smallest/fastest to largest/most
@@ -2793,15 +2811,6 @@ export interface components {
              */
             enabled: boolean;
         };
-        /**
-         * VerifyModelRead
-         * @description Result of a successful Settings > "verify model" action.
-         */
-        VerifyModelRead: {
-            model_pack: components["schemas"]["ModelPack"];
-            /** Providers */
-            providers: string[];
-        };
     };
     responses: never;
     parameters: never;
@@ -3326,12 +3335,12 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Successful Response */
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["VerifyModelRead"];
+                    "application/json": components["schemas"]["BiometricsSettingsRead"];
                 };
             };
         };

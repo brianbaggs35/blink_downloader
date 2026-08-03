@@ -103,18 +103,18 @@ async def test_seed_creates_admin_once(client: AsyncClient, app: FastAPI, tmp_pa
 async def test_warm_up_biometrics_model_logs_success_when_the_model_loads(
     app_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def _fake_verify_model(*_args: object, **_kwargs: object) -> list[str]:
-        return ["CPUExecutionProvider"]
+    async def _fake_download_biometrics_model(*_args: object, **_kwargs: object) -> None:
+        return None
 
-    monkeypatch.setattr(seed_module, "verify_model", _fake_verify_model)
+    monkeypatch.setattr(seed_module, "download_biometrics_model", _fake_download_biometrics_model)
     await seed_module.warm_up_biometrics_model()  # must not raise
 
 
 async def test_warm_up_biometrics_model_swallows_a_load_failure(
     app_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def _boom(*_args: object, **_kwargs: object) -> list[str]:
+    async def _boom(*_args: object, **_kwargs: object) -> None:
         raise ModelLoadError("could not download the model")
 
-    monkeypatch.setattr(seed_module, "verify_model", _boom)
+    monkeypatch.setattr(seed_module, "download_biometrics_model", _boom)
     await seed_module.warm_up_biometrics_model()  # must not raise

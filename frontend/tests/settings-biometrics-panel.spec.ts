@@ -2,7 +2,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import InputNumber from "primevue/inputnumber";
 import Select from "primevue/select";
 import ToggleSwitch from "primevue/toggleswitch";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/api/client";
 import SettingsBiometricsPanel from "@/components/SettingsBiometricsPanel.vue";
@@ -32,11 +32,19 @@ const baseSettings = {
   execution_provider_preference: "auto" as const,
   recognition_threshold: 0.4,
   available_providers: ["CPUExecutionProvider"],
+  model_download_status: "idle" as const,
+  model_download_error: null,
+  model_download_providers: [] as string[],
   updated_at: "2026-07-25T00:00:00Z",
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 function mountPanel() {
@@ -169,22 +177,98 @@ describe("SettingsBiometricsPanel verify model", () => {
     mockedGet.mockResolvedValue(baseSettings);
   });
 
-  it("shows the resolved providers on success", async () => {
-    mockedVerify.mockResolvedValue({ model_pack: "buffalo_l", providers: ["CPUExecutionProvider"] });
+  it("starts a background download and shows the in-progress state", async () => {
+    mockedVerify.mockResolvedValue({ ...baseSettings, model_download_status: "downloading" });
     const wrapper = mountPanel();
     await flushPromises();
 
     await wrapper.find('[data-testid="verify-model"]').trigger("click");
     await flushPromises();
 
-    expect(mockedVerify).toHaveBeenCalled();
+    expect(mockedVerify).toHaveBeenCalledOnce();
+    expect(wrapper.find('[data-testid="verify-model-downloading"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="verify-model"]').text()).toBe("Downloading…");
+  });
+
+  it("polls until ready, showing the resolved providers and a toast", async () => {
+    mockedVerify.mockResolvedValue({ ...baseSettings, model_download_status: "downloading" });
+    mockedGet.mockResolvedValueOnce(baseSettings).mockResolvedValue({
+      ...baseSettings,
+      model_download_status: "ready",
+      model_download_providers: ["CPUExecutionProvider"],
+    });
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    await wrapper.find('[data-testid="verify-model"]').trigger("click");
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(3000);
+
     expect(wrapper.find('[data-testid="verify-model-success"]').text()).toContain(
       "CPUExecutionProvider",
     );
-    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: "success" }));
+    expect(wrapper.find('[data-testid="verify-model-downloading"]').exists()).toBe(false);
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: "success", summary: "Model ready" }),
+    );
   });
 
-  it("shows the API error message when verification fails", async () => {
+  it("polls until it fails, showing the error message and a toast", async () => {
+    mockedVerify.mockResolvedValue({ ...baseSettings, model_download_status: "downloading" });
+    mockedGet.mockResolvedValueOnce(baseSettings).mockResolvedValue({
+      ...baseSettings,
+      model_download_status: "error",
+      model_download_error: "Could not download the model.",
+    });
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    await wrapper.find('[data-testid="verify-model"]').trigger("click");
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(wrapper.find('[data-testid="verify-model-error"]').text()).toBe(
+      "Could not download the model.",
+    );
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: "error", summary: "Could not download the model" }),
+    );
+  });
+
+  it("resumes showing the in-progress state on mount when a download is already in flight", async () => {
+    // The whole point: navigating away and back (a remount, in test terms)
+    // must not lose track of a download that's still running server-side.
+    mockedGet
+      .mockResolvedValueOnce({ ...baseSettings, model_download_status: "downloading" })
+      .mockResolvedValue({
+        ...baseSettings,
+        model_download_status: "ready",
+        model_download_providers: ["CPUExecutionProvider"],
+      });
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    expect(mockedVerify).not.toHaveBeenCalled();
+    expect(wrapper.find('[data-testid="verify-model-downloading"]').exists()).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(wrapper.find('[data-testid="verify-model-success"]').text()).toContain(
+      "CPUExecutionProvider",
+    );
+  });
+
+  it("does not start a second download on a click while one is already in flight", async () => {
+    mockedGet.mockResolvedValue({ ...baseSettings, model_download_status: "downloading" });
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    await wrapper.find('[data-testid="verify-model"]').trigger("click");
+    await flushPromises();
+
+    expect(mockedVerify).not.toHaveBeenCalled();
+  });
+
+  it("shows the API error message when starting the download fails", async () => {
     mockedVerify.mockRejectedValue(new ApiError(502, "Could not download the model."));
     const wrapper = mountPanel();
     await flushPromises();
@@ -197,7 +281,7 @@ describe("SettingsBiometricsPanel verify model", () => {
     );
   });
 
-  it("falls back to a generic error for non-API verify failures", async () => {
+  it("falls back to a generic error for a non-API failure to start the download", async () => {
     mockedVerify.mockRejectedValue(new TypeError("network down"));
     const wrapper = mountPanel();
     await flushPromises();
@@ -206,7 +290,7 @@ describe("SettingsBiometricsPanel verify model", () => {
     await flushPromises();
 
     expect(wrapper.find('[data-testid="verify-model-error"]').text()).toBe(
-      "Could not verify the model. Check your connection and try again.",
+      "Could not start the download. Check your connection and try again.",
     );
   });
 
@@ -217,5 +301,17 @@ describe("SettingsBiometricsPanel verify model", () => {
 
     const button = wrapper.find('[data-testid="verify-model"]');
     expect(button.attributes("disabled")).toBeDefined();
+  });
+
+  it("stops polling once unmounted, so it never leaks a timer", async () => {
+    mockedGet.mockResolvedValue({ ...baseSettings, model_download_status: "downloading" });
+    const wrapper = mountPanel();
+    await flushPromises();
+    const callsBeforeUnmount = mockedGet.mock.calls.length;
+
+    wrapper.unmount();
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(mockedGet.mock.calls.length).toBe(callsBeforeUnmount);
   });
 });
