@@ -80,6 +80,7 @@ export type UserCreate = components["schemas"]["UserCreate"];
 
 export type ModelPack = components["schemas"]["ModelPack"];
 export type ExecutionProviderPreference = components["schemas"]["ExecutionProviderPreference"];
+export type ModelDownloadStatus = components["schemas"]["ModelDownloadStatus"];
 export type BiometricsSettingsRead = components["schemas"]["BiometricsSettingsRead"];
 export type BiometricsSettingsUpdate = components["schemas"]["BiometricsSettingsUpdate"];
 export type PersonRead = components["schemas"]["PersonRead"];
@@ -89,7 +90,6 @@ export type FaceEmbeddingRead = components["schemas"]["FaceEmbeddingRead"];
 export type DetectedFaceRead = components["schemas"]["DetectedFaceRead"];
 export type EnrollFaceRequest = components["schemas"]["EnrollFaceRequest"];
 export type RecognizedPersonRead = components["schemas"]["RecognizedPersonRead"];
-export type VerifyModelRead = components["schemas"]["VerifyModelRead"];
 export type ReportFalsePositiveRead = components["schemas"]["ReportFalsePositiveRead"];
 
 export type SyncModuleRead = components["schemas"]["SyncModuleRead"];
@@ -612,8 +612,11 @@ export function enrollFace(
   return api<FaceEmbeddingRead>(`/biometrics/people/${personId}/enroll`, { json: body });
 }
 
-export function verifyBiometricsModel(): Promise<VerifyModelRead> {
-  return api<VerifyModelRead>("/biometrics/settings/verify-model", { method: "POST" });
+/** Starts (or, if one's already in flight, just reflects) a background
+ * model download - see BiometricsSettingsRead's model_download_* fields
+ * for the actual outcome, polled via getBiometricsSettings. */
+export function verifyBiometricsModel(): Promise<BiometricsSettingsRead> {
+  return api<BiometricsSettingsRead>("/biometrics/settings/verify-model", { method: "POST" });
 }
 
 export function reportFalsePositive(

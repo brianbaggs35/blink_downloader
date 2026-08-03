@@ -23,10 +23,11 @@ from app.ai.models import Analysis, AnalysisTier, SuspicionLabel
 from app.biometrics.models import (
     ExecutionProviderPreference,
     FaceEmbedding,
+    ModelDownloadStatus,
     ModelPack,
     RecognizedFace,
 )
-from app.biometrics.recognition import DetectedFace
+from app.biometrics.recognition import DetectedFace, ModelLoadError
 from app.biometrics.schemas import BiometricsSettingsUpdate, PersonUpdate
 from app.biometrics.service import (
     REVERTED_LABEL,
@@ -35,6 +36,7 @@ from app.biometrics.service import (
     create_person,
     delete_person,
     detect_faces_in_clip_frame,
+    download_biometrics_model,
     enroll_face,
     extract_clip_frame,
     get_biometrics_settings,
@@ -42,6 +44,7 @@ from app.biometrics.service import (
     list_people,
     match_faces,
     report_false_positive,
+    start_model_download,
     update_biometrics_settings,
     update_person,
 )
@@ -164,6 +167,108 @@ async def test_update_biometrics_settings_persists_changes(app_session: AsyncSes
 
     reread = await get_biometrics_settings(app_session)
     assert reread.model_pack is ModelPack.BUFFALO_SC
+
+
+async def test_update_biometrics_settings_resets_download_status_when_model_pack_changes(
+    app_session: AsyncSession,
+) -> None:
+    row = await get_biometrics_settings(app_session)
+    row.model_download_status = ModelDownloadStatus.READY
+    row.model_download_providers = ["CUDAExecutionProvider"]
+    await app_session.commit()
+
+    updated = await update_biometrics_settings(
+        app_session, BiometricsSettingsUpdate(model_pack=ModelPack.BUFFALO_S)
+    )
+    assert updated.model_download_status is ModelDownloadStatus.IDLE
+    assert updated.model_download_providers == []
+    assert updated.model_download_error is None
+
+
+async def test_update_biometrics_settings_resets_download_status_when_provider_preference_changes(
+    app_session: AsyncSession,
+) -> None:
+    row = await get_biometrics_settings(app_session)
+    row.model_pack = ModelPack.BUFFALO_L
+    row.model_download_status = ModelDownloadStatus.ERROR
+    row.model_download_error = "boom"
+    await app_session.commit()
+
+    updated = await update_biometrics_settings(
+        app_session,
+        BiometricsSettingsUpdate(
+            model_pack=ModelPack.BUFFALO_L,
+            execution_provider_preference=ExecutionProviderPreference.CPU,
+        ),
+    )
+    assert updated.model_download_status is ModelDownloadStatus.IDLE
+    assert updated.model_download_error is None
+
+
+async def test_update_biometrics_settings_keeps_download_status_when_neither_changes(
+    app_session: AsyncSession,
+) -> None:
+    row = await get_biometrics_settings(app_session)
+    row.model_pack = ModelPack.BUFFALO_L
+    row.execution_provider_preference = ExecutionProviderPreference.AUTO
+    row.model_download_status = ModelDownloadStatus.READY
+    row.model_download_providers = ["CPUExecutionProvider"]
+    await app_session.commit()
+
+    updated = await update_biometrics_settings(
+        app_session,
+        BiometricsSettingsUpdate(
+            model_pack=ModelPack.BUFFALO_L,
+            execution_provider_preference=ExecutionProviderPreference.AUTO,
+            recognition_threshold=0.7,
+        ),
+    )
+    assert updated.model_download_status is ModelDownloadStatus.READY
+    assert updated.model_download_providers == ["CPUExecutionProvider"]
+
+
+async def test_start_model_download_flips_status_and_clears_error(
+    app_session: AsyncSession,
+) -> None:
+    row = await get_biometrics_settings(app_session)
+    row.model_download_status = ModelDownloadStatus.ERROR
+    row.model_download_error = "previous failure"
+    await app_session.commit()
+
+    updated = await start_model_download(app_session, row)
+    assert updated.model_download_status is ModelDownloadStatus.DOWNLOADING
+    assert updated.model_download_error is None
+
+
+async def test_download_biometrics_model_marks_ready_with_resolved_providers(
+    app_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def _fake_ensure_model_ready(*_args: object, **_kwargs: object) -> list[str]:
+        return ["CPUExecutionProvider"]
+
+    monkeypatch.setattr(biometrics_service, "ensure_model_ready", _fake_ensure_model_ready)
+    row = await get_biometrics_settings(app_session)
+
+    await download_biometrics_model(app_session, row, tmp_path)
+
+    assert row.model_download_status is ModelDownloadStatus.READY
+    assert row.model_download_providers == ["CPUExecutionProvider"]
+    assert row.model_download_error is None
+
+
+async def test_download_biometrics_model_propagates_model_load_error(
+    app_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def _boom(*_args: object, **_kwargs: object) -> list[str]:
+        raise ModelLoadError("could not download")
+
+    monkeypatch.setattr(biometrics_service, "ensure_model_ready", _boom)
+    row = await get_biometrics_settings(app_session)
+
+    with pytest.raises(ModelLoadError):
+        await download_biometrics_model(app_session, row, tmp_path)
+    # Left for the caller (the worker job) to set - see its own docstring.
+    assert row.model_download_status is ModelDownloadStatus.IDLE
 
 
 # -------------------------------------------------------------- people CRUD

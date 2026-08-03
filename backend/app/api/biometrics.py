@@ -15,12 +15,12 @@ import uuid
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.service import get_ai_settings
-from app.biometrics.models import BiometricsSettings, FaceEmbedding, Person
+from app.biometrics.models import BiometricsSettings, FaceEmbedding, ModelDownloadStatus, Person
 from app.biometrics.recognition import ModelLoadError, RecognitionError, available_providers
 from app.biometrics.schemas import (
     BiometricsSettingsRead,
@@ -32,7 +32,6 @@ from app.biometrics.schemas import (
     PersonRead,
     PersonUpdate,
     ReportFalsePositiveRead,
-    VerifyModelRead,
 )
 from app.biometrics.service import (
     ClipFrameError,
@@ -46,9 +45,9 @@ from app.biometrics.service import (
     get_person,
     list_people,
     report_false_positive,
+    start_model_download,
     update_biometrics_settings,
     update_person,
-    verify_model,
 )
 from app.blink.models import Clip
 from app.config import get_settings
@@ -56,6 +55,7 @@ from app.db import get_session
 from app.settings.service import resolve_storage_dir
 from app.storage.service import ClipStorage, get_clip_storage
 from app.users.auth import current_active_user, current_superuser
+from app.worker.tasks.biometrics import DOWNLOAD_MODEL_JOB_NAME
 
 router = APIRouter(prefix="/biometrics", tags=["biometrics"])
 
@@ -85,6 +85,9 @@ def _settings_read(row: BiometricsSettings) -> BiometricsSettingsRead:
         execution_provider_preference=row.execution_provider_preference,
         recognition_threshold=row.recognition_threshold,
         available_providers=available_providers(),
+        model_download_status=row.model_download_status,
+        model_download_error=row.model_download_error,
+        model_download_providers=row.model_download_providers,
         updated_at=row.updated_at,
     )
 
@@ -136,22 +139,27 @@ async def update_settings_route(
     return _settings_read(row)
 
 
-@router.post("/settings/verify-model", response_model=VerifyModelRead)
+@router.post(
+    "/settings/verify-model",
+    response_model=BiometricsSettingsRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def verify_model_route(
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_session)],
     _user: Annotated[object, Depends(current_superuser)],
-) -> VerifyModelRead:
-    """Downloads/loads the currently-configured model pack right now and
-    reports pass/fail, so enabling biometrics in Settings gives an admin
-    immediate feedback instead of a silent first-analysis surprise."""
+) -> BiometricsSettingsRead:
+    """Kicks off downloading/loading the currently-configured model pack in
+    the background and returns immediately - the frontend polls GET
+    /settings for the result, so this survives navigating away from
+    Settings before it finishes (a cold download can take a while). A
+    second click while one's already in flight just returns the current
+    state rather than starting a duplicate."""
     biometrics_settings = await get_biometrics_settings(session)
-    try:
-        providers = await verify_model(
-            biometrics_settings, get_settings().biometrics_model_cache_dir
-        )
-    except ModelLoadError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
-    return VerifyModelRead(model_pack=biometrics_settings.model_pack, providers=providers)
+    if biometrics_settings.model_download_status != ModelDownloadStatus.DOWNLOADING:
+        biometrics_settings = await start_model_download(session, biometrics_settings)
+        await request.app.state.arq_redis.enqueue_job(DOWNLOAD_MODEL_JOB_NAME)
+    return _settings_read(biometrics_settings)
 
 
 @router.get("/people", response_model=list[PersonRead])

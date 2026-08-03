@@ -32,6 +32,9 @@ const settingsFixture = {
   execution_provider_preference: "auto" as const,
   recognition_threshold: 0.4,
   available_providers: ["CPUExecutionProvider"],
+  model_download_status: "idle" as const,
+  model_download_error: null,
+  model_download_providers: [] as string[],
   updated_at: "2026-07-25T00:00:00Z",
 };
 
@@ -64,7 +67,7 @@ describe("biometrics settings endpoints", () => {
   });
 
   it("verifyBiometricsModel POSTs to settings/verify-model", async () => {
-    const mock = capture(jsonResponse({ model_pack: "buffalo_l", providers: ["CPUExecutionProvider"] }));
+    const mock = capture(jsonResponse(settingsFixture));
     await verifyBiometricsModel();
     expect(mock.mock.calls[0]?.[0]).toBe("/api/biometrics/settings/verify-model");
     expect((mock.mock.calls[0]?.[1] as RequestInit).method).toBe("POST");

@@ -7,11 +7,17 @@ import Skeleton from "primevue/skeleton";
 import Tag from "primevue/tag";
 import ToggleSwitch from "primevue/toggleswitch";
 import { useToast } from "primevue/usetoast";
-import { onMounted, ref } from "vue";
+import { onMounted, onUnmounted, ref, watch } from "vue";
 
 import { ApiError, getBiometricsSettings, updateBiometricsSettings, verifyBiometricsModel } from "@/api";
 
-import type { ExecutionProviderPreference, ModelPack } from "@/api";
+import type { ExecutionProviderPreference, ModelDownloadStatus, ModelPack } from "@/api";
+
+// Same "poll while something's actively in flight" cadence as
+// SyncModuleLocalStorageBrowser.vue - short enough to feel live, long
+// enough not to hammer the server for what's fundamentally a slow,
+// external, download-then-wait flow.
+const POLL_INTERVAL_MS = 3000;
 
 const MODEL_PACK_OPTIONS: { label: string; value: ModelPack; hint: string }[] = [
   {
@@ -54,9 +60,56 @@ const providerPreference = ref<ExecutionProviderPreference>("auto");
 const recognitionThreshold = ref(0.4);
 const availableProviders = ref<string[]>([]);
 
-const verifying = ref(false);
-const verifyError = ref("");
-const verifyResult = ref<{ providers: string[] } | null>(null);
+const modelDownloadStatus = ref<ModelDownloadStatus>("idle");
+const modelDownloadError = ref<string | null>(null);
+const modelDownloadProviders = ref<string[]>([]);
+
+// A toast (unlike the persistent Message banners below) so finishing is
+// noticed even if this admin has since navigated elsewhere in Settings -
+// only on a genuine downloading -> ready/error transition, never replayed
+// just from loading an already-finished status on mount.
+watch(modelDownloadStatus, (status, previousStatus) => {
+  if (previousStatus !== "downloading") return;
+  if (status === "ready") {
+    toast.add({
+      severity: "success",
+      summary: "Model ready",
+      detail: `Running on ${modelDownloadProviders.value.join(", ")}.`,
+      life: 4000,
+    });
+  } else if (status === "error") {
+    toast.add({
+      severity: "error",
+      summary: "Could not download the model",
+      detail: modelDownloadError.value ?? "Unexpected error.",
+      life: 5000,
+    });
+  }
+});
+
+let pollTimer: ReturnType<typeof setInterval> | undefined;
+
+function ensurePolling(): void {
+  if (pollTimer || modelDownloadStatus.value !== "downloading") return;
+  pollTimer = setInterval(() => {
+    void (async () => {
+      await refreshDownloadStatus();
+      if (modelDownloadStatus.value !== "downloading" && pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = undefined;
+      }
+    })();
+  }, POLL_INTERVAL_MS);
+}
+
+onUnmounted(() => clearInterval(pollTimer));
+
+async function refreshDownloadStatus(): Promise<void> {
+  const settings = await getBiometricsSettings();
+  modelDownloadStatus.value = settings.model_download_status;
+  modelDownloadError.value = settings.model_download_error;
+  modelDownloadProviders.value = settings.model_download_providers;
+}
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -68,6 +121,14 @@ async function load(): Promise<void> {
     providerPreference.value = settings.execution_provider_preference;
     recognitionThreshold.value = settings.recognition_threshold;
     availableProviders.value = settings.available_providers;
+    modelDownloadStatus.value = settings.model_download_status;
+    modelDownloadError.value = settings.model_download_error;
+    modelDownloadProviders.value = settings.model_download_providers;
+    // Resumes reflecting an already-in-flight download immediately - this,
+    // not anything client-side, is what makes navigating away from
+    // Settings and back not interrupt it: the download itself runs as a
+    // backend worker job regardless of whether any browser tab is watching.
+    ensurePolling();
   } catch (caught) {
     loadError.value =
       caught instanceof ApiError ? caught.message : "Could not load biometrics settings.";
@@ -100,20 +161,24 @@ async function save(): Promise<void> {
 const gpuDetected = () => availableProviders.value.some((p) => p !== "CPUExecutionProvider");
 
 async function verifyModel(): Promise<void> {
-  verifyError.value = "";
-  verifyResult.value = null;
-  verifying.value = true;
+  // A second click while one's already in flight just (re)joins polling -
+  // the backend itself also guards against starting a duplicate download.
+  if (modelDownloadStatus.value === "downloading") {
+    ensurePolling();
+    return;
+  }
   try {
-    const result = await verifyBiometricsModel();
-    verifyResult.value = { providers: result.providers };
-    toast.add({ severity: "success", summary: "Model ready", life: 3000 });
+    const settings = await verifyBiometricsModel();
+    modelDownloadStatus.value = settings.model_download_status;
+    modelDownloadError.value = settings.model_download_error;
+    modelDownloadProviders.value = settings.model_download_providers;
+    ensurePolling();
   } catch (caught) {
-    verifyError.value =
+    modelDownloadStatus.value = "error";
+    modelDownloadError.value =
       caught instanceof ApiError
         ? caught.message
-        : "Could not verify the model. Check your connection and try again.";
-  } finally {
-    verifying.value = false;
+        : "Could not start the download. Check your connection and try again.";
   }
 }
 </script>
@@ -226,36 +291,46 @@ async function verifyModel(): Promise<void> {
       <div class="verify-row">
         <Button
           type="button"
-          label="Verify / download model"
+          :label="modelDownloadStatus === 'downloading' ? 'Downloading…' : 'Verify / download model'"
           icon="pi pi-cloud-download"
           severity="secondary"
           outlined
           :disabled="!enabled"
-          :loading="verifying"
+          :loading="modelDownloadStatus === 'downloading'"
           data-testid="verify-model"
           @click="verifyModel"
         />
         <span class="muted">
           Downloads the selected model now (first use otherwise downloads it during your next
-          clip analysis, adding a delay). Requires internet access on this one occasion only —
-          nothing from your cameras is ever sent anywhere.
+          clip analysis, adding a delay). Keeps going in the background even if you navigate
+          away from Settings. Requires internet access on this one occasion only — nothing from
+          your cameras is ever sent anywhere.
         </span>
       </div>
       <Message
-        v-if="verifyResult"
+        v-if="modelDownloadStatus === 'downloading'"
+        severity="info"
+        :closable="false"
+        data-testid="verify-model-downloading"
+      >
+        Downloading and loading the model — this can take up to a minute or so on a slow
+        connection. Feel free to leave this page; it'll keep going.
+      </Message>
+      <Message
+        v-if="modelDownloadStatus === 'ready'"
         severity="success"
         :closable="false"
         data-testid="verify-model-success"
       >
-        Model ready — running on {{ verifyResult.providers.join(", ") }}.
+        Model ready — running on {{ modelDownloadProviders.join(", ") }}.
       </Message>
       <Message
-        v-if="verifyError"
+        v-if="modelDownloadStatus === 'error' && modelDownloadError"
         severity="error"
         :closable="false"
         data-testid="verify-model-error"
       >
-        {{ verifyError }}
+        {{ modelDownloadError }}
       </Message>
 
       <Message

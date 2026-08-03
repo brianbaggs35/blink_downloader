@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from app.biometrics.models import (
     DEFAULT_RECOGNITION_THRESHOLD,
     ExecutionProviderPreference,
+    ModelDownloadStatus,
     ModelPack,
 )
 
@@ -71,6 +72,9 @@ class BiometricsSettingsRead(BaseModel):
     execution_provider_preference: ExecutionProviderPreference
     recognition_threshold: float
     available_providers: list[str]
+    model_download_status: ModelDownloadStatus
+    model_download_error: str | None
+    model_download_providers: list[str]
     updated_at: datetime
 
 
@@ -79,13 +83,6 @@ class BiometricsSettingsUpdate(BaseModel):
     model_pack: ModelPack = ModelPack.BUFFALO_L
     execution_provider_preference: ExecutionProviderPreference = ExecutionProviderPreference.AUTO
     recognition_threshold: float = Field(default=DEFAULT_RECOGNITION_THRESHOLD, ge=0.0, le=1.0)
-
-
-class VerifyModelRead(BaseModel):
-    """Result of a successful Settings > "verify model" action."""
-
-    model_pack: ModelPack
-    providers: list[str]
 
 
 class ReportFalsePositiveRead(BaseModel):
