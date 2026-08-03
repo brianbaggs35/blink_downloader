@@ -3,6 +3,7 @@ import Button from "primevue/button";
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
+import { useBackNavigation } from "@/composables/useBackNavigation";
 import { useMobileNav } from "@/composables/useMobileNav";
 import { useTheme } from "@/composables/useTheme";
 import { useAuthStore } from "@/stores/auth";
@@ -12,8 +13,17 @@ const router = useRouter();
 const auth = useAuthStore();
 const { isDark, toggle } = useTheme();
 const mobileNav = useMobileNav();
+const { previousRoute, goBack } = useBackNavigation();
 
 const title = computed(() => (route.meta.title as string | undefined) ?? "");
+
+// Settings is reached from several "Customize"/"manage"-style deep links
+// scattered across the app (Security Feed, AI, Vehicles, Status, Library),
+// all landing on this one shared route with no route-level return path of
+// their own - a back arrow here covers all of them at once. Most other
+// pages already have a direct one-click sidebar entry, so a universal back
+// button everywhere would just be redundant with that.
+const showBack = computed(() => route.name === "settings" && previousRoute.value !== null);
 
 const initials = computed(() => {
   const parts = auth.displayName.split(/[\s@.]+/).filter(Boolean);
@@ -42,6 +52,16 @@ async function signOut(): Promise<void> {
         aria-label="Open navigation menu"
         data-testid="mobile-nav-toggle"
         @click="mobileNav.open()"
+      />
+      <Button
+        v-if="showBack"
+        icon="pi pi-arrow-left"
+        severity="secondary"
+        text
+        rounded
+        aria-label="Go back"
+        data-testid="topbar-back"
+        @click="goBack()"
       />
       <p class="page-title">
         {{ title }}
