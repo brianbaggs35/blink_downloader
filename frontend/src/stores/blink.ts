@@ -7,6 +7,7 @@ import {
   unlinkBlinkAccount,
   verifyBlinkAccount,
 } from "@/api";
+import { pollUntilReady } from "@/lib/pollUntilReady";
 
 import type { BlinkStatusResponse } from "@/api";
 
@@ -14,6 +15,13 @@ interface BlinkState {
   status: BlinkStatusResponse | null;
   loading: boolean;
 }
+
+// A freshly-triggered sync runs in a background worker job - camera rows
+// may not exist yet the instant it's enqueued. Poll for up to ~9s before
+// giving up, rather than reporting a possibly-stale "0 cameras" the moment
+// the trigger call itself returns.
+const SYNC_DISCOVERY_ATTEMPTS = 6;
+const SYNC_DISCOVERY_DELAY_MS = 1500;
 
 export const useBlinkStore = defineStore("blink", {
   state: (): BlinkState => ({
@@ -47,7 +55,12 @@ export const useBlinkStore = defineStore("blink", {
     },
     async syncNow(): Promise<void> {
       await triggerBlinkSync();
-      await this.refreshStatus();
+      await pollUntilReady(
+        () => this.refreshStatus(),
+        () => (this.status?.camera_count ?? 0) > 0,
+        SYNC_DISCOVERY_ATTEMPTS,
+        SYNC_DISCOVERY_DELAY_MS,
+      );
     },
     async unlink(): Promise<void> {
       await unlinkBlinkAccount();
