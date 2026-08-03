@@ -282,9 +282,11 @@ describe("SyncModuleView per-camera motion", () => {
     await flushPromises();
 
     expect(mockedSetMotion).toHaveBeenCalledWith(HUB_ID, cameraDefault.camera_id, false);
-    expect(
-      wrapper.find(`[data-testid="camera-motion-row-${cameraDefault.camera_id}"]`).text(),
-    ).toContain("Front Door");
+    const row = wrapper.find(`[data-testid="camera-motion-row-${cameraDefault.camera_id}"]`);
+    expect(row.text()).toContain("Front Door");
+    // camera_type "catalina" is translated to its real hardware name -
+    // see frontend/src/lib/cameraModels.ts.
+    expect(row.text()).toContain("Blink Outdoor Gen 3");
   });
 
   it("toasts an error when toggling an individual camera fails", async () => {

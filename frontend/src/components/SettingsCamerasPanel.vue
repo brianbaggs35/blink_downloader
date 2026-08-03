@@ -9,6 +9,7 @@ import { useToast } from "primevue/usetoast";
 import { onMounted, reactive, ref } from "vue";
 
 import { ApiError, listCameras, updateCamera } from "@/api";
+import { cameraModelLabel } from "@/lib/cameraModels";
 
 import type { CameraRead } from "@/api";
 
@@ -143,7 +144,7 @@ function contextChanged(camera: CameraRead): boolean {
           <div class="camera-identity">
             <span class="camera-name">{{ camera.name }}</span>
             <Tag
-              :value="camera.camera_type"
+              :value="cameraModelLabel(camera.camera_type)"
               severity="secondary"
             />
             <span

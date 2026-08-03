@@ -87,7 +87,9 @@ describe("SettingsCamerasPanel loading", () => {
 
     const rowA = wrapper.find(`[data-testid="camera-row-${cameraA.id}"]`);
     expect(rowA.text()).toContain("Driveway");
-    expect(rowA.text()).toContain("catalina");
+    // camera_type "catalina" is translated to its real hardware name -
+    // see frontend/src/lib/cameraModels.ts.
+    expect(rowA.text()).toContain("Blink Outdoor Gen 3");
     expect(rowA.text()).toContain("Battery: ok");
     expect(rowA.text()).toContain("Syncing");
     const contextA = wrapper.find(`[data-testid="camera-context-${cameraA.id}"]`)
@@ -97,6 +99,8 @@ describe("SettingsCamerasPanel loading", () => {
     const rowB = wrapper.find(`[data-testid="camera-row-${cameraB.id}"]`);
     expect(rowB.text()).toContain("Paused");
     expect(rowB.text()).not.toContain("Battery:");
+    // An unmapped codename ("sedona") falls back to the raw string.
+    expect(rowB.text()).toContain("sedona");
   });
 });
 

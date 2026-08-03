@@ -19,6 +19,7 @@ import { ApiError, getStorageSettings, listCameras, updateCamera, updateStorageS
 import BlinkAccountPanel from "@/components/BlinkAccountPanel.vue";
 import AuthLayout from "@/components/AuthLayout.vue";
 import StorageDirectoryBrowserDialog from "@/components/StorageDirectoryBrowserDialog.vue";
+import { cameraModelLabel } from "@/lib/cameraModels";
 import { useAuthStore } from "@/stores/auth";
 import { useBlinkStore } from "@/stores/blink";
 
@@ -422,7 +423,7 @@ function finish(): void {
               <div class="camera-identity">
                 <span class="camera-name">{{ camera.name }}</span>
                 <Tag
-                  :value="camera.camera_type"
+                  :value="cameraModelLabel(camera.camera_type)"
                   severity="secondary"
                 />
               </div>

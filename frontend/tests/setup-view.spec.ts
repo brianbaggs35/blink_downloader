@@ -320,7 +320,11 @@ describe("SetupView — Blink + review steps", () => {
     await flushPromises();
 
     expect(mockedSyncNow).toHaveBeenCalledOnce();
-    expect(wrapper.find('[data-testid="review-camera-list"]').text()).toContain("Front Door");
+    const cameraList = wrapper.find('[data-testid="review-camera-list"]');
+    expect(cameraList.text()).toContain("Front Door");
+    // camera_type "catalina" is translated to its real hardware name -
+    // see frontend/src/lib/cameraModels.ts.
+    expect(cameraList.text()).toContain("Blink Outdoor Gen 3");
   });
 
   it("shows Continue (not Skip) once Blink is linked", async () => {
