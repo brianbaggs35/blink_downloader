@@ -1,0 +1,29 @@
+# Opt-in NVIDIA GPU passthrough for the dev stack. Entry point: `make dev-gpu`
+# (adds this on top of docker-compose.dev.yml - never the default `make dev`,
+# since a GPU reservation with no nvidia-container-toolkit on the host makes
+# the container fail to start outright rather than falling back to CPU).
+#
+# Requires the NVIDIA driver + nvidia-container-toolkit installed on the
+# host (https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+# and `sudo nvidia-ctk runtime configure --runtime=docker` run once. See
+# docs/BIOMETRICS.md for the full setup.
+name: blink-dev
+
+services:
+  backend:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  worker:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

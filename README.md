@@ -80,7 +80,9 @@ cache volumes, all of which see real disk I/O. `onnxruntime-gpu` ships no
 arm64 wheels at all, so biometrics always runs on CPU there regardless of
 the "Auto" compute setting; start with the smaller model tiers on a Pi-class
 host (see [docs/BIOMETRICS.md](docs/BIOMETRICS.md#choosing-a-model-for-your-hardware)).
-An x86_64 host with an NVIDIA GPU is auto-detected and used automatically.
+An x86_64 host with an NVIDIA GPU is detected and used automatically once
+Docker is told to pass one through — `make dev-gpu`/`make prod-gpu` instead
+of the plain targets (see [docs/BIOMETRICS.md](docs/BIOMETRICS.md#enabling-the-gpu-in-docker)).
 
 ## Quick start (production)
 

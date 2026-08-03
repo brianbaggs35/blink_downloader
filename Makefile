@@ -1,11 +1,13 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-COMPOSE_PROD := docker compose -f docker-compose.yml
-COMPOSE_DEV  := docker compose -f docker-compose.dev.yml
-COMPOSE_TEST := docker compose -f docker-compose.test.yml
+COMPOSE_PROD     := docker compose -f docker-compose.yml
+COMPOSE_PROD_GPU := $(COMPOSE_PROD) -f docker-compose.prod.gpu.yml
+COMPOSE_DEV      := docker compose -f docker-compose.dev.yml
+COMPOSE_DEV_GPU  := $(COMPOSE_DEV) -f docker-compose.gpu.yml
+COMPOSE_TEST     := docker compose -f docker-compose.test.yml
 
-.PHONY: help secrets certs prod prod-stop prod-logs prod-down dev dev-stop dev-logs dev-down \
+.PHONY: help secrets certs prod prod-gpu prod-stop prod-logs prod-down dev dev-gpu dev-stop dev-logs dev-down \
 	test test-db test-stop test-backend test-backend-fast test-frontend e2e e2e-up e2e-test e2e-down \
 	lint lint-backend lint-frontend fmt migrate makemigration api-types \
 	db-shell clean
@@ -35,6 +37,10 @@ prod: certs ## Start the production stack (requires .env — run `make secrets` 
 	@test -f .env || (echo "ERROR: .env missing. Run 'make secrets' and create .env from .env.example." && exit 1)
 	$(COMPOSE_PROD) up -d --build
 
+prod-gpu: certs ## Start prod with NVIDIA GPU passthrough for biometrics (requires nvidia-container-toolkit - see docs/BIOMETRICS.md)
+	@test -f .env || (echo "ERROR: .env missing. Run 'make secrets' and create .env from .env.example." && exit 1)
+	$(COMPOSE_PROD_GPU) up -d --build
+
 prod-stop: ## Stop production containers without removing them (resume with `make prod`)
 	$(COMPOSE_PROD) stop
 
@@ -47,6 +53,10 @@ prod-down: ## Stop AND remove production containers (volumes/data are kept)
 dev: ## Start the development stack with hot reload (API :8000, frontend :5173)
 	$(COMPOSE_DEV) up -d --build
 	@echo "Dev stack up: frontend http://localhost:5173 · API http://localhost:8000 · logs: make dev-logs"
+
+dev-gpu: ## Start dev with NVIDIA GPU passthrough for biometrics (requires nvidia-container-toolkit - see docs/BIOMETRICS.md)
+	$(COMPOSE_DEV_GPU) up -d --build
+	@echo "Dev stack up (GPU): frontend http://localhost:5173 · API http://localhost:8000 · logs: make dev-logs"
 
 dev-stop: ## Stop dev containers without removing them (resume with `make dev`)
 	$(COMPOSE_DEV) stop
