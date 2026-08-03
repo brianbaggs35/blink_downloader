@@ -49,17 +49,20 @@ actually change future matching, not just relabel one clip.
 
 ## Live View and Security Feed
 
-Blink doesn't offer a browser-playable live stream — its real liveview call
-returns a raw `rtsps://` URL — so instead: **Live View** lets you pick a
-camera (or two, side-by-side) and polls its latest snapshot on an interval,
-with an on-demand forced refresh, save-clip, and full-resolution
-screenshot-to-file. **Security Feed** is an at-a-glance dashboard grid of
-your chosen cameras, each tile refreshing independently, that gets you as
-close to "live" as Blink's motion-triggered stills allow — configurable
-under Settings → Security Feed, with zero setup required beyond enabling
-cameras. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#live-view--security-feed)
-for how the passive/forced preview split keeps this free of Blink API abuse
-and battery drain.
+**Live View** lets you pick a camera (or two, side-by-side) and polls its
+latest snapshot on an interval, with an on-demand forced refresh, save-clip,
+and full-resolution screenshot-to-file — plus an explicit, per-camera
+"Start live view" button for real continuous video, for any camera whose
+live-view session Blink negotiates over `immis://` (not every model; a
+camera that only offers `rtsps://` shows a clear "not supported" message
+instead). **Security Feed** is an at-a-glance dashboard grid of your chosen
+cameras, each tile refreshing independently, that gets you as close to
+"live" as Blink's motion-triggered stills allow — configurable under
+Settings → Security Feed, with zero setup required beyond enabling cameras;
+it's snapshot-only and unaffected by Live View's streaming.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#live-view--security-feed)
+for how the passive/forced preview split and the real-streaming session
+lifecycle both work.
 
 ## Stack
 

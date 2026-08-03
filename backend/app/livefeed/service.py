@@ -1,11 +1,12 @@
 """Live View / Security Feed settings, and the shared camera-preview fetch
-these two features are both built on.
+both features are built on (Live View's snapshot fallback and Security
+Feed's only view - see app.livefeed.live_stream for Live View's separate
+real-streaming path).
 
-A "preview" is a single still image - see app/livefeed/models.py for why
-(no browser-playable live stream exists through blinkpy). Two fetch modes:
-passive (whatever Blink last captured - a real motion event or an earlier
-snap) and forced (wakes the camera for a fresh capture right now). Passive
-fetches are cached to local disk and only re-requested from Blink once
+A "preview" is a single still image. Two fetch modes: passive (whatever
+Blink last captured - a real motion event or an earlier snap) and forced
+(wakes the camera for a fresh capture right now). Passive fetches are
+cached to local disk and only re-requested from Blink once
 PREVIEW_FRESHNESS_SECONDS has passed, so N browser tabs polling the same
 camera cost one upstream request, not N.
 """
@@ -13,21 +14,44 @@ camera cost one upstream request, not N.
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.blink.models import BlinkAccount, BlinkAccountStatus, Camera
 from app.blink.service import BlinkAuthError, BlinkError, BlinkPyService
 from app.config import Settings
+from app.livefeed.live_stream import LiveViewSession, LiveViewSessionStarter
 from app.livefeed.models import SINGLETON_ID, LiveViewSettings, SecurityFeedSettings
 from app.livefeed.schemas import (
     LiveViewSettingsUpdate,
     SecurityFeedSettingsUpdate,
 )
-from app.security.crypto import SecretBox
+from app.security.crypto import CryptoError, SecretBox
 from app.storage.service import ClipStorage
 
 PREVIEW_FRESHNESS_SECONDS = 8
+
+
+async def _load_token_data(
+    session: AsyncSession, settings: Settings, account: BlinkAccount
+) -> dict[str, Any]:
+    """Decrypts ``account``'s stored Blink token, raising BlinkAuthError (and
+    marking the account errored, same as an actually-expired token would) if
+    the ciphertext can't be decrypted - e.g. BLINK_ENCRYPTION_KEY changed
+    since it was stored. Re-linking the account is the fix either way, so
+    this surfaces identically to callers."""
+    box = SecretBox(settings.encryption_key)
+    try:
+        token_data: dict[str, Any] = json.loads(box.decrypt(account.encrypted_token_data))
+    except CryptoError as exc:
+        account.status = BlinkAccountStatus.ERROR
+        account.last_error = (
+            "Stored Blink credentials could not be decrypted - re-link this account."
+        )
+        await session.commit()
+        raise BlinkAuthError(str(exc)) from exc
+    return token_data
 
 
 async def get_live_view_settings(session: AsyncSession) -> LiveViewSettings:
@@ -125,8 +149,7 @@ async def get_camera_preview(
     if account is None:  # pragma: no cover — FK guarantees this can't happen
         raise BlinkError("No Blink account linked.")
 
-    box = SecretBox(settings.encryption_key)
-    token_data = json.loads(box.decrypt(account.encrypted_token_data))
+    token_data = await _load_token_data(session, settings, account)
     service = BlinkPyService(token_data)
     try:
         image = (
@@ -162,6 +185,44 @@ async def get_camera_preview(
     return path
 
 
+async def start_live_view(
+    session: AsyncSession,
+    settings: Settings,
+    camera: Camera,
+    manager: LiveViewSessionStarter,
+) -> LiveViewSession:
+    """Starts a real streaming session for ``camera``, if its negotiated
+    live-view server turns out to be one blinkpy can proxy (immis://, not
+    rtsps://) - see LiveViewUnsupportedError. Raises the same BlinkError
+    family as get_camera_preview()/record_camera_clip(); unlike those, there
+    is no snapshot-style stale-cache fallback here - starting a stream is
+    always an explicit, real-time action."""
+    if settings.disable_blink_network_calls:
+        raise BlinkError("Live Blink calls are disabled in this environment.")
+
+    account = await session.get(BlinkAccount, camera.blink_account_id)
+    if account is None:  # pragma: no cover — FK guarantees this can't happen
+        raise BlinkError("No Blink account linked.")
+
+    token_data = await _load_token_data(session, settings, account)
+    service = BlinkPyService(token_data)
+    try:
+        handle = await service.init_live_stream(camera.blink_camera_id)
+    except BlinkAuthError as exc:
+        account.status = BlinkAccountStatus.ERROR
+        account.last_error = str(exc)
+        await session.commit()
+        await service.close()
+        raise
+    except BlinkError:
+        await service.close()
+        raise
+
+    # From here on, `manager` owns `service`/`handle` and is responsible for
+    # closing them, including if this call itself raises.
+    return await manager.start_session(camera.id, service, handle)
+
+
 async def record_camera_clip(session: AsyncSession, settings: Settings, camera: Camera) -> None:
     if settings.disable_blink_network_calls:
         # No real Blink account exists to actually record against (see
@@ -177,8 +238,7 @@ async def record_camera_clip(session: AsyncSession, settings: Settings, camera: 
     if account is None:  # pragma: no cover — FK guarantees this can't happen
         raise BlinkError("No Blink account linked.")
 
-    box = SecretBox(settings.encryption_key)
-    token_data = json.loads(box.decrypt(account.encrypted_token_data))
+    token_data = await _load_token_data(session, settings, account)
     service = BlinkPyService(token_data)
     try:
         await service.record_clip(camera.blink_camera_id)

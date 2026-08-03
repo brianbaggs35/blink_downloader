@@ -1,13 +1,12 @@
 """Live View and Security Feed settings: two household-wide singletons,
 same pattern as AlertSettings/AISettings - one row, get-or-create.
 
-Neither Blink nor blinkpy expose real browser-playable video streaming
-(``get_liveview()`` returns a raw ``rtsps://``/``immis://`` URL no browser
-can play without a transcoding relay this project doesn't build). Both
-features are snapshot-based instead: Live View shows one camera's current
-image with an on-demand forced-refresh action; Security Feed is a
-passively-polled multi-camera grid showing whatever Blink's own
-motion-triggered capture last produced. See docs/LIVE_VIEW.md.
+These settings rows only ever describe the snapshot side of each feature
+(default camera, auto-refresh timing, chosen cameras/columns) - Live View's
+real streaming sessions are process-local runtime state, not settings, and
+live in app.livefeed.live_stream (see docs/ARCHITECTURE.md#live-view--security-feed).
+Security Feed itself stays snapshot-only: a passively-polled multi-camera
+grid showing whatever Blink's own motion-triggered capture last produced.
 """
 
 import uuid

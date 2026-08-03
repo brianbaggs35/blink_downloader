@@ -49,6 +49,46 @@ describe("VideoPlayer", () => {
     wrapper.unmount();
   });
 
+  it("uses the given source type instead of the video/mp4 default", () => {
+    const wrapper = mount(VideoPlayer, {
+      props: { src: "/api/x/stream.m3u8", type: "application/x-mpegURL" },
+    });
+    const [, options] = mockedVideojs.mock.calls[0]!;
+    expect(options).toMatchObject({
+      sources: [{ src: "/api/x/stream.m3u8", type: "application/x-mpegURL" }],
+    });
+    wrapper.unmount();
+  });
+
+  it("configures fill/liveui and drops playback rates for a live stream", () => {
+    const wrapper = mount(VideoPlayer, {
+      props: { src: "tcp-relay-playlist.m3u8", live: true },
+    });
+    const [, options] = mockedVideojs.mock.calls[0]!;
+    expect(options).toMatchObject({ fluid: false, fill: true, liveui: true, playbackRates: [] });
+    expect(wrapper.find("[data-vjs-player]").classes()).toContain("live-fill");
+    wrapper.unmount();
+  });
+
+  it("defaults to fluid mode with playback rates for a non-live source", () => {
+    const wrapper = mount(VideoPlayer, { props: { src: "/api/clips/1/stream" } });
+    const [, options] = mockedVideojs.mock.calls[0]!;
+    expect(options).toMatchObject({ fluid: true, fill: false, liveui: false });
+    expect((options as { playbackRates: number[] }).playbackRates.length).toBeGreaterThan(0);
+    expect(wrapper.find("[data-vjs-player]").classes()).not.toContain("live-fill");
+    wrapper.unmount();
+  });
+
+  it("updates the player's source with a custom type when src changes", async () => {
+    const wrapper = mount(VideoPlayer, {
+      props: { src: "/a.m3u8", type: "application/x-mpegURL" },
+    });
+    const player = lastPlayerInstance();
+    await wrapper.setProps({ src: "/b.m3u8", type: "application/x-mpegURL" });
+    expect(player.src).toHaveBeenCalledWith({ src: "/b.m3u8", type: "application/x-mpegURL" });
+    wrapper.unmount();
+  });
+
   it("disposes the player on unmount", () => {
     const wrapper = mount(VideoPlayer, { props: { src: "/api/clips/1/stream" } });
     const player = lastPlayerInstance();

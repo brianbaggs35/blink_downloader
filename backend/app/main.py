@@ -16,6 +16,7 @@ from app.api import api_router
 from app.blink.linker import BlinkLinker
 from app.config import Settings, get_settings
 from app.db import build_engine, build_sessionmaker
+from app.livefeed.live_stream import LiveViewSessionManager
 from app.logs import configure_logging, get_logger
 from app.security.headers import SecurityHeadersMiddleware
 
@@ -34,8 +35,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.redis = Redis.from_url(config.redis_url)
         app.state.arq_redis = await create_pool(RedisSettings.from_dsn(config.redis_url))
         app.state.blink_linker = BlinkLinker()
+        app.state.live_view_manager = LiveViewSessionManager()
         logger.info("app.started", environment=config.environment, version=__version__)
         yield
+        await app.state.live_view_manager.aclose()
         await app.state.blink_linker.aclose()
         await app.state.arq_redis.aclose()
         await app.state.redis.aclose()

@@ -9,6 +9,7 @@ test_worker_download.py's convention.
 # pyright: reportUnusedFunction=false
 
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -17,8 +18,9 @@ from fastapi import FastAPI
 from httpx import AsyncClient
 
 from app.blink.models import BlinkAccount, Camera
-from app.blink.service import BlinkAuthError, BlinkError
+from app.blink.service import BlinkAuthError, BlinkError, LiveViewUnsupportedError
 from app.config import get_settings
+from app.livefeed.live_stream import LiveViewStartError
 from app.security.crypto import SecretBox
 from app.settings.service import set_storage_dir
 
@@ -138,6 +140,12 @@ class FakeBlinkService:
         if FakeBlinkService.next_error:
             raise FakeBlinkService.next_error
 
+    async def init_live_stream(self, camera_id: str) -> Any:
+        del camera_id
+        if FakeBlinkService.next_error:
+            raise FakeBlinkService.next_error
+        return object()
+
     async def close(self) -> None:
         pass
 
@@ -256,3 +264,279 @@ async def test_record_maps_generic_blink_errors_to_502(
     FakeBlinkService.next_error = BlinkError("camera offline")
     response = await admin_client.post(f"/api/cameras/{camera.id}/record")
     assert response.status_code == 502
+
+
+# --------------------------------------------------------------- live view
+
+
+@dataclass
+class _FakeSession:
+    session_id: uuid.UUID
+    camera_id: uuid.UUID
+
+
+class FakeLiveViewManager:
+    def __init__(self) -> None:
+        self.start_calls: list[uuid.UUID] = []
+        self.stop_calls: list[uuid.UUID] = []
+        self.get_file_calls: list[tuple[uuid.UUID, str]] = []
+        self.next_error: Exception | None = None
+        self.file_to_serve: Path | None = None
+        self.sessions: dict[uuid.UUID, _FakeSession] = {}
+
+    async def start_session(self, camera_id: uuid.UUID, service: Any, handle: Any) -> _FakeSession:
+        del service, handle
+        self.start_calls.append(camera_id)
+        if self.next_error:
+            raise self.next_error
+        session = _FakeSession(session_id=uuid.uuid4(), camera_id=camera_id)
+        self.sessions[session.session_id] = session
+        return session
+
+    def get(self, session_id: uuid.UUID) -> _FakeSession | None:
+        return self.sessions.get(session_id)
+
+    async def stop_session(self, session_id: uuid.UUID) -> None:
+        self.stop_calls.append(session_id)
+        self.sessions.pop(session_id, None)
+
+    def get_file(self, session_id: uuid.UUID, filename: str) -> Path | None:
+        self.get_file_calls.append((session_id, filename))
+        return self.file_to_serve
+
+    async def aclose(self) -> None:
+        """The app's real lifespan shutdown always calls this on whatever
+        app.state.live_view_manager currently is - the real manager's
+        aclose() is exercised in test_live_stream_manager.py; this only
+        needs to exist so overwriting app.state with a fake doesn't break
+        every test's teardown."""
+
+
+def _install_fake_manager(app: FastAPI) -> FakeLiveViewManager:
+    manager = FakeLiveViewManager()
+    app.state.live_view_manager = manager
+    return manager
+
+
+async def test_start_live_view_requires_authentication(client: AsyncClient, app: FastAPI) -> None:
+    camera = await _make_camera(app)
+    response = await client.post(f"/api/cameras/{camera.id}/live-view/start")
+    assert response.status_code == 401
+
+
+async def test_start_live_view_requires_superuser(viewer_client: AsyncClient, app: FastAPI) -> None:
+    _install_fake_manager(app)
+    camera = await _make_camera(app)
+    response = await viewer_client.post(f"/api/cameras/{camera.id}/live-view/start")
+    assert response.status_code == 403
+
+
+async def test_start_live_view_unknown_camera_is_404(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    _install_fake_manager(app)
+    response = await admin_client.post(f"/api/cameras/{uuid.uuid4()}/live-view/start")
+    assert response.status_code == 404
+
+
+async def test_start_live_view_succeeds(admin_client: AsyncClient, app: FastAPI) -> None:
+    manager = _install_fake_manager(app)
+    camera = await _make_camera(app)
+
+    response = await admin_client.post(f"/api/cameras/{camera.id}/live-view/start")
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["camera_id"] == str(camera.id)
+    assert body["playlist_url"] == (
+        f"/api/cameras/{camera.id}/live-view/{body['session_id']}/stream.m3u8"
+    )
+    assert manager.start_calls == [camera.id]
+
+
+async def test_start_live_view_maps_auth_errors_to_401(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    _install_fake_manager(app)
+    camera = await _make_camera(app)
+    FakeBlinkService.next_error = BlinkAuthError("token expired")
+    response = await admin_client.post(f"/api/cameras/{camera.id}/live-view/start")
+    assert response.status_code == 401
+
+
+async def test_start_live_view_maps_unsupported_camera_to_409(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    _install_fake_manager(app)
+    camera = await _make_camera(app)
+    FakeBlinkService.next_error = LiveViewUnsupportedError("rtsps:// only")
+    response = await admin_client.post(f"/api/cameras/{camera.id}/live-view/start")
+    assert response.status_code == 409
+
+
+async def test_start_live_view_maps_generic_blink_errors_to_502(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    _install_fake_manager(app)
+    camera = await _make_camera(app)
+    FakeBlinkService.next_error = BlinkError("camera offline")
+    response = await admin_client.post(f"/api/cameras/{camera.id}/live-view/start")
+    assert response.status_code == 502
+
+
+async def test_start_live_view_maps_manager_start_errors_to_502(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    manager = _install_fake_manager(app)
+    manager.next_error = LiveViewStartError("ffmpeg is not installed")
+    camera = await _make_camera(app)
+    response = await admin_client.post(f"/api/cameras/{camera.id}/live-view/start")
+    assert response.status_code == 502
+
+
+async def test_stop_live_view_requires_authentication(client: AsyncClient, app: FastAPI) -> None:
+    _install_fake_manager(app)
+    camera = await _make_camera(app)
+    response = await client.post(f"/api/cameras/{camera.id}/live-view/{uuid.uuid4()}/stop")
+    assert response.status_code == 401
+
+
+async def test_stop_live_view_requires_superuser(viewer_client: AsyncClient, app: FastAPI) -> None:
+    _install_fake_manager(app)
+    camera = await _make_camera(app)
+    response = await viewer_client.post(f"/api/cameras/{camera.id}/live-view/{uuid.uuid4()}/stop")
+    assert response.status_code == 403
+
+
+async def test_stop_live_view_stops_a_known_session(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    manager = _install_fake_manager(app)
+    camera = await _make_camera(app)
+    start = await admin_client.post(f"/api/cameras/{camera.id}/live-view/start")
+    session_id = uuid.UUID(start.json()["session_id"])
+
+    response = await admin_client.post(f"/api/cameras/{camera.id}/live-view/{session_id}/stop")
+
+    assert response.status_code == 204
+    assert manager.stop_calls == [session_id]
+
+
+async def test_stop_live_view_is_a_no_op_for_an_unknown_session(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    manager = _install_fake_manager(app)
+    camera = await _make_camera(app)
+    response = await admin_client.post(f"/api/cameras/{camera.id}/live-view/{uuid.uuid4()}/stop")
+    assert response.status_code == 204
+    assert manager.stop_calls == []
+
+
+async def test_stop_live_view_is_a_no_op_when_the_session_belongs_to_another_camera(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    manager = _install_fake_manager(app)
+    camera_a = await _make_camera(app, name="Camera A")
+    camera_b = await _make_camera(app, name="Camera B")
+    start = await admin_client.post(f"/api/cameras/{camera_a.id}/live-view/start")
+    session_id = start.json()["session_id"]
+
+    response = await admin_client.post(f"/api/cameras/{camera_b.id}/live-view/{session_id}/stop")
+
+    assert response.status_code == 204
+    assert manager.stop_calls == []
+
+
+async def test_get_live_view_file_requires_authentication(
+    client: AsyncClient, app: FastAPI
+) -> None:
+    _install_fake_manager(app)
+    camera = await _make_camera(app)
+    response = await client.get(f"/api/cameras/{camera.id}/live-view/{uuid.uuid4()}/stream.m3u8")
+    assert response.status_code == 401
+
+
+async def test_get_live_view_file_allowed_for_a_viewer(
+    viewer_client: AsyncClient, app: FastAPI, tmp_path: Path
+) -> None:
+    # admin_client and viewer_client share one cookie jar when both are
+    # requested by the same test (see viewer_client's docstring in
+    # conftest.py) - seeding the fake manager's session directly sidesteps
+    # needing a real admin-authenticated start call here.
+    manager = _install_fake_manager(app)
+    camera = await _make_camera(app)
+    session_id = uuid.uuid4()
+    manager.sessions[session_id] = _FakeSession(session_id=session_id, camera_id=camera.id)
+    playlist = tmp_path / "stream.m3u8"
+    playlist.write_text("#EXTM3U\n")
+    manager.file_to_serve = playlist
+
+    response = await viewer_client.get(
+        f"/api/cameras/{camera.id}/live-view/{session_id}/stream.m3u8"
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/vnd.apple.mpegurl"
+    assert response.headers["cache-control"] == "no-store"
+
+
+async def test_get_live_view_file_serves_a_segment_with_the_right_content_type(
+    admin_client: AsyncClient, app: FastAPI, tmp_path: Path
+) -> None:
+    manager = _install_fake_manager(app)
+    camera = await _make_camera(app)
+    start = await admin_client.post(f"/api/cameras/{camera.id}/live-view/start")
+    session_id = start.json()["session_id"]
+    segment = tmp_path / "segment00001.ts"
+    segment.write_bytes(b"ts-bytes")
+    manager.file_to_serve = segment
+
+    response = await admin_client.get(
+        f"/api/cameras/{camera.id}/live-view/{session_id}/segment00001.ts"
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "video/mp2t"
+
+
+async def test_get_live_view_file_404s_for_an_unknown_session(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    _install_fake_manager(app)
+    camera = await _make_camera(app)
+    response = await admin_client.get(
+        f"/api/cameras/{camera.id}/live-view/{uuid.uuid4()}/stream.m3u8"
+    )
+    assert response.status_code == 404
+
+
+async def test_get_live_view_file_404s_when_the_session_belongs_to_another_camera(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    _install_fake_manager(app)
+    camera_a = await _make_camera(app, name="Camera A")
+    camera_b = await _make_camera(app, name="Camera B")
+    start = await admin_client.post(f"/api/cameras/{camera_a.id}/live-view/start")
+    session_id = start.json()["session_id"]
+
+    response = await admin_client.get(
+        f"/api/cameras/{camera_b.id}/live-view/{session_id}/stream.m3u8"
+    )
+
+    assert response.status_code == 404
+
+
+async def test_get_live_view_file_404s_when_the_manager_has_no_file_yet(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    manager = _install_fake_manager(app)
+    camera = await _make_camera(app)
+    start = await admin_client.post(f"/api/cameras/{camera.id}/live-view/start")
+    session_id = start.json()["session_id"]
+    manager.file_to_serve = None
+
+    response = await admin_client.get(
+        f"/api/cameras/{camera.id}/live-view/{session_id}/stream.m3u8"
+    )
+
+    assert response.status_code == 404

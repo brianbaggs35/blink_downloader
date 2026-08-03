@@ -16,6 +16,7 @@ handled by :mod:`app.blink.linker`.
 
 import asyncio
 import string
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -55,6 +56,14 @@ class LocalStorageUnavailableError(BlinkError):
     """This network has no active local (USB) storage to browse - either it
     has no physical Sync Module (a Mini/Doorbell-only "sync-less" network) or
     its Sync Module doesn't support/have local storage enabled."""
+
+
+class LiveViewUnsupportedError(BlinkError):
+    """This camera's live-view session negotiated an rtsps:// server, not
+    the immis:// protocol blinkpy's own relay can proxy - a real, per-camera
+    limitation discovered at request time (see blinkpy's own
+    BlinkCamera.init_livestream), not something predictable ahead of time
+    from a camera's model/generation alone."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +129,38 @@ class BlinkLocalStorageManifest:
     items: list[BlinkLocalStorageItem]
 
 
+class BlinkLiveStreamHandle:
+    """A running blinkpy local relay for one camera's live-view session -
+    connecting to ``url`` yields a plain MPEG-TS byte stream (blinkpy's own
+    relay authenticates to Blink's real server and re-frames the proprietary
+    IMMI protocol into raw MPEG-TS internally), which is what makes an
+    ffmpeg remux to HLS possible (see app.livefeed.live_stream).
+
+    Deliberately not blinkpy's own BlinkLiveStream type directly: keeping
+    this app's own small interface here (mirroring BlinkCameraInfo etc.
+    elsewhere in this module) means tests fake it without needing to
+    construct blinkpy's real class."""
+
+    def __init__(
+        self, url: str, feed: Callable[[], Awaitable[None]], stop: Callable[[], None]
+    ) -> None:
+        self.url = url
+        self._feed = feed
+        self._stop = stop
+
+    async def feed(self) -> None:
+        """Runs the relay's auth/receive/send/poll loop until the last
+        client disconnects or an error occurs - callers should run this as
+        a background task, not await it directly."""
+        await self._feed()
+
+    def stop(self) -> None:
+        """Closes the relay's local listen socket and any connected
+        clients - idempotent, safe to call even if feed() already returned
+        on its own."""
+        self._stop()
+
+
 class BlinkService(Protocol):
     async def get_cameras(self) -> list[BlinkCameraInfo]: ...
 
@@ -144,6 +185,14 @@ class BlinkService(Protocol):
     async def record_clip(self, camera_id: str) -> None:
         """Trigger an on-demand clip recording. The resulting clip arrives
         through the normal sync/download pipeline, not returned here."""
+        ...
+
+    async def init_live_stream(self, camera_id: str) -> BlinkLiveStreamHandle:
+        """Starts blinkpy's own local relay for this camera's live-view
+        session. Raises LiveViewUnsupportedError if this camera's
+        negotiated session isn't the immis:// protocol blinkpy can proxy -
+        discovered per-camera at request time, not predictable ahead of
+        time."""
         ...
 
     async def get_sync_modules(self) -> list[BlinkSyncModuleInfo]: ...
@@ -364,6 +413,19 @@ class BlinkPyService:
             await camera.record()
         except ClientResponseError as exc:
             raise BlinkAuthError(str(exc)) from exc
+
+    async def init_live_stream(self, camera_id: str) -> BlinkLiveStreamHandle:
+        camera = await self._find_camera(camera_id)
+        try:
+            stream = await camera.init_livestream()
+        except NotImplementedError as exc:
+            raise LiveViewUnsupportedError(
+                f"Live view isn't available for camera {camera_id} on this camera generation."
+            ) from exc
+        except ClientResponseError as exc:
+            raise BlinkAuthError(str(exc)) from exc
+        await stream.start()
+        return BlinkLiveStreamHandle(url=stream.url, feed=stream.feed, stop=stream.stop)
 
     async def get_sync_modules(self) -> list[BlinkSyncModuleInfo]:
         await self._ensure_sync()

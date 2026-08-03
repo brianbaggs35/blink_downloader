@@ -1,4 +1,5 @@
 import { flushPromises, mount } from "@vue/test-utils";
+import Message from "primevue/message";
 import Select from "primevue/select";
 import ToggleSwitch from "primevue/toggleswitch";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,23 +9,39 @@ import LiveView from "@/views/LiveView.vue";
 import { useAuthStore } from "@/stores/auth";
 import { fakeBlinkStatus, fakeUser, makePinia, makeRouter, mountGlobal } from "./helpers";
 
+vi.mock("video.js", () => ({
+  default: vi.fn(() => ({ dispose: vi.fn(), src: vi.fn() })),
+}));
+vi.mock("video.js/dist/video-js.css", () => ({}));
+
 vi.mock("@/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api")>()),
   getBlinkStatus: vi.fn(),
   listCameras: vi.fn(),
   getLiveViewSettings: vi.fn(),
   recordCameraClip: vi.fn(),
+  startCameraLiveView: vi.fn(),
+  stopCameraLiveView: vi.fn(),
 }));
 
 const toastAdd = vi.fn();
 vi.mock("primevue/usetoast", () => ({ useToast: () => ({ add: toastAdd }) }));
 
-import { getBlinkStatus, getLiveViewSettings, listCameras, recordCameraClip } from "@/api";
+import {
+  getBlinkStatus,
+  getLiveViewSettings,
+  listCameras,
+  recordCameraClip,
+  startCameraLiveView,
+  stopCameraLiveView,
+} from "@/api";
 
 const mockedBlinkStatus = vi.mocked(getBlinkStatus);
 const mockedListCameras = vi.mocked(listCameras);
 const mockedSettings = vi.mocked(getLiveViewSettings);
 const mockedRecord = vi.mocked(recordCameraClip);
+const mockedStart = vi.mocked(startCameraLiveView);
+const mockedStop = vi.mocked(stopCameraLiveView);
 
 function linkedStatus() {
   return fakeBlinkStatus({ linked: true, status: "active", camera_count: 2 });
@@ -61,6 +78,7 @@ beforeEach(() => {
   mockedBlinkStatus.mockResolvedValue(linkedStatus());
   mockedListCameras.mockResolvedValue([cameraA, cameraB]);
   mockedSettings.mockResolvedValue(defaultSettings);
+  mockedStop.mockResolvedValue(undefined);
 });
 
 // happy-dom doesn't implement createObjectURL/revokeObjectURL at all, so
@@ -451,5 +469,240 @@ describe("LiveView admin-only actions", () => {
     expect(wrapper.find('[data-testid="primary-refresh"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="primary-save-clip"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="primary-screenshot"]').exists()).toBe(true);
+  });
+});
+
+describe("LiveView real streaming", () => {
+  const session = {
+    session_id: "session-1",
+    camera_id: cameraA.id,
+    playlist_url: "/api/cameras/aaa/live-view/session-1/stream.m3u8",
+  };
+
+  it("does not auto-start a stream on load", async () => {
+    const wrapper = await mountView();
+    expect(mockedStart).not.toHaveBeenCalled();
+    expect(wrapper.find('[data-testid="primary-live-player"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="primary-preview"]').exists()).toBe(true);
+  });
+
+  it("starts a live stream and swaps the snapshot for the player", async () => {
+    mockedStart.mockResolvedValue(session);
+    const wrapper = await mountView();
+
+    await wrapper.find('[data-testid="primary-live-toggle"]').trigger("click");
+    await flushPromises();
+
+    expect(mockedStart).toHaveBeenCalledWith(cameraA.id);
+    expect(wrapper.find('[data-testid="primary-live-player"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="primary-preview"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="primary-live-toggle"]').text()).toContain("Stop live view");
+  });
+
+  it("shows a starting indicator while the request is in flight", async () => {
+    let resolveStart!: (value: typeof session) => void;
+    mockedStart.mockReturnValue(
+      new Promise((resolve) => {
+        resolveStart = resolve;
+      }),
+    );
+    const wrapper = await mountView();
+
+    await wrapper.find('[data-testid="primary-live-toggle"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="primary-live-starting"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="primary-live-toggle"]').text()).toContain(
+      "Starting live view",
+    );
+
+    resolveStart(session);
+    await flushPromises();
+    expect(wrapper.find('[data-testid="primary-live-player"]').exists()).toBe(true);
+  });
+
+  it("stops a live stream and returns to the snapshot view", async () => {
+    mockedStart.mockResolvedValue(session);
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="primary-live-toggle"]').trigger("click");
+    await flushPromises();
+
+    await wrapper.find('[data-testid="primary-live-toggle"]').trigger("click");
+    await flushPromises();
+
+    expect(mockedStop).toHaveBeenCalledWith(cameraA.id, "session-1");
+    expect(wrapper.find('[data-testid="primary-live-player"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="primary-preview"]').exists()).toBe(true);
+  });
+
+  it("shows a distinct message when the camera doesn't support live view (409)", async () => {
+    mockedStart.mockRejectedValue(new ApiError(409, "Live view isn't available for this camera."));
+    const wrapper = await mountView();
+
+    await wrapper.find('[data-testid="primary-live-toggle"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="primary-live-error"]').text()).toBe(
+      "Live view isn't available for this camera.",
+    );
+    expect(wrapper.find('[data-testid="primary-live-toggle"]').text()).toContain(
+      "Start live view",
+    );
+  });
+
+  it("shows an error message when starting fails for another reason", async () => {
+    mockedStart.mockRejectedValue(new ApiError(502, "camera offline"));
+    const wrapper = await mountView();
+
+    await wrapper.find('[data-testid="primary-live-toggle"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="primary-live-error"]').text()).toBe("camera offline");
+  });
+
+  it("shows a generic error message for a non-API start failure", async () => {
+    mockedStart.mockRejectedValue(new TypeError("down"));
+    const wrapper = await mountView();
+
+    await wrapper.find('[data-testid="primary-live-toggle"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="primary-live-error"]').text()).toBe(
+      "Could not start the live stream.",
+    );
+  });
+
+  it("ignores a second click while a stream is already starting", async () => {
+    mockedStart.mockReturnValue(new Promise(() => {}));
+    const wrapper = await mountView();
+
+    await wrapper.find('[data-testid="primary-live-toggle"]').trigger("click");
+    await wrapper.find('[data-testid="primary-live-toggle"]').trigger("click");
+    await flushPromises();
+
+    expect(mockedStart).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops the running stream and re-fetches when the camera selection changes", async () => {
+    mockedStart.mockResolvedValue(session);
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="primary-live-toggle"]').trigger("click");
+    await flushPromises();
+
+    const select = wrapper.findComponent(Select);
+    await select.vm.$emit("update:modelValue", cameraB.id);
+    await flushPromises();
+
+    expect(mockedStop).toHaveBeenCalledWith(cameraA.id, "session-1");
+    expect(wrapper.find('[data-testid="primary-live-player"]').exists()).toBe(false);
+  });
+
+  it("stops the secondary panel's stream when compare mode is turned back off", async () => {
+    const secondarySession = { ...session, session_id: "session-2", camera_id: cameraB.id };
+    mockedStart.mockResolvedValue(secondarySession);
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="toggle-compare"]').trigger("click");
+    await flushPromises();
+
+    await wrapper.find('[data-testid="secondary-live-toggle"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="secondary-live-player"]').exists()).toBe(true);
+
+    await wrapper.find('[data-testid="toggle-compare"]').trigger("click");
+    await flushPromises();
+
+    expect(mockedStop).toHaveBeenCalledWith(cameraB.id, "session-2");
+  });
+
+  it("stops any active stream on unmount", async () => {
+    mockedStart.mockResolvedValue(session);
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="primary-live-toggle"]').trigger("click");
+    await flushPromises();
+
+    wrapper.unmount();
+
+    expect(mockedStop).toHaveBeenCalledWith(cameraA.id, "session-1");
+  });
+
+  it("stops the secondary panel's active stream on unmount too", async () => {
+    const secondarySession = { ...session, session_id: "session-2", camera_id: cameraB.id };
+    mockedStart.mockResolvedValue(secondarySession);
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="toggle-compare"]').trigger("click");
+    await flushPromises();
+    await wrapper.find('[data-testid="secondary-live-toggle"]').trigger("click");
+    await flushPromises();
+
+    wrapper.unmount();
+
+    expect(mockedStop).toHaveBeenCalledWith(cameraB.id, "session-2");
+  });
+
+  it("shows an unsupported (warn) message on the secondary panel for a 409", async () => {
+    mockedStart.mockRejectedValue(new ApiError(409, "Not supported for this camera."));
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="toggle-compare"]').trigger("click");
+    await flushPromises();
+
+    await wrapper.find('[data-testid="secondary-live-toggle"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="secondary-live-error"]').text()).toBe(
+      "Not supported for this camera.",
+    );
+    expect(wrapper.findComponent(Message).props("severity")).toBe("warn");
+  });
+
+  it("shows an error-severity message on the secondary panel for a non-409 failure", async () => {
+    mockedStart.mockRejectedValue(new ApiError(502, "camera offline"));
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="toggle-compare"]').trigger("click");
+    await flushPromises();
+
+    await wrapper.find('[data-testid="secondary-live-toggle"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="secondary-live-error"]').text()).toBe("camera offline");
+  });
+
+  it("unmounts cleanly when no stream was ever started", async () => {
+    const wrapper = await mountView();
+    expect(() => wrapper.unmount()).not.toThrow();
+    expect(mockedStop).not.toHaveBeenCalled();
+  });
+
+  it("hides the live-view toggle for a viewer", async () => {
+    const wrapper = await mountView(false);
+    expect(wrapper.find('[data-testid="primary-live-toggle"]').exists()).toBe(false);
+  });
+
+  it("ignores the secondary live-view toggle when no camera is selected", async () => {
+    mockedListCameras.mockResolvedValue([cameraA]);
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="toggle-compare"]').trigger("click");
+    await flushPromises();
+
+    await wrapper.find('[data-testid="secondary-live-toggle"]').trigger("click");
+    await flushPromises();
+
+    expect(mockedStart).not.toHaveBeenCalled();
+  });
+
+  it("keeps the previously selected secondary camera when compare mode is toggled back on", async () => {
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="toggle-compare"]').trigger("click");
+    await flushPromises();
+    const selects = wrapper.findAllComponents(Select);
+    await selects[1]!.vm.$emit("update:modelValue", cameraA.id);
+    await flushPromises();
+
+    await wrapper.find('[data-testid="toggle-compare"]').trigger("click");
+    await flushPromises();
+    await wrapper.find('[data-testid="toggle-compare"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="secondary-preview"]').attributes("src")).toContain(
+      `/api/cameras/${cameraA.id}/preview`,
+    );
   });
 });

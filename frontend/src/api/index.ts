@@ -19,6 +19,7 @@ export type CameraRead = components["schemas"]["CameraRead"];
 
 export type LiveViewSettingsRead = components["schemas"]["LiveViewSettingsRead"];
 export type LiveViewSettingsUpdate = components["schemas"]["LiveViewSettingsUpdate"];
+export type LiveViewSessionRead = components["schemas"]["LiveViewSessionRead"];
 export type SecurityFeedSettingsRead = components["schemas"]["SecurityFeedSettingsRead"];
 export type SecurityFeedSettingsUpdate = components["schemas"]["SecurityFeedSettingsUpdate"];
 
@@ -184,6 +185,14 @@ export function cameraPreviewUrl(cameraId: string, options: { force?: boolean } 
 
 export function recordCameraClip(cameraId: string): Promise<{ status: string }> {
   return api<{ status: string }>(`/cameras/${cameraId}/record`, { method: "POST" });
+}
+
+export function startCameraLiveView(cameraId: string): Promise<LiveViewSessionRead> {
+  return api<LiveViewSessionRead>(`/cameras/${cameraId}/live-view/start`, { method: "POST" });
+}
+
+export function stopCameraLiveView(cameraId: string, sessionId: string): Promise<void> {
+  return api<void>(`/cameras/${cameraId}/live-view/${sessionId}/stop`, { method: "POST" });
 }
 
 export function getLiveViewSettings(): Promise<LiveViewSettingsRead> {
