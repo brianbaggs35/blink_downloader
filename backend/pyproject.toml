@@ -36,7 +36,18 @@ dependencies = [
     "google-auth-oauthlib>=1.4.0",
     "google-api-python-client>=2.198.0",
     "msal>=1.37.0",
-    "onnxruntime>=1.28.0",
+    # GPU build on x86_64 (the only arch it ships wheels for at all) so an
+    # NVIDIA GPU is actually usable for biometrics without a system-wide
+    # CUDA Toolkit install - [cuda,cudnn] extras pull the matching NVIDIA
+    # runtime libraries as plain pip wheels; app.biometrics.recognition
+    # calls onnxruntime.preload_dlls() so onnxruntime's CUDA execution
+    # provider can actually find them. Plain CPU build everywhere else
+    # (arm64/Raspberry Pi-class hosts) - resolve_providers() in
+    # app.biometrics.recognition already falls back to CPU correctly
+    # whenever CUDA isn't reported available, so no other branching is
+    # needed for this to keep working there.
+    "onnxruntime-gpu[cuda,cudnn]>=1.28.0; platform_machine == 'x86_64'",
+    "onnxruntime>=1.28.0; platform_machine != 'x86_64'",
     # Pulls in full opencv-python (not -headless): its declared dependency,
     # and uv/pip have no package-substitution mechanism to swap it for the
     # smaller headless build without installing both side by side into the

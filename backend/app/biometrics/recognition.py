@@ -39,6 +39,14 @@ from app.logs import get_logger
 
 logger = get_logger(__name__)
 
+# Makes the CUDA/cuDNN shared libraries installed via the onnxruntime-gpu
+# [cuda,cudnn] extras (pip-installed NVIDIA wheels, not a system CUDA
+# Toolkit - see pyproject.toml) actually discoverable to onnxruntime's CUDA
+# execution provider. A safe no-op on the plain (arm64/CPU-only) build this
+# app also supports: onnxruntime reports no CUDA version info baked in, so
+# this returns immediately without touching anything.
+onnxruntime.preload_dlls()
+
 # insightface's own documented default input resolution for the SCRFD
 # detector — large enough to find faces that aren't filling the frame
 # (typical for a security camera's wide field of view) without the extra
