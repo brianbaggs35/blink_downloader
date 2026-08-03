@@ -249,8 +249,6 @@ async function onMissedFaceEnrolled(): Promise<void> {
               :href="clipDownloadUrl(clip.id)"
               label="Download"
               icon="pi pi-download"
-              severity="secondary"
-              outlined
               data-testid="modal-download"
             />
             <Button
@@ -494,6 +492,9 @@ async function onMissedFaceEnrolled(): Promise<void> {
 
 .modal-main {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
 .modal-sidebar {
@@ -511,10 +512,6 @@ async function onMissedFaceEnrolled(): Promise<void> {
     max-height: none;
     overflow-y: visible;
   }
-}
-
-.player {
-  margin-bottom: 14px;
 }
 
 .meta-grid {
@@ -700,6 +697,12 @@ async function onMissedFaceEnrolled(): Promise<void> {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--p-surface-200);
+}
+
+.blink-dark .actions {
+  border-color: var(--p-surface-800);
 }
 
 .missed-face-popover {
