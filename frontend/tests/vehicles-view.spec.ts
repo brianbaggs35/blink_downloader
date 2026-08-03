@@ -161,6 +161,10 @@ describe("VehiclesView populated", () => {
     const cardA = wrapper.find(`[data-testid="vehicle-card-${vehicleA.camera_id}"]`);
     expect(cardA.find("img").exists()).toBe(true);
     expect(cardA.find("polygon").attributes("points")).toBe("20,30 60,30 60,70");
+    // Regression: a kebab-case "preserve-aspect-ratio" attribute is not real
+    // SVG/DOM and is silently ignored, leaving the default (letterboxed)
+    // behavior in place instead of stretching to match the image exactly.
+    expect(cardA.find("svg").attributes("preserveAspectRatio")).toBe("none");
 
     const cardB = wrapper.find(`[data-testid="vehicle-card-${vehicleB.camera_id}"]`);
     expect(cardB.find("img").exists()).toBe(false);
