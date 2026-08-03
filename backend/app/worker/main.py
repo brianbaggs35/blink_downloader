@@ -28,9 +28,11 @@ from app.worker.tasks.download import download_clip
 from app.worker.tasks.sync_module import (
     DELETE_LOCAL_ITEM_JOB_NAME,
     DOWNLOAD_LOCAL_ITEM_JOB_NAME,
+    PERIODIC_LOCAL_STORAGE_REFRESH_JOB_NAME,
     REFRESH_LOCAL_STORAGE_JOB_NAME,
     delete_sync_module_local_item_job,
     download_sync_module_local_item_job,
+    periodic_local_storage_refresh_job,
     refresh_sync_module_local_storage_job,
 )
 
@@ -60,6 +62,8 @@ async def startup(ctx: dict[Any, Any]) -> None:
         # cadence follows BLINK_SYNC_INTERVAL_SECONDS, which arq's
         # calendar-style cron can't express directly.
         await ctx["redis"].enqueue_job(SYNC_JOB_NAME)
+        # Same self-reschedule idiom, own interval - see sync_module.py.
+        await ctx["redis"].enqueue_job(PERIODIC_LOCAL_STORAGE_REFRESH_JOB_NAME)
 
 
 async def shutdown(ctx: dict[Any, Any]) -> None:
@@ -95,6 +99,12 @@ class WorkerSettings:
             name=DELETE_LOCAL_ITEM_JOB_NAME,
             max_tries=2,
             timeout=60,
+        ),
+        func(
+            periodic_local_storage_refresh_job,
+            name=PERIODIC_LOCAL_STORAGE_REFRESH_JOB_NAME,
+            max_tries=1,
+            timeout=30,
         ),
     ]
     cron_jobs: ClassVar[list[Any]] = [cron(heartbeat, second=0, run_at_startup=True)]

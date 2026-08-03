@@ -106,12 +106,33 @@ function ensurePolling(): void {
 
 onUnmounted(() => clearInterval(pollTimer));
 
+/** Admin-only (refreshSyncModuleLocalStorage is admin-gated server-side
+ * too) and only for a Sync Module that's never had a manifest refresh
+ * complete - a household member shouldn't have to know a "Refresh files"
+ * button exists just to see what's already on their own USB drive. Refires
+ * on every mount until a refresh actually succeeds (harmless: each attempt
+ * is its own bounded, rate-reasonable request, and the backend's own
+ * periodic refresh job retries independently regardless of whether anyone
+ * has this tab open). */
+function shouldAutoRefresh(): boolean {
+  return (
+    auth.isAdmin &&
+    statusInfo.value !== null &&
+    statusInfo.value.refreshedAt === null &&
+    statusInfo.value.status !== "refreshing"
+  );
+}
+
 async function load(): Promise<void> {
   loading.value = true;
   loadError.value = "";
   try {
     await refreshAll();
-    ensurePolling();
+    if (shouldAutoRefresh()) {
+      await triggerRefresh();
+    } else {
+      ensurePolling();
+    }
   } catch (caught) {
     loadError.value =
       caught instanceof ApiError ? caught.message : "Could not load local storage.";
@@ -195,8 +216,11 @@ function isBusy(item: SyncModuleLocalItemRead): boolean {
   );
 }
 
-function statusLabel(status: LocalStorageStatus): string {
-  switch (status) {
+function statusLabel(info: StatusInfo): string {
+  if (info.status === "idle" && !info.refreshedAt) {
+    return "Not checked yet";
+  }
+  switch (info.status) {
     case "refreshing":
       return "Refreshing";
     case "error":
@@ -206,8 +230,11 @@ function statusLabel(status: LocalStorageStatus): string {
   }
 }
 
-function statusSeverity(status: LocalStorageStatus): "warn" | "danger" | "secondary" {
-  switch (status) {
+function statusSeverity(info: StatusInfo): "warn" | "danger" | "secondary" | "info" {
+  if (info.status === "idle" && !info.refreshedAt) {
+    return "info";
+  }
+  switch (info.status) {
     case "refreshing":
       return "warn";
     case "error":
@@ -215,6 +242,31 @@ function statusSeverity(status: LocalStorageStatus): "warn" | "danger" | "second
     default:
       return "secondary";
   }
+}
+
+/** Distinguishes "never checked" from "checked, found nothing" from
+ * "still checking" from "checking failed" - a bare "No files found yet"
+ * regardless of which of these was true was the exact confusion behind the
+ * "files aren't showing up" report this replaces. */
+function emptyStateMessage(): string {
+  const info = statusInfo.value;
+  if (!info) {
+    return "No files found yet.";
+  }
+  if (info.status === "refreshing") {
+    return info.refreshedAt
+      ? "Refreshing files from the Sync Module… this can take up to about 90 seconds."
+      : "Checking this Sync Module's USB storage for the first time… this can take up to about 90 seconds.";
+  }
+  if (info.status === "error") {
+    return "Couldn't check for files - see the error above, then try Refresh files again.";
+  }
+  if (!info.refreshedAt) {
+    return auth.isAdmin
+      ? "Not checked yet - click Refresh files to look for what's on this Sync Module's USB storage."
+      : "Not checked yet.";
+  }
+  return "No files found on this Sync Module's USB storage.";
 }
 
 function itemStatusLabel(status: LocalItemStatus): string {
@@ -259,8 +311,8 @@ const lastRefreshedLabel = computed(() => {
         <h4>Local (USB) storage</h4>
         <Tag
           v-if="statusInfo"
-          :value="statusLabel(statusInfo.status)"
-          :severity="statusSeverity(statusInfo.status)"
+          :value="statusLabel(statusInfo)"
+          :severity="statusSeverity(statusInfo)"
           data-testid="local-storage-status"
         />
       </div>
@@ -314,8 +366,11 @@ const lastRefreshedLabel = computed(() => {
         data-testid="local-storage-table"
       >
         <template #empty>
-          <p class="muted">
-            No files found yet. Try refreshing.
+          <p
+            class="muted"
+            data-testid="local-storage-empty-message"
+          >
+            {{ emptyStateMessage() }}
           </p>
         </template>
         <Column
