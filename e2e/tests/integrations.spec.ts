@@ -33,11 +33,12 @@ test("configures and saves S3, and the connection reflects on the Storage page a
   await page.goto("/storage");
   await expect(page.getByRole("heading", { name: "Storage", exact: true })).toBeVisible();
   await expect(page.getByTestId("backend-card-local")).toBeVisible();
-  await expect(page.getByTestId("backend-card-s3")).toBeVisible();
-  await expect(page.getByTestId("backend-card-google_drive")).toBeVisible();
-  await expect(page.getByTestId("backend-card-onedrive")).toBeVisible();
-  // Local never needs connecting - no status tag, unlike the cloud backends.
-  await expect(page.getByTestId("backend-status-local")).toHaveCount(0);
+  // Only connected providers show on this page (see StorageView's own
+  // isConnected() filtering) - none of the cloud backends are connected yet
+  // at this point in the flow, so their cards aren't rendered at all.
+  await expect(page.getByTestId("backend-card-s3")).toHaveCount(0);
+  await expect(page.getByTestId("backend-card-google_drive")).toHaveCount(0);
+  await expect(page.getByTestId("backend-card-onedrive")).toHaveCount(0);
 
   await page.goto("/integrations");
   await expect(page.getByRole("heading", { name: "Integrations", exact: true })).toBeVisible();
@@ -55,7 +56,11 @@ test("configures and saves S3, and the connection reflects on the Storage page a
 
   await page.goto("/storage");
   await expect(page.getByRole("heading", { name: "Storage", exact: true })).toBeVisible();
-  await expect(page.getByTestId("backend-status-s3")).toHaveText("Connected");
+  // The card only rendering at all *is* the "connected" signal now (see the
+  // isBackendVisible()/visibleBackends filtering above) - there's no
+  // separate status tag to check once every visible card is, by
+  // construction, already connected.
+  await expect(page.getByTestId("backend-card-s3")).toBeVisible();
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Library", exact: true })).toBeVisible();
