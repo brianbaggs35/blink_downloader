@@ -14,6 +14,7 @@ Storage's manual archive/restore actions.
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.blink.service import BlinkError
@@ -38,6 +39,16 @@ logger = get_logger(__name__)
 REFRESH_LOCAL_STORAGE_JOB_NAME = "refresh_sync_module_local_storage"
 DOWNLOAD_LOCAL_ITEM_JOB_NAME = "download_sync_module_local_item"
 DELETE_LOCAL_ITEM_JOB_NAME = "delete_sync_module_local_item"
+PERIODIC_LOCAL_STORAGE_REFRESH_JOB_NAME = "periodic_sync_module_local_storage_refresh"
+
+# Independent of BLINK_SYNC_INTERVAL_SECONDS, which drives the much cheaper
+# camera/clip sync: a manifest refresh is a real round trip to the
+# household's own Sync Module hardware over "uncertain" home network
+# conditions (blinkpy's own README, on local storage), and can take up to
+# ~90s per blinkpy's own built-in retry budget - too slow and too heavy to
+# piggyback on the tighter camera-sync loop, so it runs on its own slower,
+# fixed cadence instead.
+PERIODIC_LOCAL_STORAGE_REFRESH_INTERVAL_SECONDS = 600
 
 
 async def refresh_sync_module_local_storage_job(ctx: dict[Any, Any], sync_module_id: str) -> str:
@@ -107,3 +118,30 @@ async def delete_sync_module_local_item_job(ctx: dict[Any, Any], item_id: str) -
             return f"failed: {exc}"
         logger.info("sync_module.delete_completed", item_id=item_id)
         return "ok"
+
+
+async def periodic_local_storage_refresh_job(ctx: dict[Any, Any]) -> str:
+    """Keeps every active Sync Module's local-storage listing current
+    without requiring an admin to remember to click "Refresh files" -
+    self-reschedules the same way sync_blink_account does, on its own
+    interval (see PERIODIC_LOCAL_STORAGE_REFRESH_INTERVAL_SECONDS)."""
+    sessionmaker: async_sessionmaker[AsyncSession] = ctx["sessionmaker"]
+    try:
+        async with sessionmaker() as session:
+            stmt = select(SyncModule.id).where(
+                SyncModule.is_physical_hub.is_(True),
+                SyncModule.local_storage_active.is_(True),
+                SyncModule.local_storage_status != LocalStorageStatus.REFRESHING,
+            )
+            sync_module_ids = (await session.execute(stmt)).scalars().all()
+        for sync_module_id in sync_module_ids:
+            await ctx["redis"].enqueue_job(
+                REFRESH_LOCAL_STORAGE_JOB_NAME, sync_module_id=str(sync_module_id)
+            )
+        logger.info("sync_module.periodic_refresh_enqueued", count=len(sync_module_ids))
+        return f"enqueued {len(sync_module_ids)}"
+    finally:
+        await ctx["redis"].enqueue_job(
+            PERIODIC_LOCAL_STORAGE_REFRESH_JOB_NAME,
+            _defer_by=PERIODIC_LOCAL_STORAGE_REFRESH_INTERVAL_SECONDS,
+        )

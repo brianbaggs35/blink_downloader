@@ -35,8 +35,12 @@ from app.sync_module.models import (
     SyncModuleLocalItem,
 )
 from app.worker.tasks.sync_module import (
+    PERIODIC_LOCAL_STORAGE_REFRESH_INTERVAL_SECONDS,
+    PERIODIC_LOCAL_STORAGE_REFRESH_JOB_NAME,
+    REFRESH_LOCAL_STORAGE_JOB_NAME,
     delete_sync_module_local_item_job,
     download_sync_module_local_item_job,
+    periodic_local_storage_refresh_job,
     refresh_sync_module_local_storage_job,
 )
 
@@ -288,3 +292,90 @@ async def test_delete_job_reports_failure_and_sets_error_status(worker_ctx: dict
         assert refreshed is not None
         assert refreshed.status == LocalItemStatus.ERROR
         assert refreshed.last_error == "could not delete"
+
+
+# --------------------------------------------------------- periodic refresh
+
+
+async def test_periodic_refresh_enqueues_an_eligible_sync_module(
+    worker_ctx: dict[str, Any],
+) -> None:
+    account = await _make_account(worker_ctx)
+    sync_module = await _make_sync_module(worker_ctx, account)
+
+    result = await periodic_local_storage_refresh_job(worker_ctx)
+
+    assert result == "enqueued 1"
+    worker_ctx["redis"].enqueue_job.assert_any_call(
+        REFRESH_LOCAL_STORAGE_JOB_NAME, sync_module_id=str(sync_module.id)
+    )
+
+
+async def test_periodic_refresh_always_reschedules_itself(worker_ctx: dict[str, Any]) -> None:
+    await periodic_local_storage_refresh_job(worker_ctx)
+
+    worker_ctx["redis"].enqueue_job.assert_any_call(
+        PERIODIC_LOCAL_STORAGE_REFRESH_JOB_NAME,
+        _defer_by=PERIODIC_LOCAL_STORAGE_REFRESH_INTERVAL_SECONDS,
+    )
+
+
+async def test_periodic_refresh_skips_a_virtual_non_hub_network(
+    worker_ctx: dict[str, Any],
+) -> None:
+    account = await _make_account(worker_ctx)
+    async with worker_ctx["sessionmaker"]() as session:
+        session.add(
+            SyncModule(
+                blink_account_id=account.id,
+                network_id="net-mini",
+                name="Mini-only network",
+                is_physical_hub=False,
+                local_storage_active=True,
+            )
+        )
+        await session.commit()
+
+    result = await periodic_local_storage_refresh_job(worker_ctx)
+    assert result == "enqueued 0"
+
+
+async def test_periodic_refresh_skips_an_inactive_local_storage(
+    worker_ctx: dict[str, Any],
+) -> None:
+    account = await _make_account(worker_ctx)
+    async with worker_ctx["sessionmaker"]() as session:
+        session.add(
+            SyncModule(
+                blink_account_id=account.id,
+                network_id="net-2",
+                name="No drive inserted",
+                is_physical_hub=True,
+                local_storage_active=False,
+            )
+        )
+        await session.commit()
+
+    result = await periodic_local_storage_refresh_job(worker_ctx)
+    assert result == "enqueued 0"
+
+
+async def test_periodic_refresh_skips_a_sync_module_already_refreshing(
+    worker_ctx: dict[str, Any],
+) -> None:
+    account = await _make_account(worker_ctx)
+    async with worker_ctx["sessionmaker"]() as session:
+        session.add(
+            SyncModule(
+                blink_account_id=account.id,
+                network_id="net-3",
+                name="Already refreshing",
+                is_physical_hub=True,
+                local_storage_active=True,
+                local_storage_status=LocalStorageStatus.REFRESHING,
+            )
+        )
+        await session.commit()
+
+    result = await periodic_local_storage_refresh_job(worker_ctx)
+    assert result == "enqueued 0"

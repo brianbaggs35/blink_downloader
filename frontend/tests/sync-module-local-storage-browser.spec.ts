@@ -137,7 +137,106 @@ describe("SyncModuleLocalStorageBrowser loading", () => {
     mockedSyncModules.mockResolvedValue([syncModuleFixture()]);
     const wrapper = mountBrowser();
     await flushPromises();
-    expect(wrapper.text()).toContain("No files found yet");
+    expect(wrapper.find('[data-testid="local-storage-empty-message"]').text()).toBe(
+      "No files found on this Sync Module's USB storage.",
+    );
+  });
+});
+
+describe("SyncModuleLocalStorageBrowser distinct empty/status states", () => {
+  it("auto-triggers a refresh for an admin on first load when never refreshed before", async () => {
+    mockedItems.mockResolvedValue([]);
+    mockedSyncModules.mockResolvedValue([
+      syncModuleFixture({ local_storage_manifest_refreshed_at: null }),
+    ]);
+    mockedRefresh.mockResolvedValue(undefined);
+    mountBrowser();
+    await flushPromises();
+    expect(mockedRefresh).toHaveBeenCalledWith(SYNC_MODULE_ID);
+  });
+
+  it("does not auto-trigger a refresh for a non-admin viewer", async () => {
+    mockedItems.mockResolvedValue([]);
+    mockedSyncModules.mockResolvedValue([
+      syncModuleFixture({ local_storage_manifest_refreshed_at: null }),
+    ]);
+    mountBrowser(false);
+    await flushPromises();
+    expect(mockedRefresh).not.toHaveBeenCalled();
+  });
+
+  it("shows a distinct message for a non-admin viewer when nothing has been checked yet", async () => {
+    mockedItems.mockResolvedValue([]);
+    mockedSyncModules.mockResolvedValue([
+      syncModuleFixture({ local_storage_manifest_refreshed_at: null }),
+    ]);
+    const wrapper = mountBrowser(false);
+    await flushPromises();
+    expect(wrapper.find('[data-testid="local-storage-empty-message"]').text()).toBe(
+      "Not checked yet.",
+    );
+  });
+
+  it("does not re-trigger a refresh if one is already in flight (status already refreshing)", async () => {
+    mockedItems.mockResolvedValue([]);
+    mockedSyncModules.mockResolvedValue([
+      syncModuleFixture({
+        local_storage_manifest_refreshed_at: null,
+        local_storage_status: "refreshing",
+      }),
+    ]);
+    mountBrowser();
+    await flushPromises();
+    expect(mockedRefresh).not.toHaveBeenCalled();
+  });
+
+  it("shows a distinct 'first time' message while refreshing with no prior successful refresh", async () => {
+    mockedItems.mockResolvedValue([]);
+    mockedSyncModules.mockResolvedValue([
+      syncModuleFixture({
+        local_storage_manifest_refreshed_at: null,
+        local_storage_status: "refreshing",
+      }),
+    ]);
+    const wrapper = mountBrowser();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="local-storage-empty-message"]').text()).toContain(
+      "for the first time",
+    );
+  });
+
+  it("shows a plainer 'refreshing' message when a previous refresh already succeeded", async () => {
+    mockedItems.mockResolvedValue([]);
+    mockedSyncModules.mockResolvedValue([syncModuleFixture({ local_storage_status: "refreshing" })]);
+    const wrapper = mountBrowser();
+    await flushPromises();
+    const message = wrapper.find('[data-testid="local-storage-empty-message"]').text();
+    expect(message).toContain("Refreshing files");
+    expect(message).not.toContain("for the first time");
+  });
+
+  it("points at the error banner instead of repeating the error in the empty state", async () => {
+    mockedItems.mockResolvedValue([]);
+    mockedSyncModules.mockResolvedValue([
+      syncModuleFixture({ local_storage_status: "error", local_storage_last_error: "Device busy." }),
+    ]);
+    const wrapper = mountBrowser();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="local-storage-empty-message"]').text()).toBe(
+      "Couldn't check for files - see the error above, then try Refresh files again.",
+    );
+  });
+
+  it("shows a 'Not checked yet' status tag distinct from Idle when never refreshed", async () => {
+    mockedItems.mockResolvedValue([]);
+    // Non-admin so auto-refresh never fires, keeping status pinned at the
+    // server's own idle/never-refreshed fixture values for this assertion.
+    mockedSyncModules.mockResolvedValue([
+      syncModuleFixture({ local_storage_manifest_refreshed_at: null, local_storage_status: "idle" }),
+    ]);
+    const wrapper = mountBrowser(false);
+    await flushPromises();
+    expect(wrapper.find('[data-testid="local-storage-status"]').text()).toBe("Not checked yet");
   });
 });
 
