@@ -5,7 +5,6 @@ import Message from "primevue/message";
 import MeterGroup from "primevue/metergroup";
 import Select from "primevue/select";
 import Skeleton from "primevue/skeleton";
-import Tag from "primevue/tag";
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 
@@ -112,6 +111,21 @@ function isConnected(backend: StorageBackend): boolean {
   // Only "onedrive" remains, given the "local"/"s3"/"google_drive" returns above.
   return integrations.value.onedrive_enabled && integrations.value.onedrive_connected;
 }
+
+/** Whether a backend belongs on the Storage tab at all. Admins get the
+ * fuller isConnected() check above (their own credentials are loaded); a
+ * viewer never gets that admin-only settings row, so they fall back to
+ * the summary endpoint's own connected_backends - open to any signed-in
+ * user, precisely so a viewer can still tell a connected backend with
+ * real clips on it apart from a merely-hypothetical one. */
+function isBackendVisible(backend: StorageBackend): boolean {
+  if (backend === "local") return true;
+  if (integrations.value) return isConnected(backend);
+  return summary.value?.connected_backends.includes(backend) ?? false;
+}
+
+const visibleBackends = computed(() => BACKENDS.filter(isBackendVisible));
+const hasHiddenProviders = computed(() => visibleBackends.value.length < BACKENDS.length);
 
 /** Which folder a backend is actually using, for display next to its card -
  * null when there's nothing meaningful to show (a disconnected provider, or
@@ -556,12 +570,28 @@ function goToLibrary(): void {
         </form>
       </article>
 
+      <Message
+        v-if="auth.isAdmin && hasHiddenProviders"
+        severity="info"
+        :closable="false"
+        class="hidden-providers-hint"
+        data-testid="storage-hidden-providers-hint"
+      >
+        Only connected storage backends are shown here.
+        <a
+          href="#"
+          data-testid="storage-go-to-integrations-hint"
+          @click.prevent="goToIntegrations"
+        >Connect another one</a>
+        in Integrations to see it here too.
+      </Message>
+
       <div
         class="grid"
         data-testid="backend-grid"
       >
         <article
-          v-for="backend in BACKENDS"
+          v-for="backend in visibleBackends"
           :key="backend"
           class="backend-card"
           :data-testid="`backend-card-${backend}`"
@@ -577,12 +607,6 @@ function goToLibrary(): void {
               :name="BACKEND_META[backend].icon.value"
             />
             <span class="backend-name">{{ BACKEND_META[backend].label }}</span>
-            <Tag
-              v-if="backend !== 'local' && auth.isAdmin"
-              :value="isConnected(backend) ? 'Connected' : 'Not connected'"
-              :severity="isConnected(backend) ? 'success' : 'secondary'"
-              :data-testid="`backend-status-${backend}`"
-            />
           </div>
           <div
             v-if="folderLabel(backend)"
@@ -695,7 +719,7 @@ function goToLibrary(): void {
           </div>
 
           <Button
-            v-if="auth.isAdmin && (backend === 'local' || isConnected(backend))"
+            v-if="auth.isAdmin"
             label="Browse"
             icon="pi pi-folder-open"
             text
@@ -703,15 +727,6 @@ function goToLibrary(): void {
             :loading="isBrowsingLoading(backend)"
             :data-testid="`backend-browse-${backend}`"
             @click="openBrowserFor(backend)"
-          />
-          <Button
-            v-else-if="backend !== 'local' && auth.isAdmin && !isConnected(backend)"
-            label="Connect"
-            icon="pi pi-arrow-right"
-            text
-            size="small"
-            :data-testid="`backend-connect-${backend}`"
-            @click="goToIntegrations"
           />
 
           <Message
@@ -989,6 +1004,10 @@ function goToLibrary(): void {
 
 .blink-dark .quota-gauge-percent {
   color: var(--p-surface-200);
+}
+
+.hidden-providers-hint {
+  margin-bottom: 14px;
 }
 
 .footer-hint {

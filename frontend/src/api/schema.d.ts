@@ -2520,6 +2520,8 @@ export interface components {
             total_bytes: number;
             /** Local Quota Bytes */
             local_quota_bytes: number | null;
+            /** Connected Backends */
+            connected_backends: components["schemas"]["StorageBackend"][];
         };
         /** StorageTestResponse */
         StorageTestResponse: {

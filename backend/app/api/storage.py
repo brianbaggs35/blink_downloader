@@ -48,6 +48,19 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/storage", tags=["storage"])
 
 
+def _configured_backends(
+    row: StorageIntegrationSettings, encryption_key: str
+) -> set[StorageBackend]:
+    configured: set[StorageBackend] = set()
+    if build_s3_client(row, encryption_key) is not None:
+        configured.add(StorageBackend.S3)
+    if build_google_drive_client(row, encryption_key) is not None:
+        configured.add(StorageBackend.GOOGLE_DRIVE)
+    if build_onedrive_client(row, encryption_key) is not None:
+        configured.add(StorageBackend.ONEDRIVE)
+    return configured
+
+
 @router.get("/summary", response_model=StorageSummaryResponse)
 async def get_storage_summary(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -67,25 +80,15 @@ async def get_storage_summary(
         for backend, count, total_bytes in rows
     ]
     app_settings = await get_app_settings(session)
+    integration_settings = await get_storage_integration_settings(session)
+    configured = _configured_backends(integration_settings, get_settings().encryption_key)
     return StorageSummaryResponse(
         by_backend=by_backend,
         total_clips=sum(item.clip_count for item in by_backend),
         total_bytes=sum(item.total_bytes for item in by_backend),
         local_quota_bytes=app_settings.local_storage_quota_bytes,
+        connected_backends=[StorageBackend.LOCAL, *sorted(configured, key=lambda b: b.value)],
     )
-
-
-def _configured_backends(
-    row: StorageIntegrationSettings, encryption_key: str
-) -> set[StorageBackend]:
-    configured: set[StorageBackend] = set()
-    if build_s3_client(row, encryption_key) is not None:
-        configured.add(StorageBackend.S3)
-    if build_google_drive_client(row, encryption_key) is not None:
-        configured.add(StorageBackend.GOOGLE_DRIVE)
-    if build_onedrive_client(row, encryption_key) is not None:
-        configured.add(StorageBackend.ONEDRIVE)
-    return configured
 
 
 @router.post("/archive")

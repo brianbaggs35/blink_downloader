@@ -114,6 +114,13 @@ class StorageSummaryResponse(BaseModel):
     """An admin-set budget for local disk usage (app.settings), or null for
     unlimited - compare against the LOCAL row in by_backend for a usage
     gauge. Informational only, never enforced."""
+    connected_backends: list[StorageBackend]
+    """Which backends are actually usable right now (always includes LOCAL).
+    This endpoint is open to any signed-in household member, unlike the
+    credential-bearing /settings/storage-integrations - exposing just this
+    much lets a non-admin viewer still tell a connected backend with real
+    clips apart from a merely-hypothetical one, without exposing anything
+    about how it's configured."""
 
 
 class ArchiveClipsRequest(BaseModel):
