@@ -35,6 +35,7 @@ from app.worker.tasks.download import DOWNLOAD_JOB_NAME
 from app.worker.tasks.sync_module import (
     DELETE_LOCAL_ITEM_JOB_NAME,
     DOWNLOAD_LOCAL_ITEM_JOB_NAME,
+    PERIODIC_LOCAL_STORAGE_REFRESH_JOB_NAME,
     REFRESH_LOCAL_STORAGE_JOB_NAME,
 )
 from tests.conftest import PlainSettings
@@ -57,7 +58,9 @@ async def test_startup_creates_db_resources_and_kicks_off_sync() -> None:
 
     assert "engine" in ctx
     assert "sessionmaker" in ctx
-    fake_redis.enqueue_job.assert_awaited_once_with(SYNC_JOB_NAME)
+    fake_redis.enqueue_job.assert_any_await(SYNC_JOB_NAME)
+    fake_redis.enqueue_job.assert_any_await(PERIODIC_LOCAL_STORAGE_REFRESH_JOB_NAME)
+    assert fake_redis.enqueue_job.await_count == 2
 
     await ctx["engine"].dispose()
 
@@ -97,6 +100,7 @@ def test_worker_settings_wired() -> None:
         REFRESH_LOCAL_STORAGE_JOB_NAME,
         DOWNLOAD_LOCAL_ITEM_JOB_NAME,
         DELETE_LOCAL_ITEM_JOB_NAME,
+        PERIODIC_LOCAL_STORAGE_REFRESH_JOB_NAME,
     }
     assert len(WorkerSettings.cron_jobs) == 1
     expected = RedisSettings.from_dsn(os.environ["BLINK_REDIS_URL"])
@@ -117,6 +121,7 @@ def test_worker_settings_wired() -> None:
         REFRESH_LOCAL_STORAGE_JOB_NAME,
         DOWNLOAD_LOCAL_ITEM_JOB_NAME,
         DELETE_LOCAL_ITEM_JOB_NAME,
+        PERIODIC_LOCAL_STORAGE_REFRESH_JOB_NAME,
     ],
 )
 def test_worker_functions_have_retry_limits(job_name: str) -> None:
