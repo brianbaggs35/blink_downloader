@@ -99,6 +99,31 @@ later.
 - **A capable x86_64 CPU with no GPU**: `buffalo_m` or `buffalo_l` are
   reasonable at typical household clip volumes.
 
+### Enabling the GPU in Docker
+
+On x86_64, `backend/pyproject.toml` installs `onnxruntime-gpu` (the
+`[cuda, cudnn]` extras pull the matching NVIDIA CUDA/cuDNN runtime as plain
+pip wheels — no system-wide CUDA Toolkit install needed), so the Python
+side is ready out of the box. A container only gets to *use* an NVIDIA GPU
+if Docker itself is told to pass one through, which the default `make dev`
+/`make prod` deliberately don't do — a GPU reservation with no GPU/driver
+support on the host makes the container fail to start outright, not
+silently fall back to CPU, so it can't be the default for everyone.
+
+To actually use a GPU:
+
+1. Install the NVIDIA driver on the host, then the
+   [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+2. Run `sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker` once.
+3. Start the stack with `make dev-gpu` (or `make prod-gpu`) instead of the
+   plain `make dev`/`make prod` — these add `docker-compose.gpu.yml` /
+   `docker-compose.prod.gpu.yml` on top of the normal compose files,
+   reserving one NVIDIA GPU for the backend and worker containers.
+
+Confirm it worked from **Settings > Biometrics**: "Verify / download model"
+reports the resolved execution provider, and it should say
+`CUDAExecutionProvider` rather than `CPUExecutionProvider`.
+
 Detection input size is fixed at 640×640 (insightface's own documented
 default for the SCRFD detector) — large enough for a security camera's wide
 field of view without the extra cost of the next size up; not currently
