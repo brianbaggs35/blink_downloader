@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from openai import omit
 
 from app.ai.models import AIProviderKind
 from app.ai.providers import (
@@ -22,6 +23,7 @@ from app.ai.providers import (
     MoondreamProvider,
     OllamaProvider,
     OpenAIProvider,
+    _is_openai_reasoning_model,
     _parse_entities,
     build_prompt,
     build_provider,
@@ -121,12 +123,17 @@ async def test_openai_analyze_returns_parsed_result() -> None:
     assert result.output_tokens == 20
 
 
-@pytest.mark.parametrize("model", ["gpt-4o", "gpt-4-turbo", "gpt-5", "gpt-5-nano"])
+@pytest.mark.parametrize(
+    "model", ["gpt-4o", "gpt-4-turbo", "gpt-5", "gpt-5-nano", "gpt-5.4-mini", "gpt-5.4-nano"]
+)
 async def test_openai_analyze_sends_max_completion_tokens_not_max_tokens(model: str) -> None:
     """OpenAI's newer/reasoning-family models (the GPT-5 line) reject
     max_tokens outright and require max_completion_tokens; GPT-4-class models
     accept max_completion_tokens too, as the documented modern replacement -
-    so the same kwarg must be sent for every model, with no branching."""
+    so the same kwarg must be sent for every model, with no branching. 4096
+    (not 1024): a reasoning model's hidden chain-of-thought tokens draw from
+    this same budget and can exhaust a tight one before writing any visible
+    response."""
     provider = OpenAIProvider(model, api_key="sk-test")
     mock_create = AsyncMock(
         return_value=_openai_response(
@@ -136,8 +143,60 @@ async def test_openai_analyze_sends_max_completion_tokens_not_max_tokens(model: 
     provider._client.chat.completions.create = mock_create  # type: ignore[method-assign]
     await provider.analyze(make_request())
     _args, kwargs = mock_create.call_args
-    assert kwargs["max_completion_tokens"] == 1024
+    assert kwargs["max_completion_tokens"] == 4096
     assert "max_tokens" not in kwargs
+
+
+@pytest.mark.parametrize(
+    ("model", "reasoning"),
+    [
+        ("gpt-5", True),
+        ("gpt-5-nano", True),
+        ("gpt-5.4-mini", True),
+        ("gpt-5.4-nano", True),
+        ("gpt-5.6", True),
+        ("gpt-4o", False),
+        ("gpt-4-turbo", False),
+        ("gpt-4.1-mini", False),
+    ],
+)
+def test_is_openai_reasoning_model(model: str, reasoning: bool) -> None:
+    assert _is_openai_reasoning_model(model) is reasoning
+
+
+@pytest.mark.parametrize("model", ["gpt-5", "gpt-5-nano", "gpt-5.4-mini", "gpt-5.4-nano"])
+async def test_openai_analyze_sends_low_reasoning_effort_for_reasoning_models(model: str) -> None:
+    """ "low" rather than "medium" (the API's own default): this task is a
+    short, well-specified structured extraction, not multi-step reasoning,
+    and a lower effort leaves more of the fixed token budget for the actual
+    response instead of hidden reasoning tokens."""
+    provider = OpenAIProvider(model, api_key="sk-test")
+    mock_create = AsyncMock(
+        return_value=_openai_response(
+            json.dumps(VALID_RESULT), SimpleNamespace(prompt_tokens=1, completion_tokens=1)
+        )
+    )
+    provider._client.chat.completions.create = mock_create  # type: ignore[method-assign]
+    await provider.analyze(make_request())
+    _args, kwargs = mock_create.call_args
+    assert kwargs["reasoning_effort"] == "low"
+
+
+@pytest.mark.parametrize("model", ["gpt-4o", "gpt-4-turbo", "gpt-4.1-mini", "gpt-4"])
+async def test_openai_analyze_omits_reasoning_effort_for_non_reasoning_models(model: str) -> None:
+    """GPT-4-family models aren't reasoning models and raise "Unsupported
+    value" if reasoning_effort is present at all - it must be omitted from
+    the request entirely, not just set to some default."""
+    provider = OpenAIProvider(model, api_key="sk-test")
+    mock_create = AsyncMock(
+        return_value=_openai_response(
+            json.dumps(VALID_RESULT), SimpleNamespace(prompt_tokens=1, completion_tokens=1)
+        )
+    )
+    provider._client.chat.completions.create = mock_create  # type: ignore[method-assign]
+    await provider.analyze(make_request())
+    _args, kwargs = mock_create.call_args
+    assert kwargs["reasoning_effort"] is omit
 
 
 async def test_openai_analyze_handles_missing_usage() -> None:
