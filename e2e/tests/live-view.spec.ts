@@ -48,6 +48,17 @@ test("saving a clip surfaces the outcome as a toast", async ({ page }) => {
   await expect(page.getByText("Could not start recording")).toBeVisible();
 });
 
+test("starting a live stream surfaces the outcome inline, without breaking the page", async ({
+  page,
+}) => {
+  // Same synthetic-account caveat as the clip-recording test above -
+  // real streaming can't succeed here, so this exercises the request/error
+  // wiring rather than an actual video stream.
+  await page.getByTestId("primary-live-toggle").click();
+  await expect(page.getByTestId("primary-live-error")).toBeVisible();
+  await expect(page.getByTestId("primary-preview")).toBeVisible();
+});
+
 test("collapsing the sidebar from Live View's own toggle frees up width", async ({ page }) => {
   await page.getByTestId("live-view-sidebar-toggle").click();
   await expect(page.locator(".sidebar.collapsed")).toBeVisible();

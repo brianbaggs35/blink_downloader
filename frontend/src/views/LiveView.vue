@@ -13,15 +13,20 @@ import {
   getLiveViewSettings,
   listCameras,
   recordCameraClip,
+  startCameraLiveView,
+  stopCameraLiveView,
 } from "@/api";
 import EmptyState from "@/components/EmptyState.vue";
 import PageHeader from "@/components/PageHeader.vue";
+import VideoPlayer from "@/components/VideoPlayer.vue";
 import { useFormatting } from "@/composables/useFormatting";
 import { useSidebarCollapse } from "@/composables/useSidebarCollapse";
 import { useAuthStore } from "@/stores/auth";
 import { useBlinkStore } from "@/stores/blink";
 
 import type { CameraRead } from "@/api";
+
+type LiveStreamState = "idle" | "starting" | "live" | "unsupported" | "error";
 
 interface Slot {
   cameraId: string | null;
@@ -31,6 +36,10 @@ interface Slot {
   error: string;
   updatedAt: Date | null;
   recording: boolean;
+  liveState: LiveStreamState;
+  liveError: string;
+  liveSessionId: string | null;
+  livePlaylistUrl: string | null;
 }
 
 function emptySlot(): Slot {
@@ -42,6 +51,10 @@ function emptySlot(): Slot {
     error: "",
     updatedAt: null,
     recording: false,
+    liveState: "idle",
+    liveError: "",
+    liveSessionId: null,
+    livePlaylistUrl: null,
   };
 }
 
@@ -101,6 +114,66 @@ function refreshSlot(slot: Slot, { force = false }: { force?: boolean } = {}): v
   slot.version += 1;
 }
 
+function liveButtonLabel(slot: Slot): string {
+  if (slot.liveState === "live") return "Stop live view";
+  if (slot.liveState === "starting") return "Starting live view…";
+  return "Start live view";
+}
+
+async function startLiveView(slot: Slot): Promise<void> {
+  if (!slot.cameraId || slot.liveState === "starting" || slot.liveState === "live") return;
+  slot.liveState = "starting";
+  slot.liveError = "";
+  try {
+    const session = await startCameraLiveView(slot.cameraId);
+    slot.liveSessionId = session.session_id;
+    slot.livePlaylistUrl = session.playlist_url;
+    slot.liveState = "live";
+  } catch (caught) {
+    slot.liveState = caught instanceof ApiError && caught.status === 409 ? "unsupported" : "error";
+    slot.liveError = caught instanceof ApiError ? caught.message : "Could not start the live stream.";
+  }
+}
+
+async function stopLiveView(slot: Slot): Promise<void> {
+  const cameraId = slot.cameraId;
+  const sessionId = slot.liveSessionId;
+  slot.liveState = "idle";
+  slot.liveSessionId = null;
+  slot.livePlaylistUrl = null;
+  slot.liveError = "";
+  if (cameraId && sessionId) {
+    try {
+      await stopCameraLiveView(cameraId, sessionId);
+    } catch {
+      // Best-effort - the backend's own idle timeout reclaims an abandoned
+      // session regardless, and the UI has already dropped back to the
+      // snapshot view either way.
+    }
+  }
+}
+
+function toggleLiveView(slot: Slot): void {
+  if (slot.liveState === "live") {
+    void stopLiveView(slot);
+  } else {
+    void startLiveView(slot);
+  }
+}
+
+// Takes the newly-picked camera id explicitly (rather than reading it back
+// off slot.cameraId after the fact) because Select's v-model setter and
+// this handler respond to the same update:model-value event - by the time
+// any post-hoc read of slot.cameraId would run, it may already reflect the
+// new camera, not the one whose live session actually needs stopping.
+async function onCameraChange(slot: Slot, cameraId: string | null): Promise<void> {
+  if (slot.liveSessionId) {
+    await stopLiveView(slot);
+  }
+  slot.cameraId = cameraId;
+  refreshSlot(slot);
+}
+
 function refreshAll(): void {
   refreshSlot(primary);
   if (compareMode.value) {
@@ -121,8 +194,13 @@ function startAutoRefresh(): void {
 watch(autoRefreshEnabled, startAutoRefresh);
 
 function toggleCompare(): void {
+  const turningOff = compareMode.value;
   compareMode.value = !compareMode.value;
-  if (compareMode.value && !secondary.cameraId) {
+  if (turningOff) {
+    if (secondary.liveSessionId) {
+      void stopLiveView(secondary);
+    }
+  } else if (!secondary.cameraId) {
     const other = cameras.value.find((camera) => camera.id !== primary.cameraId);
     secondary.cameraId = other?.id ?? null;
     refreshSlot(secondary);
@@ -210,6 +288,15 @@ onMounted(() => {
 onUnmounted(() => {
   clearInterval(refreshTimer);
   clearInterval(clockTimer);
+  // Belt-and-suspenders alongside the backend's own idle-session sweep -
+  // stops promptly instead of waiting out that timeout when the user
+  // navigates away mid-stream.
+  if (primary.cameraId && primary.liveSessionId) {
+    void stopCameraLiveView(primary.cameraId, primary.liveSessionId);
+  }
+  if (secondary.cameraId && secondary.liveSessionId) {
+    void stopCameraLiveView(secondary.cameraId, secondary.liveSessionId);
+  }
 });
 
 function updatedLabel(slot: Slot): string {
@@ -225,7 +312,7 @@ function updatedLabel(slot: Slot): string {
   <section>
     <PageHeader
       title="Live View"
-      description="Check in on a camera right now - forced fresh snapshots, not a continuous video stream (Blink's cloud API doesn't expose one a browser can play)."
+      description="Check in on a camera right now with the latest snapshot, or start a live stream for continuous video - available on most (not all) camera models."
     >
       <template #actions>
         <Button
@@ -289,42 +376,81 @@ function updatedLabel(slot: Slot): string {
       <article class="panel">
         <div class="panel-toolbar">
           <Select
-            v-model="primary.cameraId"
+            :model-value="primary.cameraId"
             :options="cameraOptions"
             option-label="label"
             option-value="value"
             placeholder="Choose a camera"
             data-testid="primary-camera-select"
-            @update:model-value="() => refreshSlot(primary)"
+            @update:model-value="(value) => onCameraChange(primary, value as string | null)"
           />
         </div>
         <div class="preview-wrap">
-          <!-- cameraOptions is only reachable once cameras.length > 0, and
-          load() always seeds primary.cameraId from that same list, so it's
-          never actually null once this panel renders - no v-if needed. -->
-          <img
-            :src="tileSrc(primary)"
-            :data-preview-for="primary.cameraId"
-            class="preview-image"
-            alt="Live camera preview"
-            data-testid="primary-preview"
-            @load="onSlotLoad(primary)"
-            @error="onSlotError(primary)"
-          >
-          <div
-            v-if="primary.error"
-            class="preview-overlay"
-          >
-            <i
-              class="pi pi-exclamation-triangle"
-              aria-hidden="true"
-            />
-            <span>{{ primary.error }}</span>
-          </div>
+          <VideoPlayer
+            v-if="primary.liveState === 'live' && primary.livePlaylistUrl"
+            :src="primary.livePlaylistUrl"
+            type="application/x-mpegURL"
+            live
+            data-testid="primary-live-player"
+          />
+          <template v-else>
+            <!-- cameraOptions is only reachable once cameras.length > 0, and
+            load() always seeds primary.cameraId from that same list, so
+            it's never actually null once this panel renders - no v-if
+            needed. -->
+            <img
+              :src="tileSrc(primary)"
+              :data-preview-for="primary.cameraId"
+              class="preview-image"
+              alt="Live camera preview"
+              data-testid="primary-preview"
+              @load="onSlotLoad(primary)"
+              @error="onSlotError(primary)"
+            >
+            <div
+              v-if="primary.error"
+              class="preview-overlay"
+            >
+              <i
+                class="pi pi-exclamation-triangle"
+                aria-hidden="true"
+              />
+              <span>{{ primary.error }}</span>
+            </div>
+            <div
+              v-if="primary.liveState === 'starting'"
+              class="preview-overlay starting"
+              data-testid="primary-live-starting"
+            >
+              <i
+                class="pi pi-spin pi-spinner"
+                aria-hidden="true"
+              />
+              <span>Starting live view…</span>
+            </div>
+          </template>
         </div>
+        <Message
+          v-if="primary.liveState === 'unsupported' || primary.liveState === 'error'"
+          :severity="primary.liveState === 'unsupported' ? 'warn' : 'error'"
+          :closable="false"
+          data-testid="primary-live-error"
+        >
+          {{ primary.liveError }}
+        </Message>
         <footer class="panel-footer">
           <span class="muted">Updated {{ updatedLabel(primary) }}</span>
           <div class="panel-actions">
+            <Button
+              v-if="auth.isAdmin"
+              :label="liveButtonLabel(primary)"
+              :icon="primary.liveState === 'live' ? 'pi pi-stop-circle' : 'pi pi-play-circle'"
+              size="small"
+              :severity="primary.liveState === 'live' ? 'danger' : 'primary'"
+              :loading="primary.liveState === 'starting'"
+              data-testid="primary-live-toggle"
+              @click="toggleLiveView(primary)"
+            />
             <Button
               v-if="auth.isAdmin"
               label="Refresh"
@@ -364,51 +490,89 @@ function updatedLabel(slot: Slot): string {
       >
         <div class="panel-toolbar">
           <Select
-            v-model="secondary.cameraId"
+            :model-value="secondary.cameraId"
             :options="cameraOptions"
             option-label="label"
             option-value="value"
             placeholder="Choose a camera"
             data-testid="secondary-camera-select"
-            @update:model-value="() => refreshSlot(secondary)"
+            @update:model-value="(value) => onCameraChange(secondary, value as string | null)"
           />
         </div>
         <div class="preview-wrap">
-          <img
-            v-if="secondary.cameraId"
-            :src="tileSrc(secondary)"
-            :data-preview-for="secondary.cameraId"
-            class="preview-image"
-            alt="Second live camera preview"
-            data-testid="secondary-preview"
-            @load="onSlotLoad(secondary)"
-            @error="onSlotError(secondary)"
-          >
-          <div
-            v-else
-            class="preview-overlay"
-            data-testid="secondary-no-camera"
-          >
-            <i
-              class="pi pi-video"
-              aria-hidden="true"
-            />
-            <span>No other camera to compare against yet.</span>
-          </div>
-          <div
-            v-if="secondary.error"
-            class="preview-overlay"
-          >
-            <i
-              class="pi pi-exclamation-triangle"
-              aria-hidden="true"
-            />
-            <span>{{ secondary.error }}</span>
-          </div>
+          <VideoPlayer
+            v-if="secondary.liveState === 'live' && secondary.livePlaylistUrl"
+            :src="secondary.livePlaylistUrl"
+            type="application/x-mpegURL"
+            live
+            data-testid="secondary-live-player"
+          />
+          <template v-else>
+            <img
+              v-if="secondary.cameraId"
+              :src="tileSrc(secondary)"
+              :data-preview-for="secondary.cameraId"
+              class="preview-image"
+              alt="Second live camera preview"
+              data-testid="secondary-preview"
+              @load="onSlotLoad(secondary)"
+              @error="onSlotError(secondary)"
+            >
+            <div
+              v-else
+              class="preview-overlay"
+              data-testid="secondary-no-camera"
+            >
+              <i
+                class="pi pi-video"
+                aria-hidden="true"
+              />
+              <span>No other camera to compare against yet.</span>
+            </div>
+            <div
+              v-if="secondary.error"
+              class="preview-overlay"
+            >
+              <i
+                class="pi pi-exclamation-triangle"
+                aria-hidden="true"
+              />
+              <span>{{ secondary.error }}</span>
+            </div>
+            <div
+              v-if="secondary.liveState === 'starting'"
+              class="preview-overlay starting"
+              data-testid="secondary-live-starting"
+            >
+              <i
+                class="pi pi-spin pi-spinner"
+                aria-hidden="true"
+              />
+              <span>Starting live view…</span>
+            </div>
+          </template>
         </div>
+        <Message
+          v-if="secondary.liveState === 'unsupported' || secondary.liveState === 'error'"
+          :severity="secondary.liveState === 'unsupported' ? 'warn' : 'error'"
+          :closable="false"
+          data-testid="secondary-live-error"
+        >
+          {{ secondary.liveError }}
+        </Message>
         <footer class="panel-footer">
           <span class="muted">Updated {{ updatedLabel(secondary) }}</span>
           <div class="panel-actions">
+            <Button
+              v-if="auth.isAdmin"
+              :label="liveButtonLabel(secondary)"
+              :icon="secondary.liveState === 'live' ? 'pi pi-stop-circle' : 'pi pi-play-circle'"
+              size="small"
+              :severity="secondary.liveState === 'live' ? 'danger' : 'primary'"
+              :loading="secondary.liveState === 'starting'"
+              data-testid="secondary-live-toggle"
+              @click="toggleLiveView(secondary)"
+            />
             <Button
               v-if="auth.isAdmin"
               label="Refresh"
@@ -526,6 +690,10 @@ function updatedLabel(slot: Slot): string {
 .preview-overlay i {
   font-size: 1.6rem;
   color: var(--p-orange-400);
+}
+
+.preview-overlay.starting i {
+  color: var(--p-primary-400);
 }
 
 .panel-footer {

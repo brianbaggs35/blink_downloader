@@ -93,11 +93,13 @@ application owns it directly:
 
 Blink's actual live-streaming call (`camera.get_liveview()`) returns a raw
 `rtsps://` (or, for some hardware, `immis://`) URL — not something a browser
-`<video>` element can play without a transcoding relay this project
-deliberately doesn't build yet (see
-[ROADMAP.md](ROADMAP.md#deferred--watching)). Both features below are built
-instead on what `blinkpy` gives cleanly: a still image, and on-demand clip
-recording.
+`<video>` element can play directly. **Security Feed** is built entirely on
+what `blinkpy` gives cleanly for free — a still image, and on-demand clip
+recording — and never streams. **Live View** is built on that same
+snapshot foundation (still its default view, and the fallback for any
+camera that can't stream) plus a second, heavier capability layered on top:
+an explicit, per-camera real streaming session for cameras whose negotiated
+server happens to be `immis://` — see "Real streaming" below.
 
 - **Passive preview** (`GET /api/cameras/{id}/preview`): returns whatever
   Blink last captured — `camera.get_thumbnail()`, cached to local disk
@@ -133,6 +135,60 @@ recording.
   picks whether a fresh login or a completed setup wizard lands on Library
   or Security Feed — read once at redirect time via the frontend's
   `auth.landingRouteName`, not a stored route.
+
+### Real streaming (Live View only)
+
+`BlinkCamera.init_livestream()` (blinkpy) negotiates a live-view session and
+returns a `BlinkLiveStream` **only** when the negotiated server turns out to
+be `immis://` — it raises `NotImplementedError` for `rtsps://` cameras, a
+real, per-camera limitation only discoverable at request time (mapped to
+`app.blink.service.LiveViewUnsupportedError`, HTTP 409). When it succeeds,
+`BlinkLiveStream.start()` binds a local asyncio TCP server; `.feed()`
+authenticates to Blink's real relay server (a proprietary binary handshake
+— blinkpy's own source cites `github.com/amattu2/blink-liveview-middleware`
+as prior art) and re-streams the payload to local TCP clients as plain,
+standard MPEG-TS.
+
+`app.livefeed.live_stream.LiveViewSessionManager` (one instance per API
+process, in `app.state`) turns that local byte stream into something a
+browser can actually play:
+
+1. `POST /api/cameras/{id}/live-view/start` (superuser-only) calls
+   `BlinkService.init_live_stream()`, then spawns `ffmpeg` (via
+   `asyncio.create_subprocess_exec`, never a shell string) to remux the
+   relay's MPEG-TS byte stream into a short-segment HLS playlist on local
+   disk — a `tempfile.mkdtemp()` directory, which on prod's read-only,
+   tmpfs-backed `/tmp` (see `docker-compose.yml`) means this never touches
+   real disk.
+2. `GET /api/cameras/{id}/live-view/{session_id}/{filename}` (any active
+   user, not just an admin — co-viewing an already-running stream is
+   allowed even though only an admin can start/stop one) serves the
+   playlist/segments from that directory. video.js's bundled VHS plugin
+   (no extra npm package) plays it natively given
+   `type: "application/x-mpegURL"`.
+3. `POST .../stop` tears the session down: terminates (then kills, if
+   unresponsive) ffmpeg, calls `BlinkLiveStreamHandle.stop()` (idempotent —
+   also self-triggered by blinkpy's own relay once its one client, ffmpeg,
+   disconnects), closes the underlying `BlinkPyService`, removes the temp
+   directory.
+4. A periodic sweep — lazily started on the first session ever created, so
+   a household that never opens Live View pays nothing for it — auto-stops
+   any session with no playlist/segment request in the last
+   `SESSION_IDLE_TIMEOUT`, covering a browser tab closed without calling
+   `stop` explicitly. `LiveView.vue` also stops its own session from
+   `onUnmounted` and whenever the compared camera changes, as a faster
+   first line of defense than waiting out that timeout.
+5. Starting a new session for a camera that already has one running stops
+   the old one first — at most one live session per camera per process.
+
+**Frontend**: `LiveView.vue` never auto-starts a stream on load or on a
+camera change — the snapshot (unchanged from before this feature existed)
+stays the default view; an explicit per-camera "Start live view" button is
+the only way to begin one, and "Stop live view" (or navigating away) ends
+it. A camera that negotiates `rtsps://` shows a clear "not supported for
+this camera" message rather than a broken or fake video element. Security
+Feed is completely unaffected by any of this — it still only ever shows
+snapshots, on its own polling interval, exactly as before.
 
 ## Security model
 

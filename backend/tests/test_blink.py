@@ -31,6 +31,7 @@ from app.blink.service import (
     BlinkPyService,
     BlinkSyncModuleInfo,
     CameraNotFoundError,
+    LiveViewUnsupportedError,
     LocalStorageUnavailableError,
     SyncModuleNotFoundError,
     get_blink_service,
@@ -66,6 +67,8 @@ class FakeCamera:
         self.record_error: Exception | None = None
         self.recorded = False
         self.cached_image: bytes | None = None
+        self.livestream_response: Any = None
+        self.livestream_error: Exception | None = None
 
     async def get_thumbnail(self) -> Any:
         if self.thumbnail_error:
@@ -84,6 +87,28 @@ class FakeCamera:
         if self.record_error:
             raise self.record_error
         self.recorded = True
+
+    async def init_livestream(self) -> Any:
+        if self.livestream_error:
+            raise self.livestream_error
+        return self.livestream_response
+
+
+class FakeLiveStream:
+    def __init__(self, url: str = "tcp://127.0.0.1:9000") -> None:
+        self.url = url
+        self.started = False
+        self.fed = False
+        self.stopped = False
+
+    async def start(self) -> None:
+        self.started = True
+
+    async def feed(self) -> None:
+        self.fed = True
+
+    def stop(self) -> None:
+        self.stopped = True
 
 
 class FakeManifestItem:
@@ -467,6 +492,36 @@ async def test_record_clip_maps_auth_errors() -> None:
         await service.record_clip("1")
 
 
+async def test_init_live_stream_starts_and_wraps_the_relay() -> None:
+    service, _auth, blink = _make_service()
+    camera = _put_camera(blink)
+    stream = FakeLiveStream()
+    camera.livestream_response = stream
+
+    handle = await service.init_live_stream("1")
+
+    assert stream.started is True
+    assert handle.url == stream.url
+    await handle.feed()
+    assert stream.fed is True
+    handle.stop()
+    assert stream.stopped is True
+
+
+async def test_init_live_stream_maps_not_implemented_to_unsupported_error() -> None:
+    service, _auth, blink = _make_service()
+    _put_camera(blink).livestream_error = NotImplementedError("Unsupported: rtsps://x")
+    with pytest.raises(LiveViewUnsupportedError):
+        await service.init_live_stream("1")
+
+
+async def test_init_live_stream_maps_auth_errors() -> None:
+    service, _auth, blink = _make_service()
+    _put_camera(blink).livestream_error = _client_response_error(401)
+    with pytest.raises(BlinkAuthError):
+        await service.init_live_stream("1")
+
+
 async def test_homescreen_failure_maps_to_blink_auth_error() -> None:
     import app.blink.service as service_module
 
@@ -507,6 +562,7 @@ def test_error_hierarchy() -> None:
     assert issubclass(BlinkAuthError, BlinkError)
     assert issubclass(SyncModuleNotFoundError, BlinkError)
     assert issubclass(LocalStorageUnavailableError, BlinkError)
+    assert issubclass(LiveViewUnsupportedError, BlinkError)
 
 
 # --------------------------------------------------------------- sync modules

@@ -27,3 +27,9 @@ class SecurityFeedSettingsUpdate(BaseModel):
     camera_ids: list[uuid.UUID] = Field(default_factory=list[uuid.UUID], max_length=24)
     columns: int = Field(default=2, ge=1, le=4)
     refresh_interval_seconds: int = Field(default=20, ge=5, le=300)
+
+
+class LiveViewSessionRead(BaseModel):
+    session_id: uuid.UUID
+    camera_id: uuid.UUID
+    playlist_url: str

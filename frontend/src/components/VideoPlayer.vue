@@ -5,7 +5,10 @@ import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import type Player from "video.js/dist/types/player";
 
-const props = defineProps<{ src: string; poster?: string }>();
+const props = withDefaults(
+  defineProps<{ src: string; poster?: string; type?: string; live?: boolean }>(),
+  { poster: undefined, type: "video/mp4", live: false },
+);
 
 const videoRef = ref<HTMLVideoElement | null>(null);
 let player: Player | null = null;
@@ -13,18 +16,24 @@ let player: Player | null = null;
 onMounted(() => {
   player = videojs(videoRef.value!, {
     controls: true,
-    fluid: true,
+    // fill (not fluid) for a live stream: it sizes to fill an already-sized
+    // parent (LiveView's fixed-aspect-ratio preview box) instead of
+    // computing its own aspect box, which would otherwise fight the
+    // parent's for space - see .live-fill below.
+    fluid: !props.live,
+    fill: props.live,
+    liveui: props.live,
     preload: "metadata",
-    playbackRates: [0.5, 1, 1.5, 2],
+    playbackRates: props.live ? [] : [0.5, 1, 1.5, 2],
     poster: props.poster,
-    sources: [{ src: props.src, type: "video/mp4" }],
+    sources: [{ src: props.src, type: props.type }],
   });
 });
 
 watch(
   () => props.src,
   (src) => {
-    player?.src({ src, type: "video/mp4" });
+    player?.src({ src, type: props.type });
   },
 );
 
@@ -40,7 +49,10 @@ defineExpose({ videoRef });
 </script>
 
 <template>
-  <div data-vjs-player>
+  <div
+    data-vjs-player
+    :class="{ 'live-fill': live }"
+  >
     <video
       ref="videoRef"
       class="video-js vjs-big-play-centered"
@@ -50,6 +62,15 @@ defineExpose({ videoRef });
 </template>
 
 <style scoped>
+.live-fill {
+  position: absolute;
+  inset: 0;
+}
+
+.live-fill :deep(video) {
+  object-fit: contain;
+}
+
 :deep(.video-js) {
   border-radius: 10px;
   overflow: hidden;

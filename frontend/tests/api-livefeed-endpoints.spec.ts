@@ -5,6 +5,8 @@ import {
   getLiveViewSettings,
   getSecurityFeedSettings,
   recordCameraClip,
+  startCameraLiveView,
+  stopCameraLiveView,
   updateLiveViewSettings,
   updateSecurityFeedSettings,
 } from "@/api";
@@ -31,6 +33,30 @@ describe("camera preview/record endpoints", () => {
     const mock = capture(jsonResponse({ status: "recording_started" }, 202));
     await recordCameraClip("cam-1");
     expect(mock.mock.calls[0]?.[0]).toBe("/api/cameras/cam-1/record");
+    expect((mock.mock.calls[0]?.[1] as RequestInit).method).toBe("POST");
+  });
+
+  it("startCameraLiveView POSTs to the live-view start endpoint", async () => {
+    const mock = capture(
+      jsonResponse(
+        {
+          session_id: "session-1",
+          camera_id: "cam-1",
+          playlist_url: "/api/cameras/cam-1/live-view/session-1/stream.m3u8",
+        },
+        201,
+      ),
+    );
+    const result = await startCameraLiveView("cam-1");
+    expect(mock.mock.calls[0]?.[0]).toBe("/api/cameras/cam-1/live-view/start");
+    expect((mock.mock.calls[0]?.[1] as RequestInit).method).toBe("POST");
+    expect(result.playlist_url).toBe("/api/cameras/cam-1/live-view/session-1/stream.m3u8");
+  });
+
+  it("stopCameraLiveView POSTs to the live-view stop endpoint", async () => {
+    const mock = capture(new Response(null, { status: 204 }));
+    await stopCameraLiveView("cam-1", "session-1");
+    expect(mock.mock.calls[0]?.[0]).toBe("/api/cameras/cam-1/live-view/session-1/stop");
     expect((mock.mock.calls[0]?.[1] as RequestInit).method).toBe("POST");
   });
 });

@@ -77,10 +77,15 @@ pipeline and a Settings surface):
 design):
 - Live View: pick a camera (or two, side-by-side in compare mode), with
   auto-refresh, on-demand forced refresh, save-clip, and a full-resolution
-  screenshot-to-file. Nav sidebar collapses to give it more width.
+  screenshot-to-file. Nav sidebar collapses to give it more width. An
+  explicit per-camera "Start live view" button (never automatic) begins a
+  real HLS stream — blinkpy's own local relay remuxed through ffmpeg — for
+  any camera whose live-view session negotiates `immis://`; a camera that
+  negotiates `rtsps://` instead shows a clear "not supported" message. The
+  snapshot stays the default view either way.
 - Security Feed: a dashboard grid of chosen (or every enabled) cameras, each
   tile polling independently, with admin-only Snap/Record actions per tile —
-  the snapshot MVP called out below, not a stream.
+  snapshot-only, unaffected by Live View's streaming addition above.
 - Settings → Live View and Settings → Security Feed hold each area's own
   config; Settings → General picks which of Library or Security Feed a
   fresh login lands on.
@@ -131,8 +136,3 @@ design):
 - **PrimeVue 5**: released 2026-07; migrate in a dedicated PR once the v5
   ecosystem (themes, docs, blocks) settles.
 - **redis-py 6+**: currently capped `<6` by arq; revisit when arq lifts it.
-- **Live view streaming**: Blink's RTSPS liveview is the least stable surface
-  of blinkpy, and returns a URL no browser can play directly regardless — the
-  snapshot/on-demand-recording MVP (Live View, Security Feed) has shipped; a
-  real streaming relay (WebRTC/HLS) remains a possible later addition, not
-  started.
