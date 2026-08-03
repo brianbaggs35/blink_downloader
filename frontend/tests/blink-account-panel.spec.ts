@@ -279,7 +279,27 @@ describe("BlinkAccountPanel — linked", () => {
     await wrapper.find('[data-testid="sync-now"]').trigger("click");
     await flushPromises();
     expect(mockedSync).toHaveBeenCalled();
-    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: "Sync started" }));
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: "Sync complete" }));
+  });
+
+  it("polls until the camera count catches up instead of reporting a stale 0", async () => {
+    // Regression: right after linking, a freshly-triggered sync runs in a
+    // background worker job - the very first status read can still show 0
+    // cameras even though the job is about to upsert some.
+    mockedSync.mockResolvedValue({ status: "sync_started" });
+    mockedStatus
+      .mockResolvedValueOnce({ ...linkedStatus, camera_count: 0 })
+      .mockResolvedValueOnce({ ...linkedStatus, camera_count: 0 })
+      .mockResolvedValue({ ...linkedStatus, camera_count: 3 });
+    vi.useFakeTimers();
+    try {
+      const wrapper = await mountPanel();
+      await wrapper.find('[data-testid="sync-now"]').trigger("click");
+      await vi.runAllTimersAsync();
+      expect(wrapper.find('[data-testid="blink-linked"]').text()).toContain("3 camera(s)");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("shows an error toast when sync fails", async () => {

@@ -103,6 +103,41 @@ describe("useBlinkStore", () => {
     expect(store.status).toEqual(linkedStatus);
   });
 
+  it("syncNow polls until camera_count is non-zero instead of stopping at a stale 0", async () => {
+    mockedSync.mockResolvedValue({ status: "sync_started" });
+    mockedStatus
+      .mockResolvedValueOnce({ ...linkedStatus, camera_count: 0 })
+      .mockResolvedValueOnce({ ...linkedStatus, camera_count: 0 })
+      .mockResolvedValue(linkedStatus);
+    const store = useBlinkStore();
+    vi.useFakeTimers();
+    try {
+      const promise = store.syncNow();
+      await vi.runAllTimersAsync();
+      await promise;
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(mockedStatus).toHaveBeenCalledTimes(3);
+    expect(store.status?.camera_count).toBe(2);
+  });
+
+  it("syncNow gives up after exhausting its attempts, leaving whatever the last read was", async () => {
+    mockedSync.mockResolvedValue({ status: "sync_started" });
+    mockedStatus.mockResolvedValue({ ...linkedStatus, camera_count: 0 });
+    const store = useBlinkStore();
+    vi.useFakeTimers();
+    try {
+      const promise = store.syncNow();
+      await vi.runAllTimersAsync();
+      await promise;
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(mockedStatus).toHaveBeenCalledTimes(6);
+    expect(store.status?.camera_count).toBe(0);
+  });
+
   it("unlink removes the account and refreshes status", async () => {
     mockedUnlink.mockResolvedValue(undefined);
     mockedStatus.mockResolvedValue(unlinkedStatus);

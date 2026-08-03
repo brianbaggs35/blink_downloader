@@ -99,8 +99,11 @@ async function submitCode(): Promise<void> {
 async function syncNow(): Promise<void> {
   syncing.value = true;
   try {
+    // blink.syncNow() itself waits (a few seconds, bounded) for the camera
+    // count to catch up before resolving, so this button's own loading
+    // state already covers that wait - see stores/blink.ts.
     await blink.syncNow();
-    toast.add({ severity: "success", summary: "Sync started", life: 2500 });
+    toast.add({ severity: "success", summary: "Sync complete", life: 2500 });
   } catch (caught) {
     toast.add({
       severity: "error",

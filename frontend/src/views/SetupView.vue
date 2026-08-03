@@ -15,11 +15,19 @@ import ToggleSwitch from "primevue/toggleswitch";
 import { reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 
-import { ApiError, getStorageSettings, listCameras, updateCamera, updateStorageSettings } from "@/api";
+import {
+  ApiError,
+  getStorageSettings,
+  listCameras,
+  triggerBlinkSync,
+  updateCamera,
+  updateStorageSettings,
+} from "@/api";
 import BlinkAccountPanel from "@/components/BlinkAccountPanel.vue";
 import AuthLayout from "@/components/AuthLayout.vue";
 import StorageDirectoryBrowserDialog from "@/components/StorageDirectoryBrowserDialog.vue";
 import { cameraModelLabel } from "@/lib/cameraModels";
+import { pollUntilReady } from "@/lib/pollUntilReady";
 import { useAuthStore } from "@/stores/auth";
 import { useBlinkStore } from "@/stores/blink";
 
@@ -135,20 +143,25 @@ async function discoverCameras(): Promise<void> {
   camerasError.value = "";
   discoveringCameras.value = true;
   try {
-    await blink.syncNow();
+    // The raw trigger, not blink.syncNow() - that action now polls its own
+    // status internally (see stores/blink.ts), and layering that on top of
+    // this function's own listCameras() poll below would double the
+    // worst-case wait for no benefit (both read the same underlying rows).
+    await triggerBlinkSync();
   } catch {
     // A failed "sync now" (e.g. rate-limited right after linking) shouldn't
     // block the review step - the periodic background sync retries this on
     // its own, so just fall through to polling for whatever's already there.
   }
   try {
-    for (let attempt = 0; attempt < DISCOVERY_ATTEMPTS; attempt += 1) {
-      cameras.value = await listCameras();
-      if (cameras.value.length > 0) {
-        break;
-      }
-      await new Promise((resolve) => setTimeout(resolve, DISCOVERY_DELAY_MS));
-    }
+    await pollUntilReady(
+      async () => {
+        cameras.value = await listCameras();
+      },
+      () => cameras.value.length > 0,
+      DISCOVERY_ATTEMPTS,
+      DISCOVERY_DELAY_MS,
+    );
   } catch (caught) {
     camerasError.value = caught instanceof ApiError ? caught.message : "Could not load cameras.";
   } finally {
