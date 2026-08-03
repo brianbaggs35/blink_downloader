@@ -391,7 +391,7 @@ async function performDelete(camera: CameraRead): Promise<void> {
               <svg
                 class="outline-svg"
                 viewBox="0 0 100 100"
-                preserve-aspect-ratio="none"
+                preserveAspectRatio="none"
                 :data-testid="`outline-svg-${camera.id}`"
                 @pointerdown="startDrawing(camera.id, $event)"
                 @pointermove="continueDrawing(camera.id, $event)"

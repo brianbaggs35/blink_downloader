@@ -178,9 +178,13 @@ describe("SettingsVehiclesPanel per-camera loading", () => {
     const description = wrapper.find(`[data-testid="vehicle-description-${cameraA.id}"]`)
       .element as HTMLInputElement;
     expect(description.value).toBe("Blue Honda Civic");
-    expect(
-      wrapper.find(`[data-testid="outline-svg-${cameraA.id}"]`).find("polygon").attributes("points"),
-    ).toBe("20,30 60,30 60,70");
+    const svg = wrapper.find(`[data-testid="outline-svg-${cameraA.id}"]`);
+    expect(svg.find("polygon").attributes("points")).toBe("20,30 60,30 60,70");
+    // Regression: a kebab-case "preserve-aspect-ratio" attribute is not real
+    // SVG/DOM and is silently ignored, leaving the outline letterboxed
+    // (and thus misaligned with the cursor) instead of stretched exactly
+    // over the reference image.
+    expect(svg.attributes("preserveAspectRatio")).toBe("none");
     expect(wrapper.find(`[data-testid="vehicle-enabled-${cameraA.id}"]`).exists()).toBe(true);
     expect(wrapper.find(`[data-testid="delete-vehicle-${cameraA.id}"]`).exists()).toBe(true);
   });
