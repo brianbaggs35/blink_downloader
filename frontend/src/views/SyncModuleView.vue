@@ -18,6 +18,7 @@ import {
 import EmptyState from "@/components/EmptyState.vue";
 import PageHeader from "@/components/PageHeader.vue";
 import SyncModuleLocalStorageBrowser from "@/components/SyncModuleLocalStorageBrowser.vue";
+import { cameraModelLabel } from "@/lib/cameraModels";
 import { useAuthStore } from "@/stores/auth";
 
 import type { SyncModuleCameraRead, SyncModuleRead } from "@/api";
@@ -340,7 +341,7 @@ function localStorageUnavailableReason(syncModule: SyncModuleRead): string {
               <div class="camera-motion-identity">
                 <span class="camera-name">{{ camera.name }}</span>
                 <Tag
-                  :value="camera.camera_type"
+                  :value="cameraModelLabel(camera.camera_type)"
                   severity="secondary"
                 />
               </div>
