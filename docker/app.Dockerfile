@@ -7,7 +7,15 @@
 FROM ghcr.io/astral-sh/uv:latest AS uv-binary
 
 # ------------------------------------------------------------ frontend build
-FROM cgr.dev/chainguard/node:latest-dev AS frontend-builder
+# --platform=$BUILDPLATFORM: this stage's output (bundled JS/CSS/HTML) is
+# identical regardless of the image's target platform, so it should always
+# build at the runner's native speed - without this, a cross-platform build
+# (e.g. amd64 runner -> arm64 target) runs the entire npm install/build
+# under QEMU emulation for no reason, which is dramatically slower than
+# native for npm's file-I/O-heavy workload specifically (confirmed: over 45
+# minutes stuck in `npm ci` alone under emulation, vs well under a minute
+# natively).
+FROM --platform=$BUILDPLATFORM cgr.dev/chainguard/node:latest-dev AS frontend-builder
 WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -37,7 +45,23 @@ USER root
 # comes from Wolfi's own apk package, not pip's `supervisor` - pip's build
 # imports the legacy pkg_resources API at runtime, which current setuptools
 # no longer ships by default (ModuleNotFoundError, verified empirically).
-RUN apk add --no-cache ffmpeg nginx tini supervisor
+#
+# The -dev base image ships a full C toolchain (gcc, binutils, make,
+# headers) and git/pip/uv/setuptools baked in - none of it is needed once
+# the venv above is already built; every supervisord.conf command execs
+# its binary directly (no shell wrapping), so nothing here ever compiles
+# or pip-installs anything at runtime. Strip it back out rather than ship
+# a live build toolchain to anyone who can get a shell in this container.
+# Wolfi's own package builds keep a near-zero baseline CVE count, so
+# what's left (bash/apk-tools included, for operators who need to exec in
+# and debug) is deliberately kept - this trims the live attack surface,
+# it doesn't chase a fully distroless rebuild.
+RUN apk add --no-cache ffmpeg nginx tini supervisor \
+    && apk del --no-cache \
+        build-base gcc binutils make git linux-headers pkgconf \
+        glibc-dev openssl-dev jitterentropy-library-dev libxcrypt-dev \
+        python-3.14-dev python-3.14-base-dev \
+        py3.14-pip py3.14-pip-base py3-pip-wheel py3.14-setuptools uv wget
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
