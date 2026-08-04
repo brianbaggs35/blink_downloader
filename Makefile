@@ -107,7 +107,7 @@ test-frontend: ## Run frontend unit tests with coverage
 e2e: certs ## Build, seed, and run Playwright end to end in one shot (tears down after)
 	@$(COMPOSE_TEST) --profile e2e down -v --remove-orphans 2>/dev/null || true
 	$(COMPOSE_TEST) --profile e2e up --build -d postgres redis backend worker frontend
-	$(COMPOSE_TEST) --profile e2e run --rm playwright; \
+	$(COMPOSE_TEST) --profile e2e run --rm --no-deps playwright; \
 	status=$$?; \
 	if [ "$$status" -ne 0 ]; then $(COMPOSE_TEST) --profile e2e logs postgres redis backend worker frontend; fi; \
 	$(COMPOSE_TEST) --profile e2e down -v; exit $$status
@@ -123,7 +123,7 @@ e2e-up-start: certs ## Bring up the seeded e2e stack using whatever's already bu
 	@echo "e2e stack up: https://localhost:8443 - run 'make e2e-test' to run Playwright, 'make e2e-down' when done"
 
 e2e-test: ## Run Playwright against an already-running `make e2e-up` stack
-	$(COMPOSE_TEST) --profile e2e run --rm playwright
+	$(COMPOSE_TEST) --profile e2e run --rm --no-deps playwright
 
 e2e-down: ## Tear down the e2e stack
 	$(COMPOSE_TEST) --profile e2e down -v
@@ -132,7 +132,7 @@ e2e-coverage: certs ## Run e2e against an istanbul-instrumented frontend and rep
 	@$(COMPOSE_TEST) --profile e2e down -v --remove-orphans 2>/dev/null || true
 	@rm -rf e2e/.nyc_output e2e/coverage
 	VITE_COVERAGE=true $(COMPOSE_TEST) --profile e2e up --build -d postgres redis backend worker frontend; \
-	VITE_COVERAGE=true COVERAGE_DIR=/e2e/.nyc_output $(COMPOSE_TEST) --profile e2e run --rm playwright; \
+	VITE_COVERAGE=true COVERAGE_DIR=/e2e/.nyc_output $(COMPOSE_TEST) --profile e2e run --rm --no-deps playwright; \
 	test_status=$$?; \
 	if [ "$$test_status" -ne 0 ]; then \
 	  exit "$$test_status"; \
