@@ -7,8 +7,10 @@ COMPOSE_DEV      := docker compose -f docker-compose.dev.yml
 COMPOSE_DEV_GPU  := $(COMPOSE_DEV) -f docker-compose.gpu.yml
 COMPOSE_TEST     := docker compose -f docker-compose.test.yml
 
-.PHONY: help secrets certs prod prod-gpu prod-stop prod-logs prod-down dev dev-gpu dev-stop dev-logs dev-down \
-	test test-db test-stop test-backend test-backend-fast test-frontend e2e e2e-up e2e-test e2e-down \
+.PHONY: help secrets certs prod prod-start prod-gpu prod-gpu-start prod-stop prod-logs prod-down \
+	dev dev-start dev-gpu dev-gpu-start dev-stop dev-logs dev-down \
+	test test-db test-stop test-backend test-backend-fast test-frontend \
+	e2e e2e-up e2e-up-start e2e-test e2e-down \
 	lint lint-backend lint-frontend fmt migrate makemigration api-types \
 	db-shell clean
 
@@ -33,13 +35,21 @@ certs: ## Generate a self-signed TLS certificate into docker/certs (replace with
 	@chmod 644 docker/certs/cert.pem docker/certs/key.pem
 	@echo "Certificates ready in docker/certs/"
 
-prod: certs ## Start the production stack (requires .env — run `make secrets` first)
+prod: certs ## Start the production stack, always (re)building images first (requires .env — run `make secrets` first)
 	@test -f .env || (echo "ERROR: .env missing. Run 'make secrets' and create .env from .env.example." && exit 1)
 	$(COMPOSE_PROD) up -d --build
 
-prod-gpu: certs ## Start prod with NVIDIA GPU passthrough for biometrics (requires nvidia-container-toolkit - see docs/BIOMETRICS.md)
+prod-start: certs ## Start prod using whatever's already built - no rebuild (use `make prod` after code changes)
+	@test -f .env || (echo "ERROR: .env missing. Run 'make secrets' and create .env from .env.example." && exit 1)
+	$(COMPOSE_PROD) up -d
+
+prod-gpu: certs ## Start prod (GPU) always (re)building images first (requires nvidia-container-toolkit - see docs/BIOMETRICS.md)
 	@test -f .env || (echo "ERROR: .env missing. Run 'make secrets' and create .env from .env.example." && exit 1)
 	$(COMPOSE_PROD_GPU) up -d --build
+
+prod-gpu-start: certs ## Start prod (GPU) using whatever's already built - no rebuild
+	@test -f .env || (echo "ERROR: .env missing. Run 'make secrets' and create .env from .env.example." && exit 1)
+	$(COMPOSE_PROD_GPU) up -d
 
 prod-stop: ## Stop production containers without removing them (resume with `make prod`)
 	$(COMPOSE_PROD) stop
@@ -50,12 +60,20 @@ prod-logs: ## Tail production logs
 prod-down: ## Stop AND remove production containers (volumes/data are kept)
 	$(COMPOSE_PROD) down
 
-dev: ## Start the development stack with hot reload (API :8000, frontend :5173)
+dev: ## Start the dev stack with hot reload, always (re)building images first (API :8000, frontend :5173)
 	$(COMPOSE_DEV) up -d --build
 	@echo "Dev stack up: frontend http://localhost:5173 · API http://localhost:8000 · logs: make dev-logs"
 
-dev-gpu: ## Start dev with NVIDIA GPU passthrough for biometrics (requires nvidia-container-toolkit - see docs/BIOMETRICS.md)
+dev-start: ## Start dev using whatever's already built - no rebuild (use `make dev` after dependency changes)
+	$(COMPOSE_DEV) up -d
+	@echo "Dev stack up: frontend http://localhost:5173 · API http://localhost:8000 · logs: make dev-logs"
+
+dev-gpu: ## Start dev (GPU) always (re)building images first (requires nvidia-container-toolkit - see docs/BIOMETRICS.md)
 	$(COMPOSE_DEV_GPU) up -d --build
+	@echo "Dev stack up (GPU): frontend http://localhost:5173 · API http://localhost:8000 · logs: make dev-logs"
+
+dev-gpu-start: ## Start dev (GPU) using whatever's already built - no rebuild
+	$(COMPOSE_DEV_GPU) up -d
 	@echo "Dev stack up (GPU): frontend http://localhost:5173 · API http://localhost:8000 · logs: make dev-logs"
 
 dev-stop: ## Stop dev containers without removing them (resume with `make dev`)
@@ -94,9 +112,14 @@ e2e: certs ## Build, seed, and run Playwright end to end in one shot (tears down
 	if [ "$$status" -ne 0 ]; then $(COMPOSE_TEST) --profile e2e logs postgres redis backend worker frontend; fi; \
 	$(COMPOSE_TEST) --profile e2e down -v; exit $$status
 
-e2e-up: certs ## Bring up the seeded e2e stack and leave it running (for iterative test-writing)
+e2e-up: certs ## Bring up the seeded e2e stack and leave it running, always (re)building images first
 	@$(COMPOSE_TEST) --profile e2e down -v --remove-orphans 2>/dev/null || true
 	$(COMPOSE_TEST) --profile e2e up --build -d postgres redis backend worker frontend
+	@echo "e2e stack up: https://localhost:8443 - run 'make e2e-test' to run Playwright, 'make e2e-down' when done"
+
+e2e-up-start: certs ## Bring up the seeded e2e stack using whatever's already built - no rebuild
+	@$(COMPOSE_TEST) --profile e2e down -v --remove-orphans 2>/dev/null || true
+	$(COMPOSE_TEST) --profile e2e up -d postgres redis backend worker frontend
 	@echo "e2e stack up: https://localhost:8443 - run 'make e2e-test' to run Playwright, 'make e2e-down' when done"
 
 e2e-test: ## Run Playwright against an already-running `make e2e-up` stack
