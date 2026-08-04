@@ -328,6 +328,7 @@ def test_detect_faces_uses_gpu_ctx_id_when_cuda_selected(monkeypatch: pytest.Mon
         "get_available_providers",
         lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
+    monkeypatch.setattr(recognition, "_gpu_actually_usable", lambda: True)
     detect_faces(
         _tiny_jpeg_bytes(),
         model_pack=ModelPack.BUFFALO_SC,
