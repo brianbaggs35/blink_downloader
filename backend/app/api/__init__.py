@@ -1,6 +1,6 @@
 """HTTP API surface, assembled under the /api prefix."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from app.api.ai_stats import router as ai_stats_router
 from app.api.alerts import router as alerts_router
@@ -17,14 +17,24 @@ from app.api.storage import router as storage_router
 from app.api.sync_modules import router as sync_modules_router
 from app.api.users_admin import router as users_admin_router
 from app.api.vehicles import router as vehicles_router
+from app.security.ratelimit import RateLimiter
 from app.users.auth import auth_backend, fastapi_users
 from app.users.schemas import UserRead, UserUpdate
+
+# Same budget as setup/blink-link (see app.security.ratelimit) - applied to
+# the whole router (login + logout) rather than just /login, since
+# fastapi_users.get_auth_router generates both and doesn't expose them
+# individually to attach a per-route dependency to.
+login_rate_limit = RateLimiter(times=5, seconds=60, scope="login")
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(health_router, tags=["health"])
 api_router.include_router(setup_router, tags=["setup"])
 api_router.include_router(
-    fastapi_users.get_auth_router(auth_backend), prefix="/auth", tags=["auth"]
+    fastapi_users.get_auth_router(auth_backend),
+    prefix="/auth",
+    tags=["auth"],
+    dependencies=[Depends(login_rate_limit)],
 )
 api_router.include_router(
     fastapi_users.get_users_router(UserRead, UserUpdate), prefix="/users", tags=["users"]
