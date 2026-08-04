@@ -40,3 +40,24 @@ test("the hamburger is the way into navigation - the desktop sidebar is not show
   await expect(page.getByTestId("mobile-nav-toggle")).toBeVisible();
   await expect(page.locator(".sidebar")).toBeHidden();
 });
+
+test("starting a live stream on a phone stays usable - toggle and camera picker don't overlap", async ({
+  page,
+}) => {
+  await page.goto("/live");
+  await expect(page.getByTestId("primary-refresh")).toBeEnabled();
+
+  // The seeded Blink account is a synthetic fixture (see live-view.spec.ts),
+  // so this exercises the request/error wiring rather than a real stream -
+  // what matters here is that the toggle button, camera picker, and the
+  // rest of the footer's actions stay independently tappable at this width,
+  // not stacked/overlapping.
+  await page.getByTestId("primary-camera-select").click();
+  await page.getByRole("option").first().click();
+  await expect(page.getByTestId("primary-live-toggle")).toBeEnabled();
+
+  await page.getByTestId("primary-live-toggle").click();
+  await expect(page.getByTestId("primary-live-error")).toBeVisible();
+  await expect(page.getByTestId("primary-refresh")).toBeEnabled();
+  await expect(page.getByTestId("primary-screenshot")).toBeEnabled();
+});

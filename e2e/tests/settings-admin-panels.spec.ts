@@ -5,6 +5,18 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
 });
 
+test("General tab: Sync now resolves against the linked Blink account", async ({ page }) => {
+  await openSettingsSection(page, "General");
+  // The seeded e2e Blink account uses bogus credentials
+  // (Settings.disable_blink_network_calls), so this never reaches Blink's
+  // real API - it only exercises the request/poll wiring (see
+  // stores/blink.ts's syncNow: enqueue, then poll until camera_count > 0,
+  // which the seeded cameras already satisfy immediately).
+  await expect(page.getByTestId("blink-linked")).toBeVisible();
+  await page.getByTestId("sync-now").click();
+  await expect(page.getByText("Sync complete")).toBeVisible();
+});
+
 test("Cameras panel toggles a camera and saves its security context", async ({ page }) => {
   await openSettingsSection(page, "Cameras");
   await expect(page.getByTestId("camera-list")).toBeVisible();
@@ -156,4 +168,19 @@ test("Vehicles panel: draw a freeform outline on the reference frame, redraw it,
 
   await clearButton.click();
   await expect(polygon).toHaveCount(0);
+});
+
+test("Biometrics panel loads with the model already verified by the stack's own warm-up", async ({
+  page,
+}) => {
+  // Deliberately doesn't click verify-model: that kicks off a real,
+  // multi-hundred-MB-if-not-cached model download job, which is expensive
+  // enough (see app.testing.seed.warm_up_biometrics_model's own docstring)
+  // that this suite pays its cost exactly once, at stack boot, blocking
+  // the container healthcheck - not again per-test. This only checks that
+  // the panel correctly reflects that already-done work on load.
+  await openSettingsSection(page, "Biometrics");
+  await expect(page.getByTestId("biometrics-settings-form")).toBeVisible();
+  await expect(page.getByTestId("verify-model-success")).toBeVisible();
+  await expect(page.getByTestId("biometrics-detected-providers")).toBeVisible();
 });

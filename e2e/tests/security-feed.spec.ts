@@ -45,3 +45,22 @@ test("Customize links to the Security Feed settings tab", async ({ page }) => {
   await expect(page).toHaveURL(/\/settings\?tab=security-feed/);
   await expect(page.getByTestId("security-feed-settings-form")).toBeVisible();
 });
+
+test("the Settings back button returns to Security Feed after following Customize", async ({
+  page,
+}) => {
+  await page.getByTestId("customize-feed").click();
+  await expect(page).toHaveURL(/\/settings\?tab=security-feed/);
+
+  await page.getByTestId("topbar-back").click();
+  await expect(page).toHaveURL(/\/security-feed$/);
+  await expect(page.getByRole("heading", { name: "Security Feed", exact: true })).toBeVisible();
+});
+
+test("the Settings back button is hidden on a direct visit (no page to go back to)", async ({
+  page,
+}) => {
+  await page.goto("/settings");
+  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+  await expect(page.getByTestId("topbar-back")).toHaveCount(0);
+});
