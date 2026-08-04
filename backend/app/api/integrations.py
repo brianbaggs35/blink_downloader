@@ -134,7 +134,7 @@ async def test_integrations(
     return response
 
 
-async def _cloud_client_for(
+def _cloud_client_for(
     provider: CloudProvider, row: StorageIntegrationSettings, encryption_key: str
 ) -> S3Client | GoogleDriveClient | OneDriveClient | None:
     if provider == "s3":
@@ -148,7 +148,7 @@ async def _require_cloud_client(
     provider: CloudProvider, session: AsyncSession
 ) -> S3Client | GoogleDriveClient | OneDriveClient:
     row = await get_storage_integration_settings(session)
-    client = await _cloud_client_for(provider, row, get_settings().encryption_key)
+    client = _cloud_client_for(provider, row, get_settings().encryption_key)
     if client is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
