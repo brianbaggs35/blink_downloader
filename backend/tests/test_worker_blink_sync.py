@@ -31,6 +31,7 @@ from app.security.crypto import SecretBox
 from app.sync_module.models import SyncModule
 from app.worker.tasks.blink_sync import SYNC_JOB_NAME, sync_blink_account
 from app.worker.tasks.download import DOWNLOAD_JOB_NAME
+from tests.conftest import PlainSettings
 
 
 class FakeBlinkService:
@@ -151,6 +152,33 @@ async def test_no_account_linked_is_a_clean_noop(worker_ctx: dict[str, Any]) -> 
     worker_ctx["redis"].enqueue_job.assert_awaited_once_with(
         SYNC_JOB_NAME, _defer_by=get_settings().blink_sync_interval_seconds
     )
+
+
+async def test_disabled_network_calls_is_a_clean_noop_that_never_touches_the_account(
+    worker_ctx: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """See Settings.disable_blink_network_calls: this job self-reschedules
+    on a timer regardless of whether anything ever triggers it manually, so
+    an unguarded real call here would flip the seeded e2e account's status
+    to an auth error on its own, silently, out from under every other e2e
+    test that expects it to stay healthy."""
+    monkeypatch.setattr(
+        "app.worker.tasks.blink_sync.get_settings",
+        lambda: PlainSettings(disable_blink_network_calls=True),
+    )
+    async with worker_ctx["sessionmaker"]() as session:
+        account = await _make_account(session)
+        account_id = account.id
+
+    result = await sync_blink_account(worker_ctx)
+    assert result == "disabled"
+    assert FakeBlinkService.instances == []
+
+    async with worker_ctx["sessionmaker"]() as session:
+        refreshed = await session.get(BlinkAccount, account_id)
+        assert refreshed is not None
+        assert refreshed.status == BlinkAccountStatus.ACTIVE
+        assert refreshed.last_error is None
 
 
 async def test_full_sync_upserts_camera_and_new_clip(worker_ctx: dict[str, Any]) -> None:
