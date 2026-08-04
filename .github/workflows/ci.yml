@@ -302,6 +302,45 @@ jobs:
           sarif_file: trivy-frontend.sarif
           category: trivy-frontend
 
+  docker-multiarch-smoke:
+    name: Docker · multi-arch smoke test (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: arm64
+            platform: linux/arm64
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - name: Build app image (${{ matrix.platform }})
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/app.Dockerfile
+          target: prod
+          platforms: ${{ matrix.platform }}
+          push: false
+          load: true
+          pull: true
+          tags: blink-app:smoke-${{ matrix.arch }}
+          cache-from: type=gha,scope=app-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=app-${{ matrix.arch }}
+      - name: Smoke-test the app image actually boots (${{ matrix.platform }})
+        # Same import-only check as docker-build's native (amd64) smoke
+        # test, just under QEMU emulation for arm64 - this is the image
+        # images.yml actually publishes for both architectures, and the
+        # only thing that legitimately differs by arch (pyproject.toml's
+        # platform_machine marker: onnxruntime-gpu on amd64, plain
+        # onnxruntime elsewhere) is resolved fresh in each of this job's
+        # own per-platform builds, not reused from docker-build's amd64
+        # native one - a missing arm64 wheel would surface right here.
+        run: docker run --rm --platform ${{ matrix.platform }} blink-app:smoke-${{ matrix.arch }} /app/.venv/bin/python -c "import app.main"
+
   prod-smoke:
     name: Docker · production stack smoke test
     runs-on: ubuntu-latest
