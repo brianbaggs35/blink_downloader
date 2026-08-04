@@ -9,6 +9,7 @@ elsewhere in this project.
 # White-box: clears the private engine cache between tests for isolation.
 # pyright: reportPrivateUsage=false
 
+import subprocess
 import uuid
 from pathlib import Path
 from typing import Any, ClassVar
@@ -21,6 +22,7 @@ from app.biometrics import recognition
 from app.biometrics.models import ExecutionProviderPreference, ModelPack
 from app.biometrics.recognition import (
     RecognitionError,
+    _gpu_actually_usable,
     available_providers,
     best_match,
     cosine_similarity,
@@ -73,6 +75,10 @@ def _fake_engine(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(recognition, "FaceAnalysis", FakeFaceAnalysis)
     recognition._engines.clear()
     FakeFaceAnalysis.instances.clear()
+    # _gpu_actually_usable is process-lifetime-cached by design (see its own
+    # docstring) - a real problem for test isolation, since one test's
+    # result would otherwise leak into every test after it.
+    _gpu_actually_usable.cache_clear()
 
 
 # ---------------------------------------------------------- available_providers
@@ -82,6 +88,34 @@ def test_available_providers_reflects_onnxruntime(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(
         recognition.onnxruntime, "get_available_providers", lambda: ["CPUExecutionProvider"]
     )
+    assert available_providers() == ["CPUExecutionProvider"]
+
+
+def test_available_providers_includes_cuda_when_a_real_gpu_is_usable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        recognition.onnxruntime,
+        "get_available_providers",
+        lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+    monkeypatch.setattr(recognition, "_gpu_actually_usable", lambda: True)
+    assert available_providers() == ["CUDAExecutionProvider", "CPUExecutionProvider"]
+
+
+def test_available_providers_hides_cuda_when_compiled_in_but_not_actually_usable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Otherwise this panel would confidently claim "GPU available" on a
+    container with no device passthrough configured, on a host that may
+    well have a real GPU sitting right there unreachable - see
+    resolve_providers' own equivalent gating for the full reasoning."""
+    monkeypatch.setattr(
+        recognition.onnxruntime,
+        "get_available_providers",
+        lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+    monkeypatch.setattr(recognition, "_gpu_actually_usable", lambda: False)
     assert available_providers() == ["CPUExecutionProvider"]
 
 
@@ -108,7 +142,7 @@ def test_resolve_providers_auto_falls_back_to_cpu_when_no_cuda(
     assert resolve_providers(ExecutionProviderPreference.AUTO) == ["CPUExecutionProvider"]
 
 
-def test_resolve_providers_auto_prefers_cuda_when_available(
+def test_resolve_providers_auto_prefers_cuda_when_a_real_gpu_is_usable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -116,10 +150,95 @@ def test_resolve_providers_auto_prefers_cuda_when_available(
         "get_available_providers",
         lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
+    monkeypatch.setattr(recognition, "_gpu_actually_usable", lambda: True)
     assert resolve_providers(ExecutionProviderPreference.AUTO) == [
         "CUDAExecutionProvider",
         "CPUExecutionProvider",
     ]
+
+
+def test_resolve_providers_auto_falls_back_to_cpu_when_cuda_compiled_in_but_no_real_gpu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """onnxruntime-gpu always reports CUDAExecutionProvider as available -
+    that's a build-time fact, not proof this host can actually use it."""
+    monkeypatch.setattr(
+        recognition.onnxruntime,
+        "get_available_providers",
+        lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+    monkeypatch.setattr(recognition, "_gpu_actually_usable", lambda: False)
+    assert resolve_providers(ExecutionProviderPreference.AUTO) == ["CPUExecutionProvider"]
+
+
+# ------------------------------------------------------- _gpu_actually_usable
+
+
+def _no_nvidia_smi(_name: str) -> str | None:
+    return None
+
+
+def _has_nvidia_smi(_name: str) -> str | None:
+    return "/usr/bin/nvidia-smi"
+
+
+def _run_returns(returncode: int) -> Any:
+    def _run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(args=[], returncode=returncode)
+
+    return _run
+
+
+def _run_raises_oserror(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+    raise OSError("exec format error")
+
+
+def test_gpu_actually_usable_is_false_when_nvidia_smi_is_not_on_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(recognition.shutil, "which", _no_nvidia_smi)
+    assert _gpu_actually_usable() is False
+
+
+def test_gpu_actually_usable_is_true_when_nvidia_smi_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(recognition.shutil, "which", _has_nvidia_smi)
+    monkeypatch.setattr(recognition.subprocess, "run", _run_returns(0))
+    assert _gpu_actually_usable() is True
+
+
+def test_gpu_actually_usable_is_false_when_nvidia_smi_exits_nonzero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The plain (non--gpu) compose files inject no device reservation, so
+    a present-but-non-functional nvidia-smi (no accessible device) is a
+    real, reachable state, not just a hypothetical."""
+    monkeypatch.setattr(recognition.shutil, "which", _has_nvidia_smi)
+    monkeypatch.setattr(recognition.subprocess, "run", _run_returns(1))
+    assert _gpu_actually_usable() is False
+
+
+def test_gpu_actually_usable_is_false_when_nvidia_smi_cannot_even_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(recognition.shutil, "which", _has_nvidia_smi)
+    monkeypatch.setattr(recognition.subprocess, "run", _run_raises_oserror)
+    assert _gpu_actually_usable() is False
+
+
+def test_gpu_actually_usable_is_cached_across_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = 0
+
+    def _which(_name: str) -> str | None:
+        nonlocal calls
+        calls += 1
+        return None
+
+    monkeypatch.setattr(recognition.shutil, "which", _which)
+    assert _gpu_actually_usable() is False
+    assert _gpu_actually_usable() is False
+    assert calls == 1
 
 
 # -------------------------------------------------------------- detect_faces
