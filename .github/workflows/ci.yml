@@ -412,7 +412,13 @@ jobs:
         run: make e2e-coverage
       - name: Dump container logs on failure
         if: failure()
-        run: docker compose -f docker-compose.test.yml --profile e2e logs postgres redis backend worker frontend
+        run: |
+          docker compose -f docker-compose.test.yml --profile e2e logs postgres redis backend worker frontend
+          echo "--- users table ---"
+          docker compose -f docker-compose.test.yml --profile e2e exec -T postgres psql -U blink -d blink -c 'select id, email, display_name, created_at from users;'
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.test.yml --profile e2e down -v
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@v7
