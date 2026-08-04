@@ -131,6 +131,62 @@ Docker volumes, unaffected by the root filesystem's read-only setting — only
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#security-model) for the full
 security model.
 
+### Quick start (production, published image — no clone needed)
+
+Every GitHub release publishes a multi-arch (amd64 + arm64) image to
+`ghcr.io/brianbaggs35/blink_downloader`. If you don't want to clone this
+repository at all, grab just the two files below instead of the full
+`make prod` flow:
+
+```bash
+mkdir blink && cd blink
+curl -fsSL -o docker-compose.yml \
+  https://raw.githubusercontent.com/brianbaggs35/blink_downloader/master/docker-compose.prod-image.yml
+curl -fsSL -o .env.example \
+  https://raw.githubusercontent.com/brianbaggs35/blink_downloader/master/.env.example
+cp .env.example .env   # then fill in the 4 secrets below
+```
+
+Fill in `.env`'s four required secrets yourself (the same ones `make secrets`
+would generate from a real checkout — see `.env.example`'s own comments for
+what each one is for):
+
+```bash
+python3 -c 'import secrets; print("BLINK_SECRET_KEY=" + secrets.token_urlsafe(48))'
+python3 -c 'import base64, os; print("BLINK_ENCRYPTION_KEY=" + base64.urlsafe_b64encode(os.urandom(32)).decode())'
+python3 -c 'import secrets; print("POSTGRES_PASSWORD=" + secrets.token_urlsafe(24))'
+python3 -c 'import secrets; print("REDIS_PASSWORD=" + secrets.token_urlsafe(24))'
+```
+
+Then a self-signed TLS certificate (same one `make certs` generates from a
+checkout — replace with a real one any time):
+
+```bash
+mkdir -p docker/certs
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
+  -days 825 -nodes -keyout docker/certs/key.pem -out docker/certs/cert.pem \
+  -subj "/CN=blink.local" \
+  -addext "subjectAltName=DNS:localhost,DNS:blink.local,IP:127.0.0.1"
+chmod 644 docker/certs/*.pem
+```
+
+And start it, pulling the image instead of building it:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Everything else — the setup wizard, port variables, volumes, security
+posture — is identical to the [build-from-source flow](#quick-start-production)
+above, since it's the exact same image either way; only how you get it
+differs. Pin a specific version instead of always tracking `latest` by
+setting `BLINK_IMAGE_TAG=1.3.0` (or any published
+[release tag](https://github.com/brianbaggs35/blink_downloader/pkgs/container/blink_downloader))
+in `.env` before pulling. If the package is private rather than public,
+`docker login ghcr.io` first with a GitHub personal access token that has
+`read:packages` scope.
+
 ## Development
 
 ```bash
