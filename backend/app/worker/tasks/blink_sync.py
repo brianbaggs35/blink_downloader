@@ -62,6 +62,15 @@ async def _run_sync(session: AsyncSession, settings: Settings, ctx: dict[Any, An
     if account is None:
         return "no_account_linked"
 
+    if settings.disable_blink_network_calls:
+        # See Settings.disable_blink_network_calls: the seeded e2e account's
+        # credentials can only ever fail a real call, and this job
+        # self-reschedules every blink_sync_interval_seconds regardless of
+        # whether anything ever clicks "Sync now" - left unguarded, it would
+        # silently flip the seeded "healthy" account status to an auth error
+        # on its own, on a timer, out from under every other e2e test.
+        return "disabled"
+
     box = SecretBox(settings.encryption_key)
     token_data = json.loads(box.decrypt(account.encrypted_token_data))
     service = BlinkPyService(token_data)
