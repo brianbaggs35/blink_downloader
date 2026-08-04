@@ -109,7 +109,7 @@ e2e-coverage: certs ## Run e2e against an istanbul-instrumented frontend and rep
 	@$(COMPOSE_TEST) --profile e2e down -v --remove-orphans 2>/dev/null || true
 	@rm -rf e2e/.nyc_output e2e/coverage
 	VITE_COVERAGE=true $(COMPOSE_TEST) --profile e2e up --build -d postgres redis backend worker frontend; \
-	COVERAGE_DIR=/e2e/.nyc_output $(COMPOSE_TEST) --profile e2e run --rm playwright; \
+	VITE_COVERAGE=true COVERAGE_DIR=/e2e/.nyc_output $(COMPOSE_TEST) --profile e2e run --rm playwright; \
 	test_status=$$?; \
 	if [ "$$test_status" -ne 0 ]; then \
 	  $(COMPOSE_TEST) --profile e2e logs postgres redis backend worker frontend; \
