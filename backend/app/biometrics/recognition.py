@@ -22,10 +22,15 @@ layering as app.video.ffmpeg and app.vehicles.geometry.
 # pyright: reportUnknownVariableType=false
 
 import io
+import shutil
+
+# See _gpu_actually_usable's own docstring for why this is used safely.
+import subprocess  # nosec B404
 import threading
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 import cv2
@@ -88,21 +93,59 @@ _engines_lock = threading.Lock()
 
 
 def available_providers() -> list[str]:
-    """What onnxruntime actually reports as usable in this process - shown
-    in Settings so an admin can tell whether "auto" would pick CUDA before
-    they choose it."""
-    return list(onnxruntime.get_available_providers())
+    """What "auto" would actually pick in this process right now - shown in
+    Settings so an admin can tell whether choosing it would use CUDA before
+    they do. Deliberately not just onnxruntime.get_available_providers():
+    that reflects what onnxruntime-gpu was compiled with, not whether this
+    specific container can reach a real GPU (see resolve_providers/
+    _gpu_actually_usable) - showing it unfiltered here would have this
+    panel confidently claim "GPU available" on, say, a plain `make dev`
+    container on a real GPU host, when auto would silently fall back to
+    CPU because dev's own compose file requests no device passthrough."""
+    reported = onnxruntime.get_available_providers()
+    if CUDA_PROVIDER in reported and not _gpu_actually_usable():
+        return [p for p in reported if p != CUDA_PROVIDER]
+    return list(reported)
+
+
+@lru_cache(maxsize=1)
+def _gpu_actually_usable() -> bool:
+    """Whether a real, driver-accessible GPU exists in *this* process's
+    environment - deliberately not the same question as whether
+    CUDAExecutionProvider is in get_available_providers(), which reflects
+    what onnxruntime-gpu was compiled with, not what this specific
+    container can reach. nvidia-container-toolkit injects nvidia-smi (and
+    the driver libraries behind it) only into containers actually granted
+    GPU access (see docker-compose.gpu.yml/prod.gpu.yml); the plain
+    dev/prod/test compose files request no device reservation at all, so
+    nvidia-smi is simply absent there, and this correctly returns False
+    without ever attempting (and failing) a real CUDA session build.
+    Cached for the process's lifetime - this can't change without a
+    container restart."""
+    nvidia_smi = shutil.which("nvidia-smi")
+    if nvidia_smi is None:
+        return False
+    try:
+        # nvidia_smi is shutil.which's own resolved absolute path for a
+        # hardcoded binary name, never user input; no shell.
+        result = subprocess.run(  # noqa: S603 # nosec B603
+            [nvidia_smi], capture_output=True, timeout=5, check=False
+        )
+    except OSError:
+        return False
+    return result.returncode == 0
 
 
 def resolve_providers(preference: ExecutionProviderPreference) -> list[str]:
     """ "auto" uses CUDA when onnxruntime reports it available in this
-    process, else falls back to CPU. GPU is never assumed - onnxruntime-gpu
-    only ships x86_64 wheels at all, so this also keeps arm64 hosts correct
-    without any platform-specific branching here."""
+    process AND a real GPU is reachable, else falls back to CPU. GPU is
+    never assumed - onnxruntime-gpu only ships x86_64 wheels at all, so
+    this also keeps arm64 hosts correct without any platform-specific
+    branching here."""
     if preference is ExecutionProviderPreference.CPU:
         return [CPU_PROVIDER]
     available = onnxruntime.get_available_providers()
-    if CUDA_PROVIDER in available:
+    if CUDA_PROVIDER in available and _gpu_actually_usable():
         return [CUDA_PROVIDER, CPU_PROVIDER]
     return [CPU_PROVIDER]
 
@@ -125,20 +168,6 @@ def _get_engine(
         logger.info(
             "biometrics.engine_loading", model_pack=model_pack.value, providers=list(providers)
         )
-        # onnxruntime-gpu's CUDAExecutionProvider always reports itself in
-        # get_available_providers() - that reflects what the package was
-        # built with, not whether this host actually has a usable GPU/
-        # driver, so resolve_providers("auto") including it here is
-        # routinely an untested guess. Trying it and silently falling
-        # back to CPU is the expected, correct outcome, not a real
-        # problem - but onnxruntime logs the failed CUDA probe at ERROR
-        # severity regardless, which would otherwise read as a crash on
-        # every plain-CPU host. Fatal-only for just this attempt, restored
-        # to onnxruntime's own documented default (WARNING) immediately
-        # after either way, so a real error anywhere else still surfaces.
-        trying_cuda = CUDA_PROVIDER in providers
-        if trying_cuda:
-            onnxruntime.set_default_logger_severity(4)
         try:
             engine = FaceAnalysis(
                 name=model_pack.value, root=str(model_cache_dir), providers=list(providers)
@@ -161,9 +190,6 @@ def _get_engine(
             raise ModelLoadError(
                 f"Could not load the {model_pack.value} model pack: {exc}"
             ) from exc
-        finally:
-            if trying_cuda:
-                onnxruntime.set_default_logger_severity(2)
         _engines[key] = engine
         return engine
 
