@@ -235,6 +235,93 @@ describe("SettingsBiometricsPanel verify model", () => {
     );
   });
 
+  it("falls back to a generic toast message when polling reports an error with no message", async () => {
+    mockedVerify.mockResolvedValue({ ...baseSettings, model_download_status: "downloading" });
+    mockedGet.mockResolvedValueOnce(baseSettings).mockResolvedValue({
+      ...baseSettings,
+      model_download_status: "error",
+      model_download_error: null,
+    });
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    await wrapper.find('[data-testid="verify-model"]').trigger("click");
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(3000);
+
+    // No message string to show, so the persistent banner (gated on
+    // modelDownloadError being truthy) stays hidden - only the toast falls
+    // back to a generic detail.
+    expect(wrapper.find('[data-testid="verify-model-error"]').exists()).toBe(false);
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: "error",
+        summary: "Could not download the model",
+        detail: "Unexpected error.",
+      }),
+    );
+  });
+
+  it("keeps polling across multiple ticks while the download is still in progress", async () => {
+    mockedVerify.mockResolvedValue({ ...baseSettings, model_download_status: "downloading" });
+    mockedGet
+      .mockResolvedValueOnce(baseSettings)
+      .mockResolvedValueOnce({ ...baseSettings, model_download_status: "downloading" })
+      .mockResolvedValue({
+        ...baseSettings,
+        model_download_status: "ready",
+        model_download_providers: ["CPUExecutionProvider"],
+      });
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    await wrapper.find('[data-testid="verify-model"]').trigger("click");
+    await flushPromises();
+
+    // First tick: still downloading - the timer must not stop itself here.
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(wrapper.find('[data-testid="verify-model-downloading"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="verify-model-success"]').exists()).toBe(false);
+
+    // Second tick: now ready.
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(wrapper.find('[data-testid="verify-model-success"]').text()).toContain(
+      "CPUExecutionProvider",
+    );
+  });
+
+  it("does not toast when a poll observes a status reset by an unrelated model-pack change", async () => {
+    // update_biometrics_settings resets an in-flight download's status back
+    // to "idle" if the model pack or provider preference actually changes
+    // (see backend app.biometrics.service) - the poll that next observes
+    // that reset must stop cleanly without treating "idle" as a completion.
+    mockedVerify.mockResolvedValue({ ...baseSettings, model_download_status: "downloading" });
+    mockedUpdate.mockResolvedValue({ ...baseSettings, model_pack: "buffalo_m" });
+    mockedGet.mockResolvedValueOnce(baseSettings).mockResolvedValue({
+      ...baseSettings,
+      model_download_status: "idle",
+      model_download_providers: [],
+    });
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    await wrapper.find('[data-testid="verify-model"]').trigger("click");
+    await flushPromises();
+
+    const selects = wrapper.findAllComponents(Select);
+    await selects[0]!.vm.$emit("update:modelValue", "buffalo_m");
+    await wrapper.find('[data-testid="biometrics-settings-form"]').trigger("submit.prevent");
+    await flushPromises();
+
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(wrapper.find('[data-testid="verify-model-downloading"]').exists()).toBe(false);
+    expect(toastAdd).not.toHaveBeenCalledWith(expect.objectContaining({ summary: "Model ready" }));
+    expect(toastAdd).not.toHaveBeenCalledWith(
+      expect.objectContaining({ summary: "Could not download the model" }),
+    );
+  });
+
   it("resumes showing the in-progress state on mount when a download is already in flight", async () => {
     // The whole point: navigating away and back (a remount, in test terms)
     // must not lose track of a download that's still running server-side.
