@@ -6,9 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from app.storage.service import LocalClipStorage, StorageError, get_clip_storage
+from app.storage.service import (
+    LocalClipStorage,
+    StorageError,
+    get_clip_storage,
+    sanitize_camera_folder_name,
+)
 
 RECORDED_AT = datetime(2026, 7, 20, 14, 30, tzinfo=UTC)
+CAMERA_NAME = "Front Door"
 
 
 @pytest.fixture
@@ -20,19 +26,44 @@ def test_factory_returns_local_storage(tmp_path: Path) -> None:
     assert isinstance(get_clip_storage(tmp_path), LocalClipStorage)
 
 
-def test_clip_path_and_thumbnail_path_are_namespaced_by_camera_and_date(
+def test_clip_path_and_thumbnail_path_are_namespaced_by_camera_name_and_date(
     storage: LocalClipStorage,
 ) -> None:
-    camera_id = uuid.uuid4()
     clip_id = uuid.uuid4()
     assert (
-        storage.clip_path(camera_id, clip_id, RECORDED_AT)
-        == storage.root / str(camera_id) / "2026-07-20" / f"{clip_id}.mp4"
+        storage.clip_path(CAMERA_NAME, clip_id, RECORDED_AT)
+        == storage.root / CAMERA_NAME / "2026-07-20" / f"{clip_id}.mp4"
     )
     assert (
-        storage.thumbnail_path(camera_id, clip_id, RECORDED_AT)
-        == storage.root / str(camera_id) / "2026-07-20" / f"{clip_id}.jpg"
+        storage.thumbnail_path(CAMERA_NAME, clip_id, RECORDED_AT)
+        == storage.root / CAMERA_NAME / "2026-07-20" / f"{clip_id}.jpg"
     )
+
+
+def test_vehicle_reference_and_preview_paths_are_namespaced_by_camera_name(
+    storage: LocalClipStorage,
+) -> None:
+    assert (
+        storage.vehicle_reference_path(CAMERA_NAME)
+        == storage.root / CAMERA_NAME / "vehicle-reference.jpg"
+    )
+    assert storage.camera_preview_path(CAMERA_NAME) == storage.root / CAMERA_NAME / "preview.jpg"
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("Front Door", "Front Door"),
+        ("Garage/Driveway", "Garage-Driveway"),
+        ("Back\\Yard", "Back-Yard"),
+        ('Weird: "Name"?*|<>', "Weird- -Name------"),
+        ("  Porch  ", "Porch"),
+        ("///", "---"),
+        ("", "camera"),
+    ],
+)
+def test_sanitize_camera_folder_name(raw: str, expected: str) -> None:
+    assert sanitize_camera_folder_name(raw) == expected
 
 
 def test_legacy_thumbnail_path_is_the_pre_migration_flat_location(
@@ -62,7 +93,7 @@ def test_person_and_face_sample_paths_are_namespaced_by_person(
 
 
 async def test_write_creates_parent_dirs_and_persists_bytes(storage: LocalClipStorage) -> None:
-    path = storage.clip_path(uuid.uuid4(), uuid.uuid4(), RECORDED_AT)
+    path = storage.clip_path(CAMERA_NAME, uuid.uuid4(), RECORDED_AT)
     size = await storage.write(path, b"clip-bytes")
     assert size == len(b"clip-bytes")
     assert path.read_bytes() == b"clip-bytes"
@@ -70,7 +101,7 @@ async def test_write_creates_parent_dirs_and_persists_bytes(storage: LocalClipSt
 
 
 async def test_write_overwrites_existing_file_atomically(storage: LocalClipStorage) -> None:
-    path = storage.clip_path(uuid.uuid4(), uuid.uuid4(), RECORDED_AT)
+    path = storage.clip_path(CAMERA_NAME, uuid.uuid4(), RECORDED_AT)
     await storage.write(path, b"first")
     await storage.write(path, b"second")
     assert path.read_bytes() == b"second"
@@ -88,7 +119,7 @@ async def test_write_raises_storage_error_on_permission_denied(
         raise PermissionError(errno.EACCES, "Permission denied")
 
     monkeypatch.setattr(Path, "write_bytes", fail_write)
-    path = storage.clip_path(uuid.uuid4(), uuid.uuid4(), RECORDED_AT)
+    path = storage.clip_path(CAMERA_NAME, uuid.uuid4(), RECORDED_AT)
     with pytest.raises(StorageError, match="Permission denied"):
         await storage.write(path, b"data")
 
@@ -102,7 +133,7 @@ async def test_write_raises_storage_error_when_disk_full(
         raise OSError(errno.ENOSPC, "No space left on device")
 
     monkeypatch.setattr(Path, "write_bytes", fail_write)
-    path = storage.clip_path(uuid.uuid4(), uuid.uuid4(), RECORDED_AT)
+    path = storage.clip_path(CAMERA_NAME, uuid.uuid4(), RECORDED_AT)
     with pytest.raises(StorageError, match="No space left"):
         await storage.write(path, b"data")
 
@@ -114,14 +145,14 @@ async def test_write_cleans_up_temp_file_on_failure(
         raise OSError("boom")
 
     monkeypatch.setattr(Path, "replace", fail_replace)
-    path = storage.clip_path(uuid.uuid4(), uuid.uuid4(), RECORDED_AT)
+    path = storage.clip_path(CAMERA_NAME, uuid.uuid4(), RECORDED_AT)
     with pytest.raises(StorageError):
         await storage.write(path, b"data")
     assert not path.with_suffix(path.suffix + ".part").exists()
 
 
 async def test_delete_removes_existing_file(storage: LocalClipStorage) -> None:
-    path = storage.clip_path(uuid.uuid4(), uuid.uuid4(), RECORDED_AT)
+    path = storage.clip_path(CAMERA_NAME, uuid.uuid4(), RECORDED_AT)
     await storage.write(path, b"data")
     await storage.delete(path)
     assert not path.exists()
@@ -130,7 +161,7 @@ async def test_delete_removes_existing_file(storage: LocalClipStorage) -> None:
 async def test_delete_is_not_an_error_when_file_is_already_gone(
     storage: LocalClipStorage,
 ) -> None:
-    path = storage.clip_path(uuid.uuid4(), uuid.uuid4(), RECORDED_AT)
+    path = storage.clip_path(CAMERA_NAME, uuid.uuid4(), RECORDED_AT)
     await storage.delete(path)  # never written — must not raise
 
 
@@ -141,6 +172,6 @@ async def test_delete_raises_storage_error_on_unexpected_os_error(
         raise OSError("locked")
 
     monkeypatch.setattr(Path, "unlink", fail_unlink)
-    path = storage.clip_path(uuid.uuid4(), uuid.uuid4(), RECORDED_AT)
+    path = storage.clip_path(CAMERA_NAME, uuid.uuid4(), RECORDED_AT)
     with pytest.raises(StorageError, match="Failed to delete"):
         await storage.delete(path)

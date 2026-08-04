@@ -12,7 +12,7 @@ from app.blink.models import BlinkAccount, Camera, Clip
 from app.config import get_settings
 from app.security.crypto import SecretBox
 from app.settings.service import set_storage_dir
-from app.storage.service import get_clip_storage
+from app.storage.service import get_clip_storage, sanitize_camera_folder_name
 from app.vehicles.schemas import VehicleUpdate
 from app.vehicles.service import (
     VehicleReferenceFrameError,
@@ -72,7 +72,7 @@ async def _make_camera(session: AsyncSession) -> Camera:
 async def _make_downloaded_clip(
     session: AsyncSession, camera: Camera, storage_dir: Path, content: bytes
 ) -> Clip:
-    path = storage_dir / str(camera.id) / "clip.mp4"
+    path = storage_dir / sanitize_camera_folder_name(camera.name) / "clip.mp4"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(content)
     clip = Clip(
@@ -123,11 +123,11 @@ async def test_delete_vehicle_removes_the_row_and_reference_frame(
     camera = await _make_camera(app_session)
     vehicle = await upsert_vehicle(app_session, camera.id, make_update())
     storage = get_clip_storage(tmp_path)
-    reference_path = storage.vehicle_reference_path(camera.id)
+    reference_path = storage.vehicle_reference_path(camera.name)
     reference_path.parent.mkdir(parents=True, exist_ok=True)
     reference_path.write_bytes(b"fake-jpeg")
 
-    await delete_vehicle(app_session, vehicle, storage)
+    await delete_vehicle(app_session, vehicle, camera.name, storage)
 
     assert await get_vehicle(app_session, camera.id) is None
     assert not reference_path.exists()
@@ -139,7 +139,7 @@ async def test_capture_reference_frame_raises_with_no_downloaded_clips(
     camera = await _make_camera(app_session)
     storage = get_clip_storage(tmp_path)
     with pytest.raises(VehicleReferenceFrameError, match="No downloaded clips"):
-        await capture_vehicle_reference_frame(app_session, camera.id, storage)
+        await capture_vehicle_reference_frame(app_session, camera.id, camera.name, storage)
 
 
 async def test_capture_reference_frame_writes_a_jpeg(
@@ -150,11 +150,13 @@ async def test_capture_reference_frame_writes_a_jpeg(
     await _make_downloaded_clip(app_session, camera, tmp_path, sample_clip_bytes)
     storage = get_clip_storage(tmp_path)
 
-    destination = await capture_vehicle_reference_frame(app_session, camera.id, storage)
+    destination = await capture_vehicle_reference_frame(
+        app_session, camera.id, camera.name, storage
+    )
 
     assert destination.exists()
     assert destination.read_bytes()[:2] == b"\xff\xd8"  # JPEG magic bytes
-    assert destination == storage.vehicle_reference_path(camera.id)
+    assert destination == storage.vehicle_reference_path(camera.name)
 
 
 async def test_capture_reference_frame_raises_when_ffmpeg_cannot_read_the_file(
@@ -165,4 +167,4 @@ async def test_capture_reference_frame_raises_when_ffmpeg_cannot_read_the_file(
     storage = get_clip_storage(tmp_path)
 
     with pytest.raises(VehicleReferenceFrameError, match="Could not capture"):
-        await capture_vehicle_reference_frame(app_session, camera.id, storage)
+        await capture_vehicle_reference_frame(app_session, camera.id, camera.name, storage)

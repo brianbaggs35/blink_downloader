@@ -49,14 +49,16 @@ async def upsert_vehicle(
     return vehicle
 
 
-async def delete_vehicle(session: AsyncSession, vehicle: Vehicle, storage: ClipStorage) -> None:
-    await storage.delete(storage.vehicle_reference_path(vehicle.camera_id))
+async def delete_vehicle(
+    session: AsyncSession, vehicle: Vehicle, camera_name: str, storage: ClipStorage
+) -> None:
+    await storage.delete(storage.vehicle_reference_path(camera_name))
     await session.delete(vehicle)
     await session.commit()
 
 
 async def capture_vehicle_reference_frame(
-    session: AsyncSession, camera_id: uuid.UUID, storage: ClipStorage
+    session: AsyncSession, camera_id: uuid.UUID, camera_name: str, storage: ClipStorage
 ) -> Path:
     stmt = (
         select(Clip)
@@ -68,7 +70,7 @@ async def capture_vehicle_reference_frame(
     if clip is None or not clip.storage_path:
         raise VehicleReferenceFrameError("No downloaded clips yet for this camera.")
 
-    destination = storage.vehicle_reference_path(camera_id)
+    destination = storage.vehicle_reference_path(camera_name)
     await asyncio.to_thread(destination.parent.mkdir, parents=True, exist_ok=True)
     ok = await capture_reference_frame(Path(clip.storage_path), destination)
     if not ok:

@@ -177,7 +177,7 @@ async def get_camera_preview(
     finally:
         await service.close()
 
-    path = storage.camera_preview_path(camera.id)
+    path = storage.camera_preview_path(camera.name)
     await storage.write(path, image)
     camera.preview_path = str(path)
     camera.preview_updated_at = datetime.now(UTC)

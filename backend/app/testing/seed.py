@@ -150,7 +150,7 @@ async def _seed_demo_data(session: AsyncSession) -> None:
     # have no live Blink connection to fall back on and every tile would 404.
     for index, camera in enumerate([front_door, backyard]):
         preview_bytes = await _make_demo_preview_bytes(index)
-        preview_path = storage.camera_preview_path(camera.id)
+        preview_path = storage.camera_preview_path(camera.name)
         await storage.write(preview_path, preview_bytes)
         camera.preview_path = str(preview_path)
         camera.preview_updated_at = now
@@ -194,7 +194,7 @@ async def _seed_demo_data(session: AsyncSession) -> None:
         session.add(clip)
         await session.flush()
         if downloaded:
-            path = storage.clip_path(camera.id, clip.id, recorded_at)
+            path = storage.clip_path(camera.name, clip.id, recorded_at)
             await storage.write(path, clip_bytes)
             clip.storage_path = str(path)
             clip.downloaded_at = recorded_at + timedelta(seconds=30)
@@ -287,7 +287,7 @@ async def _seed_vehicle_data(
     proximity events - enough for the Vehicles tab's card, outline overlay,
     and recent-activity list to all have something real to show."""
     reference_bytes = await _make_demo_preview_bytes(2)
-    reference_path = storage.vehicle_reference_path(camera.id)
+    reference_path = storage.vehicle_reference_path(camera.name)
     await storage.write(reference_path, reference_bytes)
 
     vehicle = Vehicle(
