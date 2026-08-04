@@ -231,7 +231,7 @@ def cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
     a_arr = np.asarray(a, dtype=np.float32)
     b_arr = np.asarray(b, dtype=np.float32)
     denom = float(np.linalg.norm(a_arr) * np.linalg.norm(b_arr))
-    if denom == 0.0:
+    if denom <= 0.0:
         return 0.0
     return float(np.dot(a_arr, b_arr) / denom)
 

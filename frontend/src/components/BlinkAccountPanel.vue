@@ -254,6 +254,7 @@ async function performUnlink(): Promise<void> {
         <InputText
           v-model="username"
           type="email"
+          autocomplete="username"
           fluid
           required
           data-testid="blink-username"
@@ -267,6 +268,7 @@ async function performUnlink(): Promise<void> {
           toggle-mask
           fluid
           required
+          :input-props="{ autocomplete: 'current-password' }"
           data-testid="blink-password"
         />
       </label>

@@ -276,7 +276,7 @@ async def _seed_demo_data(session: AsyncSession) -> None:
     ]
 
     await _seed_vehicle_data(session, storage, front_door, clips)
-    await _seed_ai_usage_data(session, clips, routine, suspicious)
+    _seed_ai_usage_data(session, clips, routine, suspicious)
     await _seed_sync_module_data(session, storage, account, front_door, backyard, clip_bytes)
 
 
@@ -408,7 +408,7 @@ async def _seed_sync_module_data(
     )
 
 
-async def _seed_ai_usage_data(
+def _seed_ai_usage_data(
     session: AsyncSession, clips: list[Clip], routine: Analysis, suspicious: Analysis
 ) -> None:
     """Usage rows spread across the last week, across more than one

@@ -255,6 +255,7 @@ function finish(): void {
                 toggle-mask
                 required
                 fluid
+                :input-props="{ autocomplete: 'new-password' }"
                 data-testid="password"
               />
             </label>
