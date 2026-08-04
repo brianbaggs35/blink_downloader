@@ -116,3 +116,39 @@ test("the Storage page's auto-archive picker only offers connected destinations,
   await page.getByTestId("storage-go-to-integrations").click();
   await expect(page.getByRole("heading", { name: "Integrations", exact: true })).toBeVisible();
 });
+
+test("Storage page: browse the local backend, create a folder, navigate into and back out of it", async ({
+  page,
+}) => {
+  await page.goto("/storage");
+  await expect(page.getByRole("heading", { name: "Storage", exact: true })).toBeVisible();
+
+  await page.getByTestId("backend-browse-local").click();
+  await expect(page.getByTestId("storage-browse-modal")).toBeVisible();
+  await expect(page.getByTestId("storage-browse-entries")).toBeVisible();
+
+  const folderName = `e2e-folder-${Date.now()}`;
+  await page.getByTestId("storage-browse-new-folder-name").fill(folderName);
+  await page.getByTestId("storage-browse-create-folder").click();
+  // Creating a folder navigates straight into it (empty, nothing to list
+  // yet) rather than just adding an entry to the current listing.
+  await expect(page.getByTestId("storage-browse-current-path")).toContainText(folderName);
+
+  await page.getByTestId("storage-browse-up").click();
+  const entry = page.getByTestId(`storage-browse-entry-${folderName}`);
+  await expect(entry).toBeVisible();
+
+  // Now exercise the other direction: navigating in via the entry button.
+  await entry.click();
+  await expect(page.getByTestId("storage-browse-current-path")).toContainText(folderName);
+  await page.getByTestId("storage-browse-up").click();
+  await expect(entry).toBeVisible();
+
+  await page.getByTestId(`storage-browse-delete-${folderName}`).click();
+  const confirmDialog = page.getByRole("alertdialog", { name: "Delete folder", exact: true });
+  await confirmDialog.getByRole("button", { name: "Delete" }).click();
+  await expect(entry).toHaveCount(0);
+
+  await page.getByTestId("storage-browse-cancel").click();
+  await expect(page.getByTestId("storage-browse-modal")).toBeHidden();
+});
