@@ -125,6 +125,20 @@ def _get_engine(
         logger.info(
             "biometrics.engine_loading", model_pack=model_pack.value, providers=list(providers)
         )
+        # onnxruntime-gpu's CUDAExecutionProvider always reports itself in
+        # get_available_providers() - that reflects what the package was
+        # built with, not whether this host actually has a usable GPU/
+        # driver, so resolve_providers("auto") including it here is
+        # routinely an untested guess. Trying it and silently falling
+        # back to CPU is the expected, correct outcome, not a real
+        # problem - but onnxruntime logs the failed CUDA probe at ERROR
+        # severity regardless, which would otherwise read as a crash on
+        # every plain-CPU host. Fatal-only for just this attempt, restored
+        # to onnxruntime's own documented default (WARNING) immediately
+        # after either way, so a real error anywhere else still surfaces.
+        trying_cuda = CUDA_PROVIDER in providers
+        if trying_cuda:
+            onnxruntime.set_default_logger_severity(4)
         try:
             engine = FaceAnalysis(
                 name=model_pack.value, root=str(model_cache_dir), providers=list(providers)
@@ -147,6 +161,9 @@ def _get_engine(
             raise ModelLoadError(
                 f"Could not load the {model_pack.value} model pack: {exc}"
             ) from exc
+        finally:
+            if trying_cuda:
+                onnxruntime.set_default_logger_severity(2)
         _engines[key] = engine
         return engine
 
