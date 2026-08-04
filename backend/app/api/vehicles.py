@@ -44,7 +44,7 @@ def _vehicle_read(vehicle: Vehicle, camera_name: str, storage: ClipStorage) -> V
         camera_name=camera_name,
         description=vehicle.description,
         outline_points=vehicle.outline_points,
-        has_reference_frame=storage.vehicle_reference_path(vehicle.camera_id).exists(),
+        has_reference_frame=storage.vehicle_reference_path(camera_name).exists(),
         estimated_length_feet=vehicle.estimated_length_feet,
         distance_threshold_feet=vehicle.distance_threshold_feet,
         enabled=vehicle.enabled,
@@ -108,8 +108,9 @@ async def remove_vehicle(
     session: Annotated[AsyncSession, Depends(get_session)],
     _user: Annotated[object, Depends(current_superuser)],
 ) -> None:
+    camera = await _get_camera_or_404(session, camera_id)
     vehicle = await _get_vehicle_or_404(session, camera_id)
-    await delete_vehicle(session, vehicle, await _storage(session))
+    await delete_vehicle(session, vehicle, camera.name, await _storage(session))
 
 
 @router.post("/{camera_id}/reference-frame", status_code=status.HTTP_204_NO_CONTENT)
@@ -118,9 +119,11 @@ async def capture_reference(
     session: Annotated[AsyncSession, Depends(get_session)],
     _user: Annotated[object, Depends(current_superuser)],
 ) -> None:
-    await _get_camera_or_404(session, camera_id)
+    camera = await _get_camera_or_404(session, camera_id)
     try:
-        await capture_vehicle_reference_frame(session, camera_id, await _storage(session))
+        await capture_vehicle_reference_frame(
+            session, camera_id, camera.name, await _storage(session)
+        )
     except VehicleReferenceFrameError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
@@ -131,7 +134,8 @@ async def get_reference_frame(
     session: Annotated[AsyncSession, Depends(get_session)],
     _user: Annotated[object, Depends(current_active_user)],
 ) -> FileResponse:
-    path = (await _storage(session)).vehicle_reference_path(camera_id)
+    camera = await _get_camera_or_404(session, camera_id)
+    path = (await _storage(session)).vehicle_reference_path(camera.name)
     if not path.exists():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="No reference frame captured yet."

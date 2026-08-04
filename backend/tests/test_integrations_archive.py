@@ -69,7 +69,7 @@ async def _make_downloaded_clip(
     await session.commit()
     await session.refresh(clip)
 
-    path = storage.clip_path(camera.id, clip.id, clip.recorded_at)
+    path = storage.clip_path(camera.name, clip.id, clip.recorded_at)
     await storage.write(path, content)
     clip.storage_path = str(path)
     clip.filename = path.name
@@ -185,7 +185,7 @@ async def test_archive_clip_uploads_deletes_local_and_updates_the_clip(
     assert fake.uploaded == [(f"{clip.id}.mp4", b"hello-world")]
     assert clip.storage_backend == StorageBackend.S3
     assert clip.storage_path == "clips/abc.mp4"
-    local_path = storage.clip_path(camera.id, clip.id, clip.recorded_at)
+    local_path = storage.clip_path(camera.name, clip.id, clip.recorded_at)
     assert not local_path.exists()
 
 
@@ -211,7 +211,7 @@ async def test_archive_clip_raises_when_the_local_file_is_missing(
     camera = await _make_camera(app_session)
     storage = get_clip_storage(tmp_path)
     clip = await _make_downloaded_clip(app_session, camera, storage)
-    storage.clip_path(camera.id, clip.id, clip.recorded_at).unlink()
+    storage.clip_path(camera.name, clip.id, clip.recorded_at).unlink()
     fake = _FakeCloudClient()
     monkeypatch.setattr("app.integrations.archive.build_s3_client", lambda *_a, **_kw: fake)
 

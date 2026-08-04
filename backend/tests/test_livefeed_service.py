@@ -431,7 +431,7 @@ async def test_get_camera_preview_does_not_fall_back_to_stale_cache_for_a_decryp
     permanent problem, not a blip."""
     _account, camera = await _make_account_with_undecryptable_token(app_session)
     storage = get_clip_storage(tmp_path)
-    stale_path = storage.camera_preview_path(camera.id)
+    stale_path = storage.camera_preview_path(camera.name)
     await storage.write(stale_path, b"stale-bytes")
     camera.preview_path = str(stale_path)
     camera.preview_updated_at = datetime.now(UTC) - timedelta(minutes=5)

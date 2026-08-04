@@ -13,10 +13,11 @@ import json
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.blink.models import Clip, StorageBackend
+from app.blink.models import Camera, Clip, StorageBackend
 from app.integrations.cloud import CloudClient, CloudStorageError
 from app.integrations.schemas import TemporaryLinkResponse
 from app.integrations.service import (
@@ -119,7 +120,14 @@ async def restore_clip(
     # A genuinely fresh write (the clip is currently NOT local, being
     # restored TO local), so the current clip_path formula applies - unlike
     # archive_clip above, there's no historical reference to preserve here.
-    local_path = local_storage.clip_path(clip.camera_id, clip.id, clip.recorded_at)
+    # An explicit fetch rather than clip.camera: this clip came in via a
+    # plain session.get(Clip, ...) with no eager-loaded relationship, and
+    # the async session can't satisfy a lazy load on its own. camera_id is
+    # a DB-enforced FK (never dangling), so the None case genuinely can't
+    # happen - cast rather than assert for it, matching app.ai.providers'
+    # existing use of cast elsewhere in this codebase for the same reason.
+    camera = cast("Camera", await session.get(Camera, clip.camera_id))
+    local_path = local_storage.clip_path(camera.name, clip.id, clip.recorded_at)
     try:
         await local_storage.write(local_path, data)
     except StorageError as exc:
