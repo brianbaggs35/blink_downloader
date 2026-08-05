@@ -461,27 +461,39 @@ const redirectOrigin = window.location.origin;
                 Enabled
               </p>
             </div>
-            <label class="field">
+            <label
+              class="field"
+              for="s3-bucket"
+            >
               <span class="field-label">Bucket name</span>
               <InputText
+                id="s3-bucket"
                 v-model="s3Bucket"
                 fluid
                 data-testid="s3-bucket"
               />
             </label>
-            <label class="field">
+            <label
+              class="field"
+              for="s3-region"
+            >
               <span class="field-label">Region</span>
               <InputText
+                id="s3-region"
                 v-model="s3Region"
                 placeholder="us-east-1"
                 fluid
                 data-testid="s3-region"
               />
             </label>
-            <label class="field">
+            <label
+              class="field"
+              for="s3-access-key"
+            >
               <span class="field-label">Access key ID</span>
               <Password
                 v-model="s3AccessKeyInput"
+                input-id="s3-access-key"
                 :feedback="false"
                 toggle-mask
                 fluid
@@ -489,10 +501,14 @@ const redirectOrigin = window.location.origin;
                 data-testid="s3-access-key"
               />
             </label>
-            <label class="field">
+            <label
+              class="field"
+              for="s3-secret-key"
+            >
               <span class="field-label">Secret access key</span>
               <Password
                 v-model="s3SecretKeyInput"
+                input-id="s3-secret-key"
                 :feedback="false"
                 toggle-mask
                 fluid
@@ -503,9 +519,11 @@ const redirectOrigin = window.location.origin;
             <label
               v-if="current?.s3_credentials_set"
               class="clear-key"
+              for="s3-clear-credentials"
             >
               <Checkbox
                 v-model="s3ClearCredentials"
+                input-id="s3-clear-credentials"
                 binary
                 data-testid="s3-clear-credentials"
               />
@@ -523,18 +541,26 @@ const redirectOrigin = window.location.origin;
                 Enabled
               </p>
             </div>
-            <label class="field">
+            <label
+              class="field"
+              for="drive-client-id"
+            >
               <span class="field-label">OAuth client ID</span>
               <InputText
+                id="drive-client-id"
                 v-model="driveClientId"
                 fluid
                 data-testid="drive-client-id"
               />
             </label>
-            <label class="field">
+            <label
+              class="field"
+              for="drive-client-secret"
+            >
               <span class="field-label">OAuth client secret</span>
               <Password
                 v-model="driveClientSecretInput"
+                input-id="drive-client-secret"
                 :feedback="false"
                 toggle-mask
                 fluid
@@ -549,9 +575,11 @@ const redirectOrigin = window.location.origin;
             <label
               v-if="current?.google_drive_client_secret_set"
               class="clear-key"
+              for="drive-clear-secret"
             >
               <Checkbox
                 v-model="driveClientSecretClear"
+                input-id="drive-clear-secret"
                 binary
                 data-testid="drive-clear-secret"
               />
@@ -577,18 +605,26 @@ const redirectOrigin = window.location.origin;
                 Enabled
               </p>
             </div>
-            <label class="field">
+            <label
+              class="field"
+              for="onedrive-client-id"
+            >
               <span class="field-label">Application (client) ID</span>
               <InputText
+                id="onedrive-client-id"
                 v-model="onedriveClientId"
                 fluid
                 data-testid="onedrive-client-id"
               />
             </label>
-            <label class="field">
+            <label
+              class="field"
+              for="onedrive-client-secret"
+            >
               <span class="field-label">Client secret</span>
               <Password
                 v-model="onedriveClientSecretInput"
+                input-id="onedrive-client-secret"
                 :feedback="false"
                 toggle-mask
                 fluid
@@ -603,9 +639,11 @@ const redirectOrigin = window.location.origin;
             <label
               v-if="current?.onedrive_client_secret_set"
               class="clear-key"
+              for="onedrive-clear-secret"
             >
               <Checkbox
                 v-model="onedriveClientSecretClear"
+                input-id="onedrive-clear-secret"
                 binary
                 data-testid="onedrive-clear-secret"
               />

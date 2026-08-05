@@ -249,10 +249,14 @@ const smtpPasswordPlaceholder = computed(() =>
           </p>
         </div>
         <template v-if="discordEnabled">
-          <label class="field">
+          <label
+            class="field"
+            for="discord-webhook"
+          >
             <span class="field-label">Webhook URL</span>
             <Password
               v-model="discordWebhookInput"
+              input-id="discord-webhook"
               :feedback="false"
               toggle-mask
               fluid
@@ -263,9 +267,11 @@ const smtpPasswordPlaceholder = computed(() =>
           <label
             v-if="discordWebhookSet"
             class="clear-key"
+            for="discord-clear-webhook"
           >
             <Checkbox
               v-model="discordClearWebhook"
+              input-id="discord-clear-webhook"
               binary
               data-testid="discord-clear-webhook"
             />
@@ -285,10 +291,14 @@ const smtpPasswordPlaceholder = computed(() =>
           </p>
         </div>
         <template v-if="slackEnabled">
-          <label class="field">
+          <label
+            class="field"
+            for="slack-webhook"
+          >
             <span class="field-label">Webhook URL</span>
             <Password
               v-model="slackWebhookInput"
+              input-id="slack-webhook"
               :feedback="false"
               toggle-mask
               fluid
@@ -299,9 +309,11 @@ const smtpPasswordPlaceholder = computed(() =>
           <label
             v-if="slackWebhookSet"
             class="clear-key"
+            for="slack-clear-webhook"
           >
             <Checkbox
               v-model="slackClearWebhook"
+              input-id="slack-clear-webhook"
               binary
               data-testid="slack-clear-webhook"
             />
@@ -322,19 +334,27 @@ const smtpPasswordPlaceholder = computed(() =>
         </div>
         <template v-if="smtpEnabled">
           <div class="tier-grid">
-            <label class="field">
+            <label
+              class="field"
+              for="smtp-host"
+            >
               <span class="field-label">SMTP host</span>
               <InputText
+                id="smtp-host"
                 v-model="smtpHost"
                 placeholder="smtp.example.com"
                 fluid
                 data-testid="smtp-host"
               />
             </label>
-            <label class="field">
+            <label
+              class="field"
+              for="smtp-port"
+            >
               <span class="field-label">Port</span>
               <InputNumber
                 v-model="smtpPort"
+                input-id="smtp-port"
                 :min="1"
                 :max="65535"
                 :use-grouping="false"
@@ -342,18 +362,26 @@ const smtpPasswordPlaceholder = computed(() =>
                 data-testid="smtp-port"
               />
             </label>
-            <label class="field">
+            <label
+              class="field"
+              for="smtp-username"
+            >
               <span class="field-label">Username</span>
               <InputText
+                id="smtp-username"
                 v-model="smtpUsername"
                 fluid
                 data-testid="smtp-username"
               />
             </label>
-            <label class="field">
+            <label
+              class="field"
+              for="smtp-password"
+            >
               <span class="field-label">Password</span>
               <Password
                 v-model="smtpPasswordInput"
+                input-id="smtp-password"
                 :feedback="false"
                 toggle-mask
                 fluid
@@ -361,9 +389,13 @@ const smtpPasswordPlaceholder = computed(() =>
                 data-testid="smtp-password"
               />
             </label>
-            <label class="field">
+            <label
+              class="field"
+              for="smtp-from-address"
+            >
               <span class="field-label">From address</span>
               <InputText
+                id="smtp-from-address"
                 v-model="smtpFromAddress"
                 type="email"
                 placeholder="alerts@example.com"
@@ -379,9 +411,13 @@ const smtpPasswordPlaceholder = computed(() =>
               <span class="muted">Use STARTTLS</span>
             </div>
           </div>
-          <label class="field">
+          <label
+            class="field"
+            for="smtp-to-addresses"
+          >
             <span class="field-label">Send to (comma-separated)</span>
             <Textarea
+              id="smtp-to-addresses"
               v-model="smtpToAddressesText"
               rows="2"
               auto-resize
@@ -393,9 +429,11 @@ const smtpPasswordPlaceholder = computed(() =>
           <label
             v-if="smtpPasswordSet"
             class="clear-key"
+            for="smtp-clear-password"
           >
             <Checkbox
               v-model="smtpClearPassword"
+              input-id="smtp-clear-password"
               binary
               data-testid="smtp-clear-password"
             />
@@ -418,10 +456,12 @@ const smtpPasswordPlaceholder = computed(() =>
         <label
           v-if="alertOnSuspiciousClip"
           class="field threshold-field"
+          for="suspicion-alert-threshold"
         >
           <span class="field-label">Suspicion score threshold</span>
           <InputNumber
             v-model="suspicionAlertThreshold"
+            input-id="suspicion-alert-threshold"
             :min="0"
             :max="1"
             :step="0.05"
@@ -451,10 +491,14 @@ const smtpPasswordPlaceholder = computed(() =>
           Quiet hours &amp; deduplication
         </h4>
         <div class="tier-grid">
-          <label class="field">
+          <label
+            class="field"
+            for="quiet-hours-start"
+          >
             <span class="field-label">Quiet hours start</span>
             <DatePicker
               v-model="quietHoursStartModel"
+              input-id="quiet-hours-start"
               time-only
               hour-format="24"
               update-model-type="string"
@@ -463,10 +507,14 @@ const smtpPasswordPlaceholder = computed(() =>
               data-testid="quiet-hours-start"
             />
           </label>
-          <label class="field">
+          <label
+            class="field"
+            for="quiet-hours-end"
+          >
             <span class="field-label">Quiet hours end</span>
             <DatePicker
               v-model="quietHoursEndModel"
+              input-id="quiet-hours-end"
               time-only
               hour-format="24"
               update-model-type="string"
@@ -475,10 +523,14 @@ const smtpPasswordPlaceholder = computed(() =>
               data-testid="quiet-hours-end"
             />
           </label>
-          <label class="field">
+          <label
+            class="field"
+            for="dedup-window"
+          >
             <span class="field-label">Don't repeat the same alert for (minutes)</span>
             <InputNumber
               v-model="dedupWindowMinutes"
+              input-id="dedup-window"
               :min="0"
               :max="1440"
               fluid

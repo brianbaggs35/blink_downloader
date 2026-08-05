@@ -243,10 +243,14 @@ async function save(): Promise<void> {
       </div>
 
       <div class="tier-grid">
-        <label class="field">
+        <label
+          class="field"
+          for="security-feed-columns"
+        >
           <span class="field-label">Grid columns</span>
           <Select
             v-model="columns"
+            input-id="security-feed-columns"
             :options="COLUMN_OPTIONS"
             option-label="label"
             option-value="value"
@@ -254,10 +258,14 @@ async function save(): Promise<void> {
             data-testid="security-feed-columns"
           />
         </label>
-        <label class="field">
+        <label
+          class="field"
+          for="security-feed-interval"
+        >
           <span class="field-label">Refresh interval (seconds)</span>
           <InputNumber
             v-model="refreshIntervalSeconds"
+            input-id="security-feed-interval"
             :min="5"
             :max="300"
             show-buttons

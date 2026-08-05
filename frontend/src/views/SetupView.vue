@@ -228,18 +228,26 @@ function finish(): void {
             class="setup-form"
             @submit.prevent="createAccount"
           >
-            <label class="field">
+            <label
+              class="field"
+              for="display-name"
+            >
               <span class="field-label">Display name</span>
               <InputText
+                id="display-name"
                 v-model="displayName"
                 autocomplete="name"
                 fluid
                 data-testid="display-name"
               />
             </label>
-            <label class="field">
+            <label
+              class="field"
+              for="email"
+            >
               <span class="field-label">Email</span>
               <InputText
+                id="email"
                 v-model="email"
                 type="email"
                 autocomplete="email"
@@ -248,10 +256,14 @@ function finish(): void {
                 data-testid="email"
               />
             </label>
-            <label class="field">
+            <label
+              class="field"
+              for="password"
+            >
               <span class="field-label">Password</span>
               <Password
                 v-model="password"
+                input-id="password"
                 toggle-mask
                 required
                 fluid
@@ -259,10 +271,14 @@ function finish(): void {
                 data-testid="password"
               />
             </label>
-            <label class="field">
+            <label
+              class="field"
+              for="confirm"
+            >
               <span class="field-label">Confirm password</span>
               <Password
                 v-model="confirm"
+                input-id="confirm"
                 :feedback="false"
                 toggle-mask
                 required
@@ -270,10 +286,14 @@ function finish(): void {
                 data-testid="confirm"
               />
             </label>
-            <label class="field">
+            <label
+              class="field"
+              for="timezone"
+            >
               <span class="field-label">Timezone</span>
               <Select
                 v-model="timezone"
+                input-id="timezone"
                 :options="timezones"
                 filter
                 fluid

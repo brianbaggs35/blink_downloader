@@ -438,8 +438,13 @@ async function performSingleDelete(clip: ClipRead): Promise<void> {
     <template v-else>
       <div class="toolbar">
         <div class="filters">
+          <label
+            for="camera-filter"
+            class="sr-only"
+          >Filter by camera</label>
           <Select
             v-model="cameraFilter"
+            input-id="camera-filter"
             :options="cameras"
             option-label="name"
             option-value="id"
@@ -461,9 +466,15 @@ async function performSingleDelete(clip: ClipRead): Promise<void> {
             show-button-bar
             data-testid="until-filter"
           />
+          <label
+            v-if="people.length > 0"
+            for="recognized-person-filter"
+            class="sr-only"
+          >Filter by recognized person</label>
           <Select
             v-if="people.length > 0"
             v-model="recognizedPersonFilter"
+            input-id="recognized-person-filter"
             :options="people"
             option-label="name"
             option-value="id"
@@ -516,9 +527,15 @@ async function performSingleDelete(clip: ClipRead): Promise<void> {
             data-testid="bulk-analyze"
             @click="performBulkAnalyze"
           />
+          <label
+            v-if="configuredCloudBackends.length > 0"
+            for="bulk-archive-destination"
+            class="sr-only"
+          >Archive destination</label>
           <Select
             v-if="configuredCloudBackends.length > 0"
             v-model="archiveDestination"
+            input-id="bulk-archive-destination"
             :options="configuredCloudBackends"
             option-label="label"
             option-value="value"

@@ -46,9 +46,13 @@ async function submit(): Promise<void> {
       class="login-form"
       @submit.prevent="submit"
     >
-      <label class="field">
+      <label
+        class="field"
+        for="email"
+      >
         <span class="field-label">Email</span>
         <InputText
+          id="email"
           v-model="email"
           type="email"
           autocomplete="email"
@@ -57,10 +61,14 @@ async function submit(): Promise<void> {
           data-testid="email"
         />
       </label>
-      <label class="field">
+      <label
+        class="field"
+        for="password"
+      >
         <span class="field-label">Password</span>
         <Password
           v-model="password"
+          input-id="password"
           :feedback="false"
           toggle-mask
           required

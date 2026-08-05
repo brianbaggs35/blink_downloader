@@ -210,28 +210,40 @@ async function saveBlinkSyncSettings(): Promise<void> {
               Shown around the app and used for report timestamps.
             </p>
             <div class="panel-body">
-              <label class="field">
+              <label
+                class="field"
+                for="display-name"
+              >
                 <span class="field-label">Display name</span>
                 <InputText
+                  id="display-name"
                   v-model="displayName"
                   fluid
                   data-testid="display-name"
                 />
               </label>
-              <label class="field">
+              <label
+                class="field"
+                for="timezone"
+              >
                 <span class="field-label">Timezone</span>
                 <Select
                   v-model="timezone"
+                  input-id="timezone"
                   :options="timezones"
                   filter
                   fluid
                   data-testid="timezone"
                 />
               </label>
-              <label class="field">
+              <label
+                class="field"
+                for="default-landing-page"
+              >
                 <span class="field-label">Default landing page</span>
                 <Select
                   v-model="defaultLandingPage"
+                  input-id="default-landing-page"
                   :options="landingPageOptions"
                   option-label="label"
                   option-value="value"
@@ -258,19 +270,27 @@ async function saveBlinkSyncSettings(): Promise<void> {
               Use at least {{ MIN_PASSWORD_LENGTH }} characters.
             </p>
             <div class="panel-body">
-              <label class="field">
+              <label
+                class="field"
+                for="new-password"
+              >
                 <span class="field-label">New password</span>
                 <Password
                   v-model="newPassword"
+                  input-id="new-password"
                   toggle-mask
                   fluid
                   data-testid="new-password"
                 />
               </label>
-              <label class="field">
+              <label
+                class="field"
+                for="confirm-password"
+              >
                 <span class="field-label">Confirm new password</span>
                 <Password
                   v-model="confirmPassword"
+                  input-id="confirm-password"
                   :feedback="false"
                   toggle-mask
                   fluid
@@ -329,10 +349,14 @@ async function saveBlinkSyncSettings(): Promise<void> {
               How often and how far back this server syncs with your Blink account.
             </p>
             <div class="panel-body">
-              <label class="field">
+              <label
+                class="field"
+                for="blink-sync-interval"
+              >
                 <span class="field-label">Sync interval (seconds)</span>
                 <InputNumber
                   v-model="syncIntervalSeconds"
+                  input-id="blink-sync-interval"
                   :min="10"
                   :max="3600"
                   show-buttons
@@ -340,10 +364,14 @@ async function saveBlinkSyncSettings(): Promise<void> {
                   data-testid="blink-sync-interval"
                 />
               </label>
-              <label class="field">
+              <label
+                class="field"
+                for="blink-initial-sync-days"
+              >
                 <span class="field-label">Initial sync lookback (days)</span>
                 <InputNumber
                   v-model="initialSyncDays"
+                  input-id="blink-initial-sync-days"
                   :min="1"
                   :max="30"
                   show-buttons
@@ -351,10 +379,14 @@ async function saveBlinkSyncSettings(): Promise<void> {
                   data-testid="blink-initial-sync-days"
                 />
               </label>
-              <label class="field">
+              <label
+                class="field"
+                for="blink-auto-analyze-limit"
+              >
                 <span class="field-label">Auto-analyze limit per sync</span>
                 <InputNumber
                   v-model="autoAnalyzeLimit"
+                  input-id="blink-auto-analyze-limit"
                   :min="1"
                   :max="20"
                   show-buttons
