@@ -128,8 +128,21 @@ export const seededPerson = {
  */
 export async function openSettingsSection(page: Page, name: string): Promise<void> {
   const children = page.getByTestId("settings-accordion-children");
-  if (!(await children.isVisible())) {
+  // Waits rather than a single isVisible() snapshot: right after a
+  // page.reload() on /settings itself, there's a brief window where
+  // NavLinks.vue hasn't mounted (and thus auto-expanded) yet - an instant
+  // check can catch that window, see "not yet expanded", and click the
+  // trigger just as the auto-expand also lands, toggling it back closed and
+  // hanging the next line forever. Only clicking the trigger if it's truly
+  // never going to expand on its own (a test that reached Settings some
+  // other way) avoids that race.
+  const alreadyExpanded = await children
+    .waitFor({ state: "visible", timeout: 2000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!alreadyExpanded) {
     await page.getByTestId("settings-accordion-trigger").click();
+    await children.waitFor({ state: "visible" });
   }
   await children.getByRole("link", { name, exact: true }).click();
 }
