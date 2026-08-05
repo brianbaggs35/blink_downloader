@@ -216,9 +216,13 @@ function onPersonDeleted(): void {
         class="add-form"
         @submit.prevent="submitNewPerson"
       >
-        <label class="field">
+        <label
+          class="field"
+          for="new-person-name"
+        >
           <span class="field-label">Name</span>
           <InputText
+            id="new-person-name"
             v-model="newPersonName"
             placeholder="e.g. Alex"
             fluid

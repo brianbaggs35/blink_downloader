@@ -164,9 +164,13 @@ function contextChanged(camera: CameraRead): boolean {
             />
           </div>
         </div>
-        <label class="field">
+        <label
+          class="field"
+          :for="`camera-context-${camera.id}`"
+        >
           <span class="field-label">AI context for this camera</span>
           <Textarea
+            :id="`camera-context-${camera.id}`"
             v-model="contextDrafts[camera.id]"
             rows="2"
             auto-resize

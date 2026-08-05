@@ -380,8 +380,13 @@ function updatedLabel(slot: Slot): string {
     >
       <article class="panel">
         <div class="panel-toolbar">
+          <label
+            for="primary-camera-select"
+            class="sr-only"
+          >Primary camera</label>
           <Select
             :model-value="primary.cameraId"
+            input-id="primary-camera-select"
             :options="cameraOptions"
             option-label="label"
             option-value="value"
@@ -494,8 +499,13 @@ function updatedLabel(slot: Slot): string {
         class="panel"
       >
         <div class="panel-toolbar">
+          <label
+            for="secondary-camera-select"
+            class="sr-only"
+          >Secondary camera</label>
           <Select
             :model-value="secondary.cameraId"
+            input-id="secondary-camera-select"
             :options="cameraOptions"
             option-label="label"
             option-value="value"

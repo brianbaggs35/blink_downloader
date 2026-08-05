@@ -249,9 +249,13 @@ async function performUnlink(): Promise<void> {
       data-testid="blink-link-form"
       @submit.prevent="submitLink"
     >
-      <label class="field">
+      <label
+        class="field"
+        for="blink-username"
+      >
         <span class="field-label">Blink email</span>
         <InputText
+          id="blink-username"
           v-model="username"
           type="email"
           autocomplete="username"
@@ -260,10 +264,14 @@ async function performUnlink(): Promise<void> {
           data-testid="blink-username"
         />
       </label>
-      <label class="field">
+      <label
+        class="field"
+        for="blink-password"
+      >
         <span class="field-label">Blink password</span>
         <Password
           v-model="password"
+          input-id="blink-password"
           :feedback="false"
           toggle-mask
           fluid
@@ -305,9 +313,13 @@ async function performUnlink(): Promise<void> {
         class="panel-body"
         @submit.prevent="submitCode"
       >
-        <label class="field">
+        <label
+          class="field"
+          for="twofa-code"
+        >
           <span class="field-label">Verification code</span>
           <InputText
+            id="twofa-code"
             v-model="code"
             inputmode="numeric"
             autocomplete="one-time-code"

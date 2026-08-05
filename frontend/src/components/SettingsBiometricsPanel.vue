@@ -236,10 +236,14 @@ async function verifyModel(): Promise<void> {
       </div>
 
       <div class="tier-grid">
-        <label class="field">
+        <label
+          class="field"
+          for="biometrics-model-pack"
+        >
           <span class="field-label">Model</span>
           <Select
             v-model="modelPack"
+            input-id="biometrics-model-pack"
             :options="MODEL_PACK_OPTIONS"
             option-label="label"
             option-value="value"
@@ -250,10 +254,14 @@ async function verifyModel(): Promise<void> {
             {{ MODEL_PACK_OPTIONS.find((o) => o.value === modelPack)?.hint }}
           </span>
         </label>
-        <label class="field">
+        <label
+          class="field"
+          for="biometrics-provider-preference"
+        >
           <span class="field-label">Compute</span>
           <Select
             v-model="providerPreference"
+            input-id="biometrics-provider-preference"
             :options="PROVIDER_PREFERENCE_OPTIONS"
             option-label="label"
             option-value="value"
@@ -269,10 +277,14 @@ async function verifyModel(): Promise<void> {
             />
           </span>
         </label>
-        <label class="field">
+        <label
+          class="field"
+          for="biometrics-threshold"
+        >
           <span class="field-label">Match confidence threshold</span>
           <InputNumber
             v-model="recognitionThreshold"
+            input-id="biometrics-threshold"
             :min="0"
             :max="1"
             :step="0.05"

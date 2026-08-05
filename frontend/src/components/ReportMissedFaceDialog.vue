@@ -146,10 +146,14 @@ async function confirm(): Promise<void> {
           {{ peopleError }}
         </Message>
         <div class="who-grid">
-          <label class="field">
+          <label
+            class="field"
+            for="report-missed-person-select"
+          >
             <span class="field-label">Enrolled person</span>
             <Select
               v-model="selectedPersonId"
+              input-id="report-missed-person-select"
               :options="people"
               option-label="name"
               option-value="id"
@@ -162,9 +166,13 @@ async function confirm(): Promise<void> {
           <div class="or-divider">
             or
           </div>
-          <label class="field">
+          <label
+            class="field"
+            for="report-missed-new-person-name"
+          >
             <span class="field-label">New person</span>
             <InputText
+              id="report-missed-new-person-name"
               v-model="newPersonName"
               placeholder="e.g. Alex"
               fluid

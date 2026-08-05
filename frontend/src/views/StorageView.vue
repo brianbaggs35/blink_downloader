@@ -509,10 +509,14 @@ function goToLibrary(): void {
           data-testid="auto-archive-form"
           @submit.prevent="saveAutoArchive"
         >
-          <label class="field">
+          <label
+            class="field"
+            for="auto-archive-backend"
+          >
             <span class="field-label">Move older clips to</span>
             <Select
               v-model="autoArchiveBackendDraft"
+              input-id="auto-archive-backend"
               :options="autoArchiveBackendOptions"
               option-label="label"
               option-value="value"
@@ -520,10 +524,14 @@ function goToLibrary(): void {
               data-testid="auto-archive-backend"
             />
           </label>
-          <label class="field">
+          <label
+            class="field"
+            for="auto-archive-after-days"
+          >
             <span class="field-label">Days to keep clips locally first</span>
             <InputNumber
               v-model="autoArchiveDaysDraft"
+              input-id="auto-archive-after-days"
               :min="0"
               :max="365"
               show-buttons
@@ -682,10 +690,14 @@ function goToLibrary(): void {
               data-testid="storage-quota-form"
               @submit.prevent="saveQuota"
             >
-              <label class="field">
+              <label
+                class="field"
+                for="storage-quota-gb"
+              >
                 <span class="field-label">Quota (GB)</span>
                 <InputNumber
                   v-model="quotaGbDraft"
+                  input-id="storage-quota-gb"
                   :min="0.1"
                   :max-fraction-digits="2"
                   placeholder="No limit"

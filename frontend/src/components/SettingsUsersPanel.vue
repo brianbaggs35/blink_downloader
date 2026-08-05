@@ -177,9 +177,13 @@ async function submitInvite(): Promise<void> {
         data-testid="invite-form"
         @submit.prevent="submitInvite"
       >
-        <label class="field">
+        <label
+          class="field"
+          for="invite-email"
+        >
           <span class="field-label">Email</span>
           <InputText
+            id="invite-email"
             v-model="inviteEmail"
             type="email"
             fluid
@@ -187,35 +191,47 @@ async function submitInvite(): Promise<void> {
             data-testid="invite-email"
           />
         </label>
-        <label class="field">
+        <label
+          class="field"
+          for="invite-display-name"
+        >
           <span class="field-label">Display name</span>
           <InputText
+            id="invite-display-name"
             v-model="inviteDisplayName"
             fluid
             data-testid="invite-display-name"
           />
         </label>
-        <label class="field">
+        <label
+          class="field"
+          for="invite-password"
+        >
           <span class="field-label">Temporary password</span>
           <Password
             v-model="invitePassword"
+            input-id="invite-password"
             toggle-mask
             fluid
             required
             data-testid="invite-password"
           />
         </label>
-        <label class="field">
-          <span class="field-label">Role</span>
+        <div class="field">
+          <span
+            id="invite-role-label"
+            class="field-label"
+          >Role</span>
           <SelectButton
             v-model="inviteIsSuperuser"
             :options="roleOptions"
             option-label="label"
             option-value="value"
             :allow-empty="false"
+            aria-labelledby="invite-role-label"
             data-testid="invite-role"
           />
-        </label>
+        </div>
         <Message
           v-if="inviteError"
           severity="error"

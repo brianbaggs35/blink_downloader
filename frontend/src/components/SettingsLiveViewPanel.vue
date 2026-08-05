@@ -101,10 +101,14 @@ async function save(): Promise<void> {
       data-testid="live-view-settings-form"
       @submit.prevent="save"
     >
-      <label class="field">
+      <label
+        class="field"
+        for="default-camera"
+      >
         <span class="field-label">Default camera</span>
         <Select
           v-model="defaultCameraId"
+          input-id="default-camera"
           :options="cameraOptions"
           option-label="label"
           option-value="value"
@@ -128,10 +132,14 @@ async function save(): Promise<void> {
         </div>
       </div>
 
-      <label class="field">
+      <label
+        class="field"
+        for="auto-refresh-interval"
+      >
         <span class="field-label">Refresh interval (seconds)</span>
         <InputNumber
           v-model="autoRefreshIntervalSeconds"
+          input-id="auto-refresh-interval"
           :min="3"
           :max="120"
           show-buttons

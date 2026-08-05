@@ -132,8 +132,13 @@ async function confirmEnroll(): Promise<void> {
         {{ camerasError }}
       </Message>
       <div class="step-controls">
+        <label
+          for="enroll-camera-select"
+          class="sr-only"
+        >Camera</label>
         <Select
           v-model="cameraId"
+          input-id="enroll-camera-select"
           :options="cameras"
           option-label="name"
           option-value="id"

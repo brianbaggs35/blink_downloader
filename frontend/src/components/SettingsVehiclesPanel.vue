@@ -432,19 +432,27 @@ async function performDelete(camera: CameraRead): Promise<void> {
             </div>
 
             <div class="tier-grid">
-              <label class="field">
+              <label
+                class="field"
+                :for="`vehicle-description-${camera.id}`"
+              >
                 <span class="field-label">What is it?</span>
                 <InputText
+                  :id="`vehicle-description-${camera.id}`"
                   v-model="forms[camera.id].description"
                   placeholder="e.g. Blue Honda Civic"
                   fluid
                   :data-testid="`vehicle-description-${camera.id}`"
                 />
               </label>
-              <label class="field">
+              <label
+                class="field"
+                :for="`vehicle-length-${camera.id}`"
+              >
                 <span class="field-label">Real-world length (feet)</span>
                 <InputNumber
                   v-model="forms[camera.id].estimatedLengthFeet"
+                  :input-id="`vehicle-length-${camera.id}`"
                   :min="0.1"
                   :max="100"
                   :max-fraction-digits="1"
@@ -452,10 +460,14 @@ async function performDelete(camera: CameraRead): Promise<void> {
                   :data-testid="`vehicle-length-${camera.id}`"
                 />
               </label>
-              <label class="field">
+              <label
+                class="field"
+                :for="`vehicle-threshold-${camera.id}`"
+              >
                 <span class="field-label">Alert within (feet)</span>
                 <InputNumber
                   v-model="forms[camera.id].distanceThresholdFeet"
+                  :input-id="`vehicle-threshold-${camera.id}`"
                   :min="0.1"
                   :max="100"
                   :max-fraction-digits="1"
