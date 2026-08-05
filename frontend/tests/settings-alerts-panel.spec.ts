@@ -43,6 +43,7 @@ const baseSettings = {
   alert_on_suspicious_clip: true,
   suspicion_alert_threshold: 0.5,
   alert_on_vehicle_proximity: true,
+  alert_on_low_battery: true,
   quiet_hours_start: "22:00:00",
   quiet_hours_end: "07:00:00",
   dedup_window_minutes: 15,
@@ -63,6 +64,7 @@ const emptySettings = {
   smtp_to_addresses: [],
   alert_on_suspicious_clip: true,
   alert_on_vehicle_proximity: true,
+  alert_on_low_battery: true,
   suspicion_alert_threshold: 0.5,
   quiet_hours_start: null,
   quiet_hours_end: null,
@@ -294,10 +296,26 @@ describe("SettingsAlertsPanel save", () => {
       alert_on_suspicious_clip: true,
       suspicion_alert_threshold: 0.8,
       alert_on_vehicle_proximity: false,
+      alert_on_low_battery: true,
       quiet_hours_start: "23:00",
       quiet_hours_end: "06:00",
       dedup_window_minutes: 30,
     });
+  });
+
+  it("saves a toggled-off low-battery alert setting", async () => {
+    mockedUpdate.mockResolvedValue({ ...baseSettings, alert_on_low_battery: false });
+    const wrapper = mountPanel();
+    await flushPromises();
+    await byTestId(wrapper, ToggleSwitch, "alert-on-low-battery").vm.$emit(
+      "update:modelValue",
+      false,
+    );
+    await wrapper.find('[data-testid="alerts-form"]').trigger("submit.prevent");
+    await flushPromises();
+    expect(mockedUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ alert_on_low_battery: false }),
+    );
   });
 
   it("shows the API error message when saving fails", async () => {
