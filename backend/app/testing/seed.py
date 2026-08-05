@@ -23,14 +23,19 @@ AI analysis, and a recognized person to assert against without needing a
 real Blink account or a real camera.
 """
 
+# asyncpg ships no py.typed marker; asyncpg.exceptions comes back Unknown.
+# pyright: reportMissingTypeStubs=false
+
 import asyncio
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from asyncpg.exceptions import DeadlockDetectedError
 from fastapi_users.password import PasswordHelper
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.models import AIProviderKind, AIUsage, Analysis, AnalysisTier, SuspicionLabel
@@ -687,12 +692,39 @@ async def seed_data(session: AsyncSession) -> None:
     await session.commit()
 
 
+async def _truncate_domain_tables(session: AsyncSession) -> None:
+    """TRUNCATE ... CASCADE takes an ACCESS EXCLUSIVE lock on every domain
+    table, including everything that cascades from RESET_TABLES' own
+    explicit list (cameras, clips, and more - see that constant's comment).
+    An ordinary concurrent request (e.g. the Library page's own clip/
+    ai_settings fetch) can briefly hold a conflicting lock in the opposite
+    order, producing a genuine asyncpg.exceptions.DeadlockDetectedError under
+    a busy e2e run - confirmed empirically, and expected to keep happening
+    occasionally no matter how quiet the calling test suite tries to be,
+    since it takes a real in-flight *application* request, not a Playwright
+    scheduling issue. Retrying is the standard, correct response to
+    Postgres' own deadlock detection: it always resolves the conflict by
+    aborting exactly one side, so the other side's retry is expected to
+    succeed (blocking briefly on a plain lock wait if the survivor is still
+    mid-transaction, never deadlocking against itself)."""
+    attempts = 3
+    for attempt in range(1, attempts + 1):  # pragma: no cover — every iteration returns or raises
+        try:
+            await session.execute(text(f"TRUNCATE TABLE {RESET_TABLES} CASCADE"))
+            return
+        except DBAPIError as exc:
+            if not isinstance(exc.orig, DeadlockDetectedError) or attempt == attempts:
+                raise
+            logger.warning("reset_data.truncate_deadlock_retry", attempt=attempt)
+            await session.rollback()
+
+
 async def reset_data(session: AsyncSession) -> None:
     """Wipe every domain-data table (never users/access_tokens - see
     RESET_TABLES) and re-seed it fresh. The endpoint that calls this
     (app/api/testing.py) is only ever mounted when
     Settings.enable_test_reset_endpoint is explicitly true."""
-    await session.execute(text(f"TRUNCATE TABLE {RESET_TABLES} CASCADE"))
+    await _truncate_domain_tables(session)
     # The raw TRUNCATE above bypasses the ORM entirely, so this session's
     # identity map doesn't know the rows it may already hold are now gone -
     # without this, re-seeding an object with a deterministic id matching one
