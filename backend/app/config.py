@@ -75,6 +75,17 @@ class Settings(BaseSettings):
     (not just permission-gated) unless this is explicitly true, so it's
     never reachable in a production image (see create_app())."""
 
+    disable_rate_limits: bool = False
+    """Short-circuits app.security.ratelimit.RateLimiter (login/setup/
+    blink-link, each 5 requests/60s per client IP - a real anti-credential-
+    stuffing control in production). Every request from the whole Playwright
+    container shares one source IP regardless of how many tests or workers
+    are involved, so a normal e2e run's legitimate repeated logins (one per
+    spec needing a fresh storage state, several more inside auth.spec.ts,
+    each retry adding another) can trip the same budget a real attacker
+    would - confirmed empirically via real 429s cascading through retries.
+    Only ever set true by the e2e/onboarding test-compose profiles."""
+
     @model_validator(mode="after")
     def _fill_or_require_secrets(self) -> Self:
         if self.environment == "production":
