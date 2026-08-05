@@ -433,6 +433,26 @@ jobs:
           name: e2e-coverage-report
           path: e2e/coverage
 
+  e2e-onboarding:
+    name: E2E · onboarding wizard on an unseeded stack
+    runs-on: ubuntu-latest
+    needs: [backend-test, frontend]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run the onboarding suite against a genuinely empty stack
+        # Unlike e2e-coverage (above), make e2e-onboarding dumps its own
+        # container logs on failure and always tears down before returning
+        # (mirrors the plain `e2e` target) - no separate log-dump/teardown
+        # steps needed here.
+        run: make e2e-onboarding
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: onboarding-playwright-report
+          path: e2e/onboarding-report
+          retention-days: 7
+
   sonarqube:
     name: SonarQube
     runs-on: ubuntu-latest
