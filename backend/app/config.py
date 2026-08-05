@@ -67,6 +67,14 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_json: bool | None = None
 
+    enable_test_reset_endpoint: bool = False
+    """Mounts POST /api/testing/reset, which truncates every domain-data
+    table and re-seeds it (app.testing.seed.reset_data) - lets Playwright
+    reset to a known baseline before each test. Only ever set true by the
+    e2e/onboarding test-compose profiles; the route isn't mounted at all
+    (not just permission-gated) unless this is explicitly true, so it's
+    never reachable in a production image (see create_app())."""
+
     @model_validator(mode="after")
     def _fill_or_require_secrets(self) -> Self:
         if self.environment == "production":

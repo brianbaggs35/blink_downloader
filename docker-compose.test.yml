@@ -99,6 +99,10 @@ services:
       # (app/api/cameras.py), not the worker - see the worker service's own
       # copy of this var, and Settings.disable_blink_network_calls, for why.
       BLINK_DISABLE_BLINK_NETWORK_CALLS: "true"
+      # Mounts POST /api/testing/reset (app/api/testing.py) - lets Playwright
+      # reset to a known baseline before every test. Never set in prod's own
+      # docker-compose.yml, so the route doesn't exist there at all.
+      BLINK_ENABLE_TEST_RESET_ENDPOINT: "true"
     depends_on:
       postgres:
         condition: service_healthy

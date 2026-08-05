@@ -56,6 +56,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.add_middleware(SecurityHeadersMiddleware)
     app.include_router(api_router)
+    if config.enable_test_reset_endpoint:
+        from app.api.testing import router as testing_router
+
+        app.include_router(testing_router, prefix="/api")
     return app
 
 

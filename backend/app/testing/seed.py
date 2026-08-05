@@ -3,11 +3,24 @@
 Run inside the e2e backend container after migrations:
 ``python -m app.testing.seed``
 
-Idempotent: an already-seeded database is left untouched. Fixtures are
-intentionally synthetic (a generated test-pattern clip, not a real Blink
-recording) — they exist so Playwright tests have known clips, an AI
-analysis, and a recognized person to assert against without needing a real
-Blink account or a real camera.
+Split into two phases:
+
+- ``seed_identity()`` — the admin + viewer users. Runs once, ever, per
+  database (idempotent via the "any user exists" guard below) — these rows
+  must survive a reset so Playwright's saved storage-state sessions (real
+  DB-backed access tokens, not stateless JWTs) stay valid across it.
+- ``seed_data()`` — cameras, clips, analyses, and everything else. Safely
+  re-runnable any number of times: every fixture gets a deterministic id
+  (``fixture_id()``, this module's equivalent of Rails' fixture ``to_uuid``
+  helper) so a reset's TRUNCATE + re-seed overwrites the same on-disk files
+  and DB rows instead of leaking a fresh copy on every run, and the two
+  synthetic media generators are cached at module scope so ffmpeg only ever
+  runs once per process regardless of how many times seed_data() re-runs.
+
+Fixtures are intentionally synthetic (a generated test-pattern clip, not a
+real Blink recording) — they exist so Playwright tests have known clips, an
+AI analysis, and a recognized person to assert against without needing a
+real Blink account or a real camera.
 """
 
 import asyncio
@@ -17,13 +30,13 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi_users.password import PasswordHelper
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.models import AIProviderKind, AIUsage, Analysis, AnalysisTier, SuspicionLabel
 from app.biometrics.models import FaceEmbedding, Person, RecognizedFace
 from app.biometrics.service import download_biometrics_model, get_biometrics_settings
-from app.blink.models import BlinkAccount, Camera, Clip
+from app.blink.models import BatteryEvent, BlinkAccount, Camera, Clip
 from app.config import get_settings
 from app.db import build_engine, build_sessionmaker
 from app.logs import configure_logging, get_logger
@@ -43,8 +56,45 @@ logger = get_logger(__name__)
 
 E2E_ADMIN_EMAIL = os.environ.get("BLINK_E2E_ADMIN_EMAIL", "e2e-admin@example.com")
 E2E_ADMIN_PASSWORD = os.environ.get("BLINK_E2E_ADMIN_PASSWORD", "e2e-admin-password-123")
+E2E_VIEWER_EMAIL = os.environ.get("BLINK_E2E_VIEWER_EMAIL", "e2e-viewer@example.com")
+E2E_VIEWER_PASSWORD = os.environ.get("BLINK_E2E_VIEWER_PASSWORD", "e2e-viewer-password-123")
 
 DEMO_PERSON_NAME = "Alex Demo"
+
+# Domain-data tables a reset wipes - every table seed_data() populates,
+# TRUNCATEd via their common root tables (blink_accounts/people) since
+# Postgres follows ON DELETE CASCADE through every FK-dependent table
+# automatically (cameras/clips/analyses/battery_events/... and
+# face_embeddings/recognized_faces respectively) - no need to list them
+# individually. Deliberately excludes:
+#  - users/access_tokens: must survive a reset, see this module's docstring.
+#  - app_settings: every column is nullable-falls-back-to-a-hardcoded/env
+#    default (storage_dir, blink sync tuning) - seed_data() itself reads
+#    storage_dir *during* seeding (resolve_storage_dir()), so wiping this
+#    table would make every reset immediately re-break its own re-seed
+#    unless the container's hardcoded default happens to be writable. In
+#    the real e2e/onboarding containers that default already matches the
+#    volume-mounted path, so excluding it changes nothing observable there
+#    - it just avoids a reset that undoes the one setting its own reseed
+#    step depends on.
+RESET_TABLES = (
+    "blink_accounts, ai_settings, alert_settings, people, "
+    "biometrics_settings, live_view_settings, security_feed_settings, "
+    "storage_integration_settings"
+)
+
+
+def fixture_id(name: str) -> uuid.UUID:
+    """A stable, deterministic UUID for a named e2e fixture - the same name
+    always produces the same id, across every seed_data() re-run. Mirrors
+    Rails' fixture ``to_uuid`` helper; namespaced under the standard
+    NAMESPACE_DNS purely so this doesn't need to invent and hardcode its own
+    namespace UUID."""
+    return uuid.uuid5(uuid.NAMESPACE_DNS, f"blink-downloader.e2e/{name}")
+
+
+_demo_clip_bytes_cache: bytes | None = None
+_demo_preview_bytes_cache: dict[int, bytes] = {}
 
 
 async def _make_demo_clip_bytes() -> bytes:
@@ -77,6 +127,13 @@ async def _make_demo_clip_bytes() -> bytes:
         await asyncio.to_thread(os.remove, path)
 
 
+async def _demo_clip_bytes() -> bytes:
+    global _demo_clip_bytes_cache
+    if _demo_clip_bytes_cache is None:
+        _demo_clip_bytes_cache = await _make_demo_clip_bytes()
+    return _demo_clip_bytes_cache
+
+
 async def _make_demo_preview_bytes(seed: int) -> bytes:
     """A tiny, deterministic, synthetic JPEG - stands in for a camera's
     latest snapshot so Live View and Security Feed have something real to
@@ -106,6 +163,12 @@ async def _make_demo_preview_bytes(seed: int) -> bytes:
         await asyncio.to_thread(os.remove, path)
 
 
+async def _demo_preview_bytes(seed: int) -> bytes:
+    if seed not in _demo_preview_bytes_cache:
+        _demo_preview_bytes_cache[seed] = await _make_demo_preview_bytes(seed)
+    return _demo_preview_bytes_cache[seed]
+
+
 async def _seed_demo_data(session: AsyncSession) -> None:
     settings = get_settings()
     box = SecretBox(settings.encryption_key)
@@ -115,9 +178,10 @@ async def _seed_demo_data(session: AsyncSession) -> None:
     # (and fail) to write under /data/clips outside a container that
     # actually mounts it there, e.g. a bare `pytest`/CI run.
     storage = get_clip_storage(await resolve_storage_dir(session, settings))
-    clip_bytes = await _make_demo_clip_bytes()
+    clip_bytes = await _demo_clip_bytes()
 
     account = BlinkAccount(
+        id=fixture_id("demo-blink-account"),
         encrypted_username=box.encrypt("demo@example.com"),
         encrypted_password=box.encrypt("not-a-real-password"),
         encrypted_token_data=box.encrypt("{}"),
@@ -127,19 +191,23 @@ async def _seed_demo_data(session: AsyncSession) -> None:
     await session.flush()
 
     front_door = Camera(
+        id=fixture_id("demo-camera-front-door"),
         blink_account_id=account.id,
         blink_camera_id="demo-front-door",
         blink_network_id="demo-network",
         name="Front Door",
         camera_type="catalina",
         security_context="Watches the front porch and driveway.",
+        battery="ok",
     )
     backyard = Camera(
+        id=fixture_id("demo-camera-backyard"),
         blink_account_id=account.id,
         blink_camera_id="demo-backyard",
         blink_network_id="demo-network",
         name="Backyard",
         camera_type="catalina",
+        battery="low",
     )
     session.add_all([front_door, backyard])
     await session.flush()
@@ -149,11 +217,13 @@ async def _seed_demo_data(session: AsyncSession) -> None:
     # A cached preview per camera - without one, Live View and Security Feed
     # have no live Blink connection to fall back on and every tile would 404.
     for index, camera in enumerate([front_door, backyard]):
-        preview_bytes = await _make_demo_preview_bytes(index)
+        preview_bytes = await _demo_preview_bytes(index)
         preview_path = storage.camera_preview_path(camera.name)
         await storage.write(preview_path, preview_bytes)
         camera.preview_path = str(preview_path)
         camera.preview_updated_at = now
+
+    await _seed_battery_events(session, front_door, backyard)
 
     # Spread across the Biometrics tab's enrollment time-range options
     # (24h/48h/7d) so seeded data can actually exercise all three, plus one
@@ -171,24 +241,29 @@ async def _seed_demo_data(session: AsyncSession) -> None:
     # more than one delete-ish test can be doing this at once - a too-small
     # buffer here doesn't fail loudly, it silently cascades into deleting
     # real fixture clips (and anything that references them) once exhausted.
+    # Each gets a deterministic fixture_id() (not just the video files) so a
+    # reset re-inserts the exact same rows rather than a fresh, ever-growing
+    # set every time a test's own delete test consumes one.
     clip_specs = [
-        (front_door, now - timedelta(hours=2), True),
-        (front_door, now - timedelta(hours=30), True),
-        (front_door, now - timedelta(days=5), True),
-        (backyard, now - timedelta(hours=6), True),
-        (backyard, now - timedelta(days=10), True),
-        (backyard, now - timedelta(minutes=21), False),  # still "downloading"
+        ("demo-clip-0", front_door, now - timedelta(hours=2), True),
+        ("demo-clip-1", front_door, now - timedelta(hours=30), True),
+        ("demo-clip-2", front_door, now - timedelta(days=5), True),
+        ("demo-clip-3", backyard, now - timedelta(hours=6), True),
+        ("demo-clip-4", backyard, now - timedelta(days=10), True),
+        ("demo-clip-5", backyard, now - timedelta(minutes=21), False),  # still "downloading"
         *[
-            (front_door, now - timedelta(minutes=minutes), True)  # disposable
-            for minutes in range(2, 22, 2)
+            (f"demo-disposable-clip-{i}", front_door, now - timedelta(minutes=minutes), True)
+            for i, minutes in enumerate(range(2, 22, 2))
         ],
     ]
 
     clips: list[Clip] = []
-    for camera, recorded_at, downloaded in clip_specs:
+    for fixture_name, camera, recorded_at, downloaded in clip_specs:
+        clip_id = fixture_id(fixture_name)
         clip = Clip(
+            id=clip_id,
             camera_id=camera.id,
-            blink_clip_id=f"/media/demo/{uuid.uuid4()}.mp4",
+            blink_clip_id=f"/media/demo/{fixture_name}.mp4",
             recorded_at=recorded_at,
         )
         session.add(clip)
@@ -207,6 +282,7 @@ async def _seed_demo_data(session: AsyncSession) -> None:
     # later recognized) on another - enough for the Library/AI tab/clip
     # modal to all have something real to show.
     routine = Analysis(
+        id=fixture_id("demo-analysis-routine"),
         clip_id=clips[2].id,
         summary="A package is dropped off at the front door; nothing unusual.",
         suspicion_score=0.15,
@@ -224,6 +300,7 @@ async def _seed_demo_data(session: AsyncSession) -> None:
     )
     suspicious_entity_bbox = [0.3, 0.2, 0.25, 0.6]
     suspicious = Analysis(
+        id=fixture_id("demo-analysis-suspicious"),
         clip_id=clips[0].id,
         summary="A person lingers by the front door for an extended period after dark.",
         suspicion_score=0.78,
@@ -247,11 +324,11 @@ async def _seed_demo_data(session: AsyncSession) -> None:
     # the "suspicious" clip above, so the recognized-badge/filter/clip-modal
     # name-override all have something real to display without needing a
     # live insightface model download during seeding.
-    person = Person(name=DEMO_PERSON_NAME)
+    person = Person(id=fixture_id("demo-person-alex"), name=DEMO_PERSON_NAME)
     session.add(person)
     await session.flush()
 
-    embedding_id = uuid.uuid4()
+    embedding_id = fixture_id("demo-face-embedding-alex")
     fake_embedding = [0.0] * 512
     fake_embedding[0] = 1.0
     sample_path = storage.face_sample_path(person.id, embedding_id)
@@ -270,7 +347,14 @@ async def _seed_demo_data(session: AsyncSession) -> None:
     await storage.write(profile_path, clip_bytes[:64])
     person.thumbnail_path = str(profile_path)
 
-    session.add(RecognizedFace(clip_id=clips[0].id, person_id=person.id, confidence=0.93))
+    session.add(
+        RecognizedFace(
+            id=fixture_id("demo-recognized-face-alex"),
+            clip_id=clips[0].id,
+            person_id=person.id,
+            confidence=0.93,
+        )
+    )
     suspicious.detected_entities = [
         {**suspicious.detected_entities[0], "recognized_person_id": str(person.id)}
     ]
@@ -280,17 +364,52 @@ async def _seed_demo_data(session: AsyncSession) -> None:
     await _seed_sync_module_data(session, storage, account, front_door, backyard, clip_bytes)
 
 
+async def _seed_battery_events(session: AsyncSession, front_door: Camera, backyard: Camera) -> None:
+    """front_door gets a sparse history (one initial reading, still "ok") and
+    backyard a richer one (an initial reading, then a transition to "low") -
+    deliberately different depths so the BatteryHistoryDialog's timeline gets
+    e2e coverage of both a short and a substantive history, not just one
+    flat "happy path" shape per camera (see fixture_id()'s docstring)."""
+    now = datetime.now(UTC)
+    session.add_all(
+        [
+            BatteryEvent(
+                id=fixture_id("demo-battery-event-frontdoor-0"),
+                camera_id=front_door.id,
+                battery="ok",
+                previous_battery=None,
+                occurred_at=now - timedelta(days=14),
+            ),
+            BatteryEvent(
+                id=fixture_id("demo-battery-event-backyard-0"),
+                camera_id=backyard.id,
+                battery="ok",
+                previous_battery=None,
+                occurred_at=now - timedelta(days=20),
+            ),
+            BatteryEvent(
+                id=fixture_id("demo-battery-event-backyard-1"),
+                camera_id=backyard.id,
+                battery="low",
+                previous_battery="ok",
+                occurred_at=now - timedelta(days=2),
+            ),
+        ]
+    )
+
+
 async def _seed_vehicle_data(
     session: AsyncSession, storage: ClipStorage, camera: Camera, clips: list[Clip]
 ) -> None:
     """One protected vehicle on the front door camera, with a few recent
     proximity events - enough for the Vehicles tab's card, outline overlay,
     and recent-activity list to all have something real to show."""
-    reference_bytes = await _make_demo_preview_bytes(2)
+    reference_bytes = await _demo_preview_bytes(2)
     reference_path = storage.vehicle_reference_path(camera.name)
     await storage.write(reference_path, reference_bytes)
 
     vehicle = Vehicle(
+        id=fixture_id("demo-vehicle-front-door"),
         camera_id=camera.id,
         description="A silver sedan is normally parked in the driveway overnight.",
         outline_points=[[0.3, 0.55], [0.7, 0.55], [0.75, 0.85], [0.25, 0.85]],
@@ -305,6 +424,7 @@ async def _seed_vehicle_data(
     session.add_all(
         [
             ProximityEvent(
+                id=fixture_id("demo-proximity-event-0"),
                 vehicle_id=vehicle.id,
                 clip_id=clips[0].id,
                 distance_feet=4.2,
@@ -312,6 +432,7 @@ async def _seed_vehicle_data(
                 occurred_at=now - timedelta(hours=2),
             ),
             ProximityEvent(
+                id=fixture_id("demo-proximity-event-1"),
                 vehicle_id=vehicle.id,
                 clip_id=clips[1].id,
                 distance_feet=7.8,
@@ -319,6 +440,7 @@ async def _seed_vehicle_data(
                 occurred_at=now - timedelta(hours=30),
             ),
             ProximityEvent(
+                id=fixture_id("demo-proximity-event-2"),
                 vehicle_id=vehicle.id,
                 clip_id=clips[2].id,
                 distance_feet=2.5,
@@ -344,6 +466,7 @@ async def _seed_sync_module_data(
     something real to show."""
     now = datetime.now(UTC)
     sync_module = SyncModule(
+        id=fixture_id("demo-sync-module-home"),
         blink_account_id=account.id,
         network_id="demo-network",
         sync_id="demo-sync-1",
@@ -366,6 +489,7 @@ async def _seed_sync_module_data(
 
     session.add(
         SyncModuleLocalItem(
+            id=fixture_id("demo-sync-item-available"),
             sync_module_id=sync_module.id,
             camera_id=front_door.id,
             camera_name=front_door.name,
@@ -377,6 +501,7 @@ async def _seed_sync_module_data(
 
     downloaded_recorded_at = now - timedelta(hours=4)
     downloaded = SyncModuleLocalItem(
+        id=fixture_id("demo-sync-item-downloaded"),
         sync_module_id=sync_module.id,
         camera_id=backyard.id,
         camera_name=backyard.name,
@@ -396,6 +521,7 @@ async def _seed_sync_module_data(
 
     session.add(
         SyncModuleLocalItem(
+            id=fixture_id("demo-sync-item-error"),
             sync_module_id=sync_module.id,
             camera_id=front_door.id,
             camera_name=front_door.name,
@@ -419,6 +545,7 @@ def _seed_ai_usage_data(
     session.add_all(
         [
             AIUsage(
+                id=fixture_id("demo-ai-usage-0"),
                 analysis_id=routine.id,
                 clip_id=routine.clip_id,
                 tier=AnalysisTier.TIER1,
@@ -434,6 +561,7 @@ def _seed_ai_usage_data(
                 created_at=now - timedelta(days=6, hours=1),
             ),
             AIUsage(
+                id=fixture_id("demo-ai-usage-1"),
                 analysis_id=suspicious.id,
                 clip_id=suspicious.clip_id,
                 tier=AnalysisTier.TIER1,
@@ -449,6 +577,7 @@ def _seed_ai_usage_data(
                 created_at=now - timedelta(days=4, hours=3),
             ),
             AIUsage(
+                id=fixture_id("demo-ai-usage-2"),
                 analysis_id=suspicious.id,
                 clip_id=suspicious.clip_id,
                 tier=AnalysisTier.TIER2,
@@ -464,6 +593,7 @@ def _seed_ai_usage_data(
                 created_at=now - timedelta(days=4, hours=3, minutes=1),
             ),
             AIUsage(
+                id=fixture_id("demo-ai-usage-3"),
                 clip_id=clips[3].id,
                 tier=AnalysisTier.TIER1,
                 provider=AIProviderKind.ANTHROPIC,
@@ -478,6 +608,7 @@ def _seed_ai_usage_data(
                 created_at=now - timedelta(days=2, hours=5),
             ),
             AIUsage(
+                id=fixture_id("demo-ai-usage-4"),
                 clip_id=clips[3].id,
                 tier=AnalysisTier.TIER1,
                 provider=AIProviderKind.OPENAI,
@@ -493,6 +624,7 @@ def _seed_ai_usage_data(
                 created_at=now - timedelta(days=1, hours=2),
             ),
             AIUsage(
+                id=fixture_id("demo-ai-usage-5"),
                 clip_id=clips[0].id,
                 tier=AnalysisTier.TIER1,
                 provider=AIProviderKind.ANTHROPIC,
@@ -510,33 +642,83 @@ def _seed_ai_usage_data(
     )
 
 
+async def seed_identity(session: AsyncSession) -> bool:
+    """Create the e2e admin + viewer accounts. Returns True if anything was
+    created. Guarded by "any user exists" (not a narrower check) since these
+    two accounts are meant to be the only ones ever seeded - once true, this
+    is a permanent no-op for the life of the database, including across
+    every future seed_data()/reset_data() call."""
+    count = (await session.execute(select(func.count()).select_from(User))).scalar_one()
+    if count > 0:
+        logger.info("seed.identity_skipped", users=count)
+        return False
+    password_helper = PasswordHelper()
+    session.add_all(
+        [
+            User(
+                id=fixture_id("e2e-admin-user"),
+                email=E2E_ADMIN_EMAIL,
+                hashed_password=password_helper.hash(E2E_ADMIN_PASSWORD),
+                is_active=True,
+                is_superuser=True,
+                is_verified=True,
+                display_name="E2E Admin",
+            ),
+            User(
+                id=fixture_id("e2e-viewer-user"),
+                email=E2E_VIEWER_EMAIL,
+                hashed_password=password_helper.hash(E2E_VIEWER_PASSWORD),
+                is_active=True,
+                is_superuser=False,
+                is_verified=True,
+                display_name="E2E Viewer",
+            ),
+        ]
+    )
+    await session.commit()
+    logger.info("seed.identity_created", admin=E2E_ADMIN_EMAIL, viewer=E2E_VIEWER_EMAIL)
+    return True
+
+
+async def seed_data(session: AsyncSession) -> None:
+    """(Re-)create the demo cameras/clips/analyses/etc. Safe to call
+    repeatedly - see this module's docstring."""
+    await _seed_demo_data(session)
+    await session.commit()
+
+
+async def reset_data(session: AsyncSession) -> None:
+    """Wipe every domain-data table (never users/access_tokens - see
+    RESET_TABLES) and re-seed it fresh. The endpoint that calls this
+    (app/api/testing.py) is only ever mounted when
+    Settings.enable_test_reset_endpoint is explicitly true."""
+    await session.execute(text(f"TRUNCATE TABLE {RESET_TABLES} CASCADE"))
+    # The raw TRUNCATE above bypasses the ORM entirely, so this session's
+    # identity map doesn't know the rows it may already hold are now gone -
+    # without this, re-seeding an object with a deterministic id matching one
+    # this session has already loaded raises a SAWarning (stale instance
+    # conflicts with the freshly-added one) rather than a clean re-seed.
+    # request-scoped sessions (the real /api/testing/reset endpoint) start
+    # empty and would never hit this, but a reused session (this function's
+    # own tests, a future script) can - cheap and correct either way.
+    session.expunge_all()
+    await seed_data(session)
+
+
 async def seed() -> bool:
-    """Create the e2e admin account and demo fixtures. Returns True if
-    anything was created."""
+    """Full first-boot seed: identity, then data. Returns True if anything
+    was created. The e2e container's own entrypoint (app.testing.e2e_entry)
+    is the only normal caller; reset_data() is used for every later reset."""
     settings = get_settings()
     configure_logging(settings)
     engine = build_engine(settings.database_url)
     try:
         sessionmaker = build_sessionmaker(engine)
         async with sessionmaker() as session:
-            count = (await session.execute(select(func.count()).select_from(User))).scalar_one()
-            if count > 0:
-                logger.info("seed.skipped", users=count)
+            created = await seed_identity(session)
+            if not created:
                 return False
-            session.add(
-                User(
-                    id=uuid.uuid4(),
-                    email=E2E_ADMIN_EMAIL,
-                    hashed_password=PasswordHelper().hash(E2E_ADMIN_PASSWORD),
-                    is_active=True,
-                    is_superuser=True,
-                    is_verified=True,
-                    display_name="E2E Admin",
-                )
-            )
-            await _seed_demo_data(session)
-            await session.commit()
-            logger.info("seed.admin_created", email=E2E_ADMIN_EMAIL)
+            await seed_data(session)
             return True
     finally:
         await engine.dispose()
