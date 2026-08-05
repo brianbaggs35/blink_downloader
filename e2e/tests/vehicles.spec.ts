@@ -1,4 +1,6 @@
-import { expect, seededVehicle, test } from "../fixtures";
+import { expect, seededVehicle, storageStatePath, test } from "../fixtures";
+
+test.use({ storageState: storageStatePath("admin") });
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/vehicles");

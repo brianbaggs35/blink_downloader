@@ -1,6 +1,8 @@
 import type { Page } from "@playwright/test";
 
-import { expect, seededCameras, test } from "../fixtures";
+import { expect, seededCameras, storageStatePath, test } from "../fixtures";
+
+test.use({ storageState: storageStatePath("admin") });
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/security-feed");

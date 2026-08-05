@@ -1,4 +1,6 @@
-import { expect, seededCameras, seededPerson, test } from "../fixtures";
+import { expect, seededCameras, seededPerson, storageStatePath, test } from "../fixtures";
+
+test.use({ storageState: storageStatePath("admin") });
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/biometrics");

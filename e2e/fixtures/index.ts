@@ -78,10 +78,37 @@ export const seededAdmin = {
   displayName: "E2E Admin",
 };
 
+export const seededViewer = {
+  email: process.env.BLINK_E2E_VIEWER_EMAIL ?? "e2e-viewer@example.com",
+  password: process.env.BLINK_E2E_VIEWER_PASSWORD ?? "e2e-viewer-password-123",
+  displayName: "E2E Viewer",
+};
+
+/**
+ * A saved storage-state file's path, loaded per spec file via
+ * `test.use({ storageState: storageStatePath("admin") })` rather than baked
+ * into a project's config - lets a single project mix specs that need
+ * different signed-in roles (or none at all) without a project per role.
+ * "admin"/"viewer" are produced once by auth.setup.ts/viewer-auth.setup.ts;
+ * a genuinely signed-out spec (auth.spec.ts) uses an inline
+ * `{ cookies: [], origins: [] }` instead, since there's no file for "no one".
+ */
+export function storageStatePath(name: string): string {
+  return `playwright/.auth/${name}.json`;
+}
+
 // Mirrors backend/app/testing/seed.py - keep in sync if the seed changes.
+// front_door has a sparse battery history (one "ok" reading); backyard has
+// a richer one (an ok -> low transition, currently "low") - deliberately
+// different depths so BatteryHistoryDialog e2e coverage sees both shapes.
 export const seededCameras = {
   frontDoor: "Front Door",
   backyard: "Backyard",
+} as const;
+
+export const seededBattery = {
+  frontDoor: { status: "OK", eventCount: 1 },
+  backyard: { status: "Low", eventCount: 2 },
 } as const;
 
 export const seededPerson = {
