@@ -9,6 +9,7 @@ from redis.exceptions import RedisError
 from starlette.requests import Request
 
 from app.security.ratelimit import RateLimiter
+from tests.conftest import PlainSettings
 
 
 def _request(app: FastAPI, client_ip: str | None) -> Request:
@@ -45,6 +46,22 @@ async def test_missing_client_uses_unknown_bucket(client: AsyncClient, app: Fast
     await limiter(_request(app, None))
     with pytest.raises(HTTPException):
         await limiter(_request(app, None))
+
+
+async def test_disabled_setting_bypasses_the_limit_entirely(
+    client: AsyncClient, app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """See Settings.disable_rate_limits: the whole Playwright container
+    shares one source IP, so e2e's legitimate repeated logins must not trip
+    the same per-IP budget a real credential-stuffing attempt would."""
+    monkeypatch.setattr(
+        "app.security.ratelimit.get_settings",
+        lambda: PlainSettings(disable_rate_limits=True),
+    )
+    limiter = RateLimiter(times=1, seconds=60, scope="disabled")
+    request = _request(app, "10.0.0.5")
+    for _ in range(5):
+        await limiter(request)  # would raise on the 2nd call if enforcing
 
 
 async def test_fails_open_when_redis_unavailable(client: AsyncClient, app: FastAPI) -> None:

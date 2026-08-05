@@ -9,6 +9,7 @@ from fastapi import HTTPException, Request, status
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
+from app.config import get_settings
 from app.logs import get_logger
 
 logger = get_logger(__name__)
@@ -23,6 +24,8 @@ class RateLimiter:
         self.scope = scope
 
     async def __call__(self, request: Request) -> None:
+        if get_settings().disable_rate_limits:
+            return
         client_ip = request.client.host if request.client else "unknown"
         key = f"ratelimit:{self.scope}:{client_ip}"
         redis: Redis = request.app.state.redis

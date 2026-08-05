@@ -103,6 +103,12 @@ services:
       # reset to a known baseline before every test. Never set in prod's own
       # docker-compose.yml, so the route doesn't exist there at all.
       BLINK_ENABLE_TEST_RESET_ENDPOINT: "true"
+      # The whole Playwright container shares one source IP - login/setup/
+      # blink-link's per-IP rate limits (5 requests/60s, a real anti-abuse
+      # control in production) can't tell "many legitimate automated test
+      # logins" from a real attacker. Never set in prod's own
+      # docker-compose.yml.
+      BLINK_DISABLE_RATE_LIMITS: "true"
     depends_on:
       postgres:
         condition: service_healthy
