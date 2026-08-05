@@ -47,6 +47,7 @@ const smtpToAddressesText = ref("");
 const alertOnSuspiciousClip = ref(true);
 const suspicionAlertThreshold = ref(0.5);
 const alertOnVehicleProximity = ref(true);
+const alertOnLowBattery = ref(true);
 // DatePicker's own clear icon emits null (not "") - both mean "unset" to save().
 const quietHoursStart = ref<string | null>("");
 const quietHoursEnd = ref<string | null>("");
@@ -89,6 +90,7 @@ async function load(): Promise<void> {
     alertOnSuspiciousClip.value = s.alert_on_suspicious_clip;
     suspicionAlertThreshold.value = s.suspicion_alert_threshold;
     alertOnVehicleProximity.value = s.alert_on_vehicle_proximity;
+    alertOnLowBattery.value = s.alert_on_low_battery;
     quietHoursStart.value = s.quiet_hours_start ? s.quiet_hours_start.slice(0, 5) : "";
     quietHoursEnd.value = s.quiet_hours_end ? s.quiet_hours_end.slice(0, 5) : "";
     dedupWindowMinutes.value = s.dedup_window_minutes;
@@ -132,6 +134,7 @@ async function save(): Promise<void> {
       alert_on_suspicious_clip: alertOnSuspiciousClip.value,
       suspicion_alert_threshold: suspicionAlertThreshold.value,
       alert_on_vehicle_proximity: alertOnVehicleProximity.value,
+      alert_on_low_battery: alertOnLowBattery.value,
       quiet_hours_start: quietHoursStart.value || null,
       quiet_hours_end: quietHoursEnd.value || null,
       dedup_window_minutes: dedupWindowMinutes.value,
@@ -433,6 +436,13 @@ const smtpPasswordPlaceholder = computed(() =>
             data-testid="alert-on-proximity"
           />
           <span class="muted">Someone gets close to a protected vehicle</span>
+        </div>
+        <div class="toggle-row inline">
+          <ToggleSwitch
+            v-model="alertOnLowBattery"
+            data-testid="alert-on-low-battery"
+          />
+          <span class="muted">A camera's battery drops to low</span>
         </div>
       </section>
 

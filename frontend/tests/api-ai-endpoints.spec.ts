@@ -263,6 +263,7 @@ describe("alert endpoints", () => {
       alert_on_suspicious_clip: true,
       suspicion_alert_threshold: 0.5,
       alert_on_vehicle_proximity: true,
+      alert_on_low_battery: true,
       quiet_hours_start: null,
       quiet_hours_end: null,
       dedup_window_minutes: 15,
