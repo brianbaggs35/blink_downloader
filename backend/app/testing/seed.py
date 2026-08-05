@@ -228,7 +228,7 @@ async def _seed_demo_data(session: AsyncSession) -> None:
         camera.preview_path = str(preview_path)
         camera.preview_updated_at = now
 
-    await _seed_battery_events(session, front_door, backyard)
+    _seed_battery_events(session, front_door, backyard)
 
     # Spread across the Biometrics tab's enrollment time-range options
     # (24h/48h/7d) so seeded data can actually exercise all three, plus one
@@ -369,7 +369,7 @@ async def _seed_demo_data(session: AsyncSession) -> None:
     await _seed_sync_module_data(session, storage, account, front_door, backyard, clip_bytes)
 
 
-async def _seed_battery_events(session: AsyncSession, front_door: Camera, backyard: Camera) -> None:
+def _seed_battery_events(session: AsyncSession, front_door: Camera, backyard: Camera) -> None:
     """front_door gets a sparse history (one initial reading, still "ok") and
     backyard a richer one (an initial reading, then a transition to "low") -
     deliberately different depths so the BatteryHistoryDialog's timeline gets
