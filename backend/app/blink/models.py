@@ -99,6 +99,26 @@ class Camera(Base):
     clips: Mapped[list[Clip]] = relationship(back_populates="camera", cascade="all, delete-orphan")
 
 
+class BatteryEvent(Base):
+    """One observed change in a camera's battery state (including from None
+    on a camera's first-ever sync) - the source for both the low-battery
+    alert trigger and the Status page's per-camera history modal."""
+
+    __tablename__ = "battery_events"
+    __table_args__ = (Index("ix_battery_events_camera_id_occurred_at", "camera_id", "occurred_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    camera_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("cameras.id", ondelete="cascade"), nullable=False
+    )
+    battery: Mapped[str | None] = mapped_column(Text)
+    previous_battery: Mapped[str | None] = mapped_column(Text)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class Clip(Base):
     __tablename__ = "clips"
     __table_args__ = (
