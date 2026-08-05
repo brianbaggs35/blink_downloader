@@ -21,6 +21,7 @@ class AlertSettingsRead(BaseModel):
     alert_on_suspicious_clip: bool
     suspicion_alert_threshold: float
     alert_on_vehicle_proximity: bool
+    alert_on_low_battery: bool
     quiet_hours_start: time | None
     quiet_hours_end: time | None
     dedup_window_minutes: int
@@ -46,6 +47,7 @@ class AlertSettingsUpdate(BaseModel):
     alert_on_suspicious_clip: bool = True
     suspicion_alert_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     alert_on_vehicle_proximity: bool = True
+    alert_on_low_battery: bool = True
 
     quiet_hours_start: time | None = None
     quiet_hours_end: time | None = None

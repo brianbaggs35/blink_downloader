@@ -46,6 +46,7 @@ def _read(row: AlertSettings) -> AlertSettingsRead:
         alert_on_suspicious_clip=row.alert_on_suspicious_clip,
         suspicion_alert_threshold=row.suspicion_alert_threshold,
         alert_on_vehicle_proximity=row.alert_on_vehicle_proximity,
+        alert_on_low_battery=row.alert_on_low_battery,
         quiet_hours_start=row.quiet_hours_start,
         quiet_hours_end=row.quiet_hours_end,
         dedup_window_minutes=row.dedup_window_minutes,
