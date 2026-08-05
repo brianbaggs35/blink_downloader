@@ -1,19 +1,30 @@
 import { flushPromises, mount } from "@vue/test-utils";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import StatusView from "@/views/StatusView.vue";
-import { fakeBlinkStatus, healthyReport, makePinia, makeRouter, mountGlobal } from "./helpers";
+import {
+  fakeBlinkStatus,
+  fakeCamera,
+  healthyReport,
+  makePinia,
+  makeRouter,
+  mountGlobal,
+} from "./helpers";
 
 vi.mock("@/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api")>()),
   getHealth: vi.fn(),
   getBlinkStatus: vi.fn(),
+  listCameras: vi.fn(),
+  getCameraBatteryEvents: vi.fn(),
 }));
 
-import { getBlinkStatus, getHealth } from "@/api";
+import { getBlinkStatus, getCameraBatteryEvents, getHealth, listCameras } from "@/api";
 
 const mockedHealth = vi.mocked(getHealth);
 const mockedBlinkStatus = vi.mocked(getBlinkStatus);
+const mockedListCameras = vi.mocked(listCameras);
+const mockedGetBatteryEvents = vi.mocked(getCameraBatteryEvents);
 
 const unlinkedStatus = fakeBlinkStatus();
 
@@ -38,10 +49,19 @@ const linkedStatus = fakeBlinkStatus({
 beforeEach(() => {
   vi.clearAllMocks();
   mockedBlinkStatus.mockResolvedValue(unlinkedStatus);
+  mockedListCameras.mockResolvedValue([]);
+  mockedGetBatteryEvents.mockResolvedValue([]);
+});
+
+afterEach(() => {
+  document.body.innerHTML = "";
 });
 
 function mountView() {
-  return mount(StatusView, { global: mountGlobal(makePinia(), makeRouter()) });
+  return mount(StatusView, {
+    global: mountGlobal(makePinia(), makeRouter()),
+    attachTo: document.body,
+  });
 }
 
 describe("StatusView platform health", () => {
@@ -218,5 +238,81 @@ describe("StatusView Blink connection", () => {
     await flushPromises();
     expect(wrapper.find('[data-testid="clips-today"]').text()).toBe("0");
     expect(wrapper.find('[data-testid="clips-this-week"]').text()).toBe("0");
+  });
+});
+
+describe("StatusView cameras", () => {
+  it("shows a loading skeleton while cameras are fetching", async () => {
+    mockedListCameras.mockReturnValue(new Promise(() => undefined));
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="cameras-loading"]').exists()).toBe(true);
+  });
+
+  it("renders each camera's name, model, and battery status", async () => {
+    mockedListCameras.mockResolvedValue([
+      fakeCamera({ id: "cam-ok", name: "Front Door", battery: "ok" }),
+      fakeCamera({ id: "cam-low", name: "Backyard", camera_type: "sonoran", battery: "low" }),
+    ]);
+    const wrapper = mountView();
+    await flushPromises();
+
+    const okTile = wrapper.find('[data-testid="camera-tile-cam-ok"]');
+    expect(okTile.text()).toContain("Front Door");
+    expect(okTile.text()).toContain("Blink Outdoor Gen 3");
+    expect(okTile.text()).toContain("OK");
+
+    const lowTile = wrapper.find('[data-testid="camera-tile-cam-low"]');
+    expect(lowTile.text()).toContain("Backyard");
+    expect(lowTile.text()).toContain("Low");
+  });
+
+  it("shows an empty state when no cameras exist", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="cameras-empty"]').exists()).toBe(true);
+  });
+
+  it("shows a retry action when loading cameras fails", async () => {
+    mockedListCameras.mockRejectedValue(new TypeError("network down"));
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="cameras-error"]').text()).toContain(
+      "Could not load cameras.",
+    );
+
+    mockedListCameras.mockResolvedValue([fakeCamera()]);
+    await wrapper.find('[data-testid="retry-cameras"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="cameras-empty"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid^="camera-tile-"]').exists()).toBe(true);
+  });
+
+  it("refetches cameras when Refresh is clicked", async () => {
+    mockedListCameras.mockResolvedValue([]);
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.find('[data-testid="refresh"]').trigger("click");
+    await flushPromises();
+    expect(mockedListCameras).toHaveBeenCalledTimes(2);
+  });
+
+  it("opens the battery history dialog when a camera's battery badge is clicked", async () => {
+    mockedListCameras.mockResolvedValue([fakeCamera({ id: "cam-ok", name: "Front Door" })]);
+    const wrapper = mountView();
+    await flushPromises();
+    expect(document.body.querySelector('[data-testid="battery-history-dialog"]')).toBeFalsy();
+
+    document.body.querySelector<HTMLElement>('[data-testid="camera-battery-cam-ok"]')?.click();
+    await flushPromises();
+
+    const dialog = document.body.querySelector('[data-testid="battery-history-dialog"]');
+    expect(dialog).toBeTruthy();
+    expect(dialog?.textContent).toContain("Front Door");
+    expect(mockedGetBatteryEvents).toHaveBeenCalledWith("cam-ok");
+
+    await wrapper.findComponent({ name: "Dialog" }).vm.$emit("update:visible", false);
+    await flushPromises();
+    expect(document.body.querySelector('[data-testid="battery-history-dialog"]')).toBeFalsy();
   });
 });

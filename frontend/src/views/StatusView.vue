@@ -6,13 +6,17 @@ import Tag from "primevue/tag";
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 
-import { getHealth } from "@/api";
+import { getHealth, listCameras } from "@/api";
+import BatteryHistoryDialog from "@/components/BatteryHistoryDialog.vue";
+import BatteryIndicator from "@/components/BatteryIndicator.vue";
+import EmptyState from "@/components/EmptyState.vue";
 import PageHeader from "@/components/PageHeader.vue";
 import UsageTrendChart from "@/components/UsageTrendChart.vue";
 import { useFormatting } from "@/composables/useFormatting";
+import { cameraModelLabel } from "@/lib/cameraModels";
 import { useBlinkStore } from "@/stores/blink";
 
-import type { HealthReport } from "@/api";
+import type { CameraRead, HealthReport } from "@/api";
 import type { TrendPoint } from "@/components/UsageTrendChart.vue";
 
 type TileState = "ok" | "error" | "unknown";
@@ -37,6 +41,11 @@ const report = ref<HealthReport | null>(null);
 const failed = ref(false);
 const loading = ref(true);
 const blinkError = ref("");
+
+const cameras = ref<CameraRead[]>([]);
+const camerasLoading = ref(true);
+const camerasError = ref("");
+const selectedCameraForHistory = ref<CameraRead | null>(null);
 
 // Status colors are reserved for state and never used alone:
 // every tile pairs them with an icon and a text label.
@@ -68,9 +77,26 @@ async function refreshBlink(): Promise<void> {
   }
 }
 
+async function refreshCameras(): Promise<void> {
+  camerasLoading.value = true;
+  camerasError.value = "";
+  try {
+    cameras.value = await listCameras();
+  } catch {
+    camerasError.value = "Could not load cameras.";
+  } finally {
+    camerasLoading.value = false;
+  }
+}
+
+function openBatteryHistory(camera: CameraRead): void {
+  selectedCameraForHistory.value = camera;
+}
+
 function refreshAll(): void {
   void refreshHealth();
   void refreshBlink();
+  void refreshCameras();
 }
 
 function tileState(tile: Tile): TileState {
@@ -257,6 +283,81 @@ onMounted(refreshAll);
 
     <div class="section">
       <h3 class="section-title">
+        Cameras
+      </h3>
+
+      <div
+        v-if="camerasLoading"
+        class="tile-grid"
+        data-testid="cameras-loading"
+      >
+        <Skeleton
+          v-for="n in 2"
+          :key="n"
+          height="110px"
+          border-radius="14px"
+        />
+      </div>
+
+      <div
+        v-else-if="camerasError"
+        data-testid="cameras-error"
+      >
+        <Message
+          severity="error"
+          :closable="false"
+        >
+          {{ camerasError }}
+        </Message>
+        <div class="connection-actions">
+          <Button
+            label="Retry"
+            severity="secondary"
+            outlined
+            data-testid="retry-cameras"
+            @click="refreshCameras"
+          />
+        </div>
+      </div>
+
+      <EmptyState
+        v-else-if="cameras.length === 0"
+        icon="pi pi-video"
+        title="No cameras yet"
+        description="Cameras will show up here once a Blink account is connected."
+        data-testid="cameras-empty"
+      />
+
+      <div
+        v-else
+        class="tile-grid"
+      >
+        <article
+          v-for="camera in cameras"
+          :key="camera.id"
+          class="tile"
+          :data-testid="`camera-tile-${camera.id}`"
+        >
+          <p class="tile-label">
+            {{ camera.name }}
+          </p>
+          <p class="tile-hint">
+            {{ cameraModelLabel(camera.camera_type) }}
+          </p>
+          <button
+            type="button"
+            class="battery-trigger"
+            :data-testid="`camera-battery-${camera.id}`"
+            @click="openBatteryHistory(camera)"
+          >
+            <BatteryIndicator :battery="camera.battery" />
+          </button>
+        </article>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3 class="section-title">
         Platform Health
       </h3>
 
@@ -320,6 +421,11 @@ onMounted(refreshAll);
         </article>
       </div>
     </div>
+
+    <BatteryHistoryDialog
+      :camera="selectedCameraForHistory"
+      @close="selectedCameraForHistory = null"
+    />
   </section>
 </template>
 
@@ -466,5 +572,20 @@ onMounted(refreshAll);
   margin: 0;
   font-size: 0.8rem;
   color: var(--p-surface-500);
+}
+
+.battery-trigger {
+  margin-top: 10px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  display: inline-flex;
+}
+
+.battery-trigger:focus-visible {
+  outline: 2px solid var(--p-primary-500);
+  outline-offset: 2px;
+  border-radius: 6px;
 }
 </style>
