@@ -18,7 +18,8 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.blink.models import BlinkAccount, BlinkAccountStatus, Camera, Clip
+from app.alerts.models import SINGLETON_ID, AlertSettings
+from app.blink.models import BatteryEvent, BlinkAccount, BlinkAccountStatus, Camera, Clip
 from app.blink.service import (
     BlinkAuthError,
     BlinkCameraInfo,
@@ -29,6 +30,7 @@ from app.blink.service import (
 from app.config import get_settings
 from app.security.crypto import SecretBox
 from app.sync_module.models import SyncModule
+from app.worker.tasks.alerts import SEND_ALERT_JOB_NAME
 from app.worker.tasks.blink_sync import SYNC_JOB_NAME, sync_blink_account
 from app.worker.tasks.download import DOWNLOAD_JOB_NAME
 from tests.conftest import PlainSettings
@@ -444,3 +446,148 @@ async def test_unexpected_exception_still_reschedules(
     worker_ctx["redis"].enqueue_job.assert_awaited_once_with(
         SYNC_JOB_NAME, _defer_by=get_settings().blink_sync_interval_seconds
     )
+
+
+# ------------------------------------------------------------------ battery
+
+
+def _low_battery_alert_calls(worker_ctx: dict[str, Any]) -> list[Any]:
+    return [
+        call
+        for call in worker_ctx["redis"].enqueue_job.await_args_list
+        if call.args and call.args[0] == SEND_ALERT_JOB_NAME
+    ]
+
+
+async def _battery_events(worker_ctx: dict[str, Any]) -> list[BatteryEvent]:
+    async with worker_ctx["sessionmaker"]() as session:
+        return list((await session.execute(select(BatteryEvent))).scalars().all())
+
+
+async def test_new_camera_arriving_already_low_enqueues_a_low_battery_alert(
+    worker_ctx: dict[str, Any],
+) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        await _make_account(session)
+
+    FakeBlinkService.next_cameras = [_camera_info(battery="low")]
+    await sync_blink_account(worker_ctx)
+
+    calls = _low_battery_alert_calls(worker_ctx)
+    assert len(calls) == 1
+    assert calls[0].kwargs["reason"] == "low_battery"
+    assert "Front Door" in calls[0].kwargs["message"]
+
+    events = await _battery_events(worker_ctx)
+    assert len(events) == 1
+    assert events[0].battery == "low"
+    assert events[0].previous_battery is None
+
+
+async def test_new_camera_arriving_ok_does_not_enqueue_a_low_battery_alert(
+    worker_ctx: dict[str, Any],
+) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        await _make_account(session)
+
+    FakeBlinkService.next_cameras = [_camera_info(battery="ok")]
+    await sync_blink_account(worker_ctx)
+
+    assert _low_battery_alert_calls(worker_ctx) == []
+    events = await _battery_events(worker_ctx)
+    assert len(events) == 1
+    assert events[0].battery == "ok"
+
+
+async def test_battery_transition_from_ok_to_low_enqueues_an_alert(
+    worker_ctx: dict[str, Any],
+) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        await _make_account(session)
+
+    FakeBlinkService.next_cameras = [_camera_info(battery="ok")]
+    await sync_blink_account(worker_ctx)
+    FakeBlinkService.next_cameras = [_camera_info(battery="low")]
+    await sync_blink_account(worker_ctx)
+
+    calls = _low_battery_alert_calls(worker_ctx)
+    assert len(calls) == 1
+
+    events = await _battery_events(worker_ctx)
+    assert len(events) == 2
+    assert [e.previous_battery for e in sorted(events, key=lambda e: e.occurred_at)] == [
+        None,
+        "ok",
+    ]
+
+
+async def test_battery_staying_low_across_syncs_does_not_reenqueue_an_alert(
+    worker_ctx: dict[str, Any],
+) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        await _make_account(session)
+
+    FakeBlinkService.next_cameras = [_camera_info(battery="low")]
+    await sync_blink_account(worker_ctx)
+    FakeBlinkService.next_cameras = [_camera_info(battery="low")]
+    await sync_blink_account(worker_ctx)
+
+    calls = _low_battery_alert_calls(worker_ctx)
+    assert len(calls) == 1  # only the first sync's transition, not the second
+
+    events = await _battery_events(worker_ctx)
+    assert len(events) == 1  # no new history row for an unchanged reading
+
+
+async def test_battery_recovering_from_low_to_ok_does_not_enqueue_an_alert(
+    worker_ctx: dict[str, Any],
+) -> None:
+    # Establishing "low" (even via a brand-new camera arriving already low,
+    # per test_new_camera_arriving_already_low_enqueues_a_low_battery_alert)
+    # legitimately alerts once - this test isolates the *next* sync's
+    # low -> ok recovery and asserts *that* transition adds no second alert.
+    async with worker_ctx["sessionmaker"]() as session:
+        await _make_account(session)
+
+    FakeBlinkService.next_cameras = [_camera_info(battery="low")]
+    await sync_blink_account(worker_ctx)
+    assert len(_low_battery_alert_calls(worker_ctx)) == 1
+
+    FakeBlinkService.next_cameras = [_camera_info(battery="ok")]
+    await sync_blink_account(worker_ctx)
+    assert len(_low_battery_alert_calls(worker_ctx)) == 1  # unchanged by the recovery sync
+
+    events = await _battery_events(worker_ctx)
+    assert len(events) == 2  # recovery is still logged to history, just not alerted
+
+
+async def test_low_battery_alert_is_not_enqueued_when_the_setting_is_disabled(
+    worker_ctx: dict[str, Any],
+) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        await _make_account(session)
+        session.add(AlertSettings(id=SINGLETON_ID, alert_on_low_battery=False))
+        await session.commit()
+
+    FakeBlinkService.next_cameras = [_camera_info(battery="ok")]
+    await sync_blink_account(worker_ctx)
+    FakeBlinkService.next_cameras = [_camera_info(battery="low")]
+    await sync_blink_account(worker_ctx)
+
+    assert _low_battery_alert_calls(worker_ctx) == []
+    events = await _battery_events(worker_ctx)
+    assert len(events) == 2  # the transition still happened, just wasn't alerted on
+
+
+async def test_battery_transition_matches_low_case_insensitively(
+    worker_ctx: dict[str, Any],
+) -> None:
+    async with worker_ctx["sessionmaker"]() as session:
+        await _make_account(session)
+
+    FakeBlinkService.next_cameras = [_camera_info(battery="OK")]
+    await sync_blink_account(worker_ctx)
+    FakeBlinkService.next_cameras = [_camera_info(battery="LOW")]
+    await sync_blink_account(worker_ctx)
+
+    assert len(_low_battery_alert_calls(worker_ctx)) == 1
