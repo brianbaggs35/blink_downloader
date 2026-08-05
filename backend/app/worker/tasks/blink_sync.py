@@ -15,7 +15,8 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.blink.models import BlinkAccount, BlinkAccountStatus, Camera, Clip
+from app.alerts.service import get_alert_settings
+from app.blink.models import BatteryEvent, BlinkAccount, BlinkAccountStatus, Camera, Clip
 from app.blink.service import (
     BlinkAuthError,
     BlinkCameraInfo,
@@ -32,6 +33,7 @@ from app.settings.service import (
     resolve_blink_sync_interval_seconds,
 )
 from app.sync_module.models import SyncModule
+from app.worker.tasks.alerts import SEND_ALERT_JOB_NAME
 from app.worker.tasks.download import DOWNLOAD_JOB_NAME
 
 logger = get_logger(__name__)
@@ -115,7 +117,8 @@ async def _run_sync(session: AsyncSession, settings: Settings, ctx: dict[Any, An
     finally:
         await service.close()
 
-    cameras_by_name = await _upsert_cameras(session, account, cameras)
+    alert_settings = await get_alert_settings(session)
+    cameras_by_name, newly_low_batteries = await _upsert_cameras(session, account, cameras)
     await _upsert_sync_modules(session, account, sync_modules)
     new_clips = await _insert_new_clips(session, cameras_by_name, media_items)
 
@@ -131,6 +134,15 @@ async def _run_sync(session: AsyncSession, settings: Settings, ctx: dict[Any, An
         await ctx["redis"].enqueue_job(
             DOWNLOAD_JOB_NAME, clip_id=str(clip_id), auto_analyze=clip_id in auto_analyze_ids
         )
+
+    if alert_settings.alert_on_low_battery:
+        for camera_id, camera_name in newly_low_batteries:
+            await ctx["redis"].enqueue_job(
+                SEND_ALERT_JOB_NAME,
+                camera_id=str(camera_id),
+                reason="low_battery",
+                message=f"[{camera_name}] Battery is low and may need to be replaced soon.",
+            )
 
     logger.info(
         "blink.sync_completed",
@@ -151,10 +163,37 @@ def _select_auto_analyze_ids(new_clips: list[tuple[UUID, datetime]], limit: int)
     return {clip_id for clip_id, _recorded_at in newest_first[:limit]}
 
 
+def _normalize_battery(value: str | None) -> str:
+    return (value or "").strip().lower()
+
+
+def _is_low_battery(value: str | None) -> bool:
+    return _normalize_battery(value) == "low"
+
+
 async def _upsert_cameras(
     session: AsyncSession, account: BlinkAccount, cameras: list[BlinkCameraInfo]
-) -> dict[str, Camera]:
+) -> tuple[dict[str, Camera], list[tuple[UUID, str]]]:
+    """Returns (cameras_by_name, newly_low_batteries). newly_low_batteries is
+    plain (camera_id, camera_name) tuples - not live Camera rows - for every
+    camera whose battery just transitioned to low this cycle, since
+    _run_sync enqueues alerts *after* its own session.commit(), which expires
+    ORM attributes on this async session (touching one outside an await
+    afterward raises MissingGreenlet, not a lazy reload) - the same reason
+    _insert_new_clips returns plain (Clip.id, Clip.recorded_at) tuples rather
+    than live Clip rows for its own post-commit enqueue loop below."""
+    previous_by_id: dict[str, str | None] = {
+        row.blink_camera_id: row.battery
+        for row in await session.execute(
+            select(Camera.blink_camera_id, Camera.battery).where(
+                Camera.blink_account_id == account.id
+            )
+        )
+    }
+
     by_name: dict[str, Camera] = {}
+    newly_low_batteries: list[tuple[UUID, str]] = []
+    now = datetime.now(UTC)
     for info in cameras:
         stmt = (
             insert(Camera)
@@ -168,7 +207,7 @@ async def _upsert_cameras(
                 thumbnail_path=info.thumbnail_path,
                 motion_enabled=info.motion_enabled,
                 motion_action_type=info.motion_action_type,
-                last_synced_at=datetime.now(UTC),
+                last_synced_at=now,
             )
             .on_conflict_do_update(
                 index_elements=[Camera.blink_account_id, Camera.blink_camera_id],
@@ -179,14 +218,28 @@ async def _upsert_cameras(
                     "thumbnail_path": info.thumbnail_path,
                     "motion_enabled": info.motion_enabled,
                     "motion_action_type": info.motion_action_type,
-                    "last_synced_at": datetime.now(UTC),
+                    "last_synced_at": now,
                 },
             )
             .returning(Camera)
         )
         camera = (await session.execute(stmt)).scalar_one()
         by_name[info.name.lower()] = camera
-    return by_name
+
+        previous_battery = previous_by_id.get(info.camera_id)
+        if _normalize_battery(info.battery) != _normalize_battery(previous_battery):
+            session.add(
+                BatteryEvent(
+                    camera_id=camera.id,
+                    battery=info.battery,
+                    previous_battery=previous_battery,
+                    occurred_at=now,
+                )
+            )
+            if _is_low_battery(info.battery) and not _is_low_battery(previous_battery):
+                newly_low_batteries.append((camera.id, camera.name))
+
+    return by_name, newly_low_batteries
 
 
 async def _insert_new_clips(
