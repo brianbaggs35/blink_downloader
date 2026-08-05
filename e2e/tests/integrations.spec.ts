@@ -88,18 +88,8 @@ test("configures and saves S3, and the connection reflects on the Storage page a
 test("the Storage page's auto-archive picker only offers connected destinations, and hints to connect one when there are none", async ({
   page,
 }) => {
-  // Persistent database, not reseeded between runs or test files - the test
-  // above saves real-looking S3 credentials as part of its own flow, so
-  // this test can't assume nothing is connected without guaranteeing it
-  // itself first. Google Drive/OneDrive can't be "connected" via e2e at all
-  // (that needs a real OAuth round trip), so S3 is the only one to
-  // explicitly reset here.
-  await page.goto("/integrations");
-  await page.getByTestId("integration-configure-s3").click();
-  await page.getByTestId("s3-enabled").locator("input").uncheck();
-  await page.getByTestId("integration-save-s3").click();
-  await expect(page.getByText("Integration saved")).toBeVisible();
-
+  // storage_integration_settings resets to "nothing connected" before every
+  // test (see ../fixtures' auto-reset fixture), so no setup is needed here.
   await page.goto("/storage");
   await expect(page.getByRole("heading", { name: "Storage", exact: true })).toBeVisible();
   await page.getByTestId("edit-auto-archive").click();

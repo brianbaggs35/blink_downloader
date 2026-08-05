@@ -32,13 +32,12 @@ test("Cameras panel toggles a camera and saves its security context", async ({ p
   const backyardRow = page.locator('[data-testid^="camera-row-"]', { hasText: seededCameras.backyard });
   await expect(backyardRow).toBeVisible();
 
-  // A timestamp keeps this different from whatever's already saved - the
-  // "Save context" link only renders once the field has actually changed
-  // from the loaded value, and this suite runs against a persistent
-  // database (not reseeded between runs), so a fixed string would go stale
-  // the second time this test ever succeeds.
+  // The seeded backyard camera has no security context yet (see
+  // backend/app/testing/seed.py), so any non-empty value differs from the
+  // loaded one - deterministic now that the database resets before every
+  // test.
   const contextField = backyardRow.locator('[data-testid^="camera-context-"]');
-  await contextField.fill(`Watches the yard and shed. (e2e ${Date.now()})`);
+  await contextField.fill("Watches the yard and shed.");
   await backyardRow.locator('[data-testid^="camera-context-save-"]').click();
   await expect(page.getByText("Camera context saved")).toBeVisible();
 });
@@ -130,43 +129,23 @@ test("Vehicles panel: draw a freeform outline on the reference frame, redraw it,
   });
   await expect(card).toBeVisible();
 
-  // Idempotent either-state handling - this suite runs against a
-  // persistent, not-reseeded-between-runs database, so a prior run may
-  // have already captured a reference frame for this camera. Exactly one
-  // of these two buttons renders, never both, never neither - wait for
-  // whichever it is to actually settle before the isVisible() check below,
-  // rather than racing it immediately after the card itself first appears
-  // (isVisible() alone doesn't retry, so a card that's visible-by-text but
-  // hasn't finished its own internal render yet reads as neither present).
-  const initialCapture = card.locator('[data-testid^="capture-frame-"]');
-  const recapture = card.locator('[data-testid^="recapture-frame-"]');
-  await expect(initialCapture.or(recapture)).toBeVisible();
-  // Which button renders depends on whether a prior, non-reseeded run
-  // already captured a frame for this camera, not on anything this test
-  // controls.
-  // eslint-disable-next-line playwright/no-conditional-in-test
-  if (await initialCapture.isVisible()) {
-    await initialCapture.click();
-  } else {
-    await recapture.click();
-  }
+  // The seeded vehicle already has a reference frame and a 4-point outline
+  // (see backend/app/testing/seed.py), so this always starts in the
+  // "recapture" state with an existing polygon - deterministic now that the
+  // database resets before every test. Re-capturing here exercises the real
+  // capture flow without disturbing the loaded outline (captureFrame() only
+  // bumps the frame image, never touches points).
+  const recaptureButton = card.locator('[data-testid^="recapture-frame-"]');
+  await recaptureButton.click();
+  await expect(recaptureButton).toBeEnabled();
+  await expect(card.locator('[data-testid^="vehicle-error-"]')).toHaveCount(0);
 
   const svg = card.locator('[data-testid^="outline-svg-"]');
   await expect(svg).toBeVisible();
   const polygon = svg.locator("polygon");
+  await expect(polygon).toHaveCount(1);
 
-  // Clear whatever outline a prior run may have left drawn (but not saved).
-  const clearButton = card.locator('[data-testid^="clear-points-"]');
-  // Same reason as above: whether one's already drawn depends on prior runs.
-  // eslint-disable-next-line playwright/no-conditional-in-test
-  if (await clearButton.isEnabled()) {
-    await clearButton.click();
-  }
-  // Confirmed empty (not just "clear was clicked") before drawing anything
-  // new - a retry of this same test reuses the same server-side vehicle
-  // row, and asserting this here (rather than assuming the click above was
-  // synchronous and sufficient) is what actually guarantees the draw below
-  // starts from a clean slate.
+  await card.locator('[data-testid^="clear-points-"]').click();
   await expect(polygon).toHaveCount(0);
 
   // hover({ position }) rather than page.mouse.move(absoluteX, absoluteY):
@@ -193,7 +172,7 @@ test("Vehicles panel: draw a freeform outline on the reference frame, redraw it,
   await page.mouse.up();
   await expect(polygon).not.toHaveAttribute("points", firstOutline ?? "");
 
-  await clearButton.click();
+  await card.locator('[data-testid^="clear-points-"]').click();
   await expect(polygon).toHaveCount(0);
 });
 
