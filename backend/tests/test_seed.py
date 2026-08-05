@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.testing.seed as seed_module
 from app.ai.models import AIUsage
-from app.biometrics.models import Person
+from app.biometrics.models import BiometricsSettings, ModelDownloadStatus, Person
 from app.biometrics.recognition import ModelLoadError
 from app.blink.models import BatteryEvent, Camera, Clip
 from app.settings.service import set_storage_dir
@@ -188,6 +188,48 @@ async def test_reset_data_is_repeatable(app_session: AsyncSession, tmp_path: Pat
 
     clips = (await app_session.execute(select(Clip))).scalars().all()
     assert len(clips) == 16
+
+
+async def test_reset_data_reverifies_the_biometrics_model(
+    app_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """biometrics_settings is truncated on every reset (unlike app_settings)
+    since it also holds real user-configurable fields - reset_data() must
+    re-establish model_download_status on its own rather than leaving it
+    stuck at the truncate's IDLE default forever."""
+
+    async def _fake_download_biometrics_model(
+        session: AsyncSession, settings: object, _cache_dir: object
+    ) -> None:
+        settings.model_download_status = ModelDownloadStatus.READY  # type: ignore[attr-defined]
+        await session.commit()
+
+    monkeypatch.setattr(seed_module, "download_biometrics_model", _fake_download_biometrics_model)
+    await set_storage_dir(app_session, str(tmp_path))
+    await seed_identity(app_session)
+    await seed_data(app_session)
+
+    await reset_data(app_session)
+
+    settings_row = (await app_session.execute(select(BiometricsSettings))).scalar_one()
+    assert settings_row.model_download_status == ModelDownloadStatus.READY
+
+
+async def test_reset_data_survives_a_biometrics_reverify_failure(
+    app_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def _boom(*_args: object, **_kwargs: object) -> None:
+        raise ModelLoadError("could not verify the model")
+
+    monkeypatch.setattr(seed_module, "download_biometrics_model", _boom)
+    await set_storage_dir(app_session, str(tmp_path))
+    await seed_identity(app_session)
+    await seed_data(app_session)
+
+    await reset_data(app_session)  # must not raise
+
+    clips = (await app_session.execute(select(Clip))).scalars().all()
+    assert len(clips) == 16  # the rest of the reset still completed
 
 
 async def test_warm_up_biometrics_model_logs_success_when_the_model_loads(
