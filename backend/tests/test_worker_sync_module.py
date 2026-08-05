@@ -43,6 +43,7 @@ from app.worker.tasks.sync_module import (
     periodic_local_storage_refresh_job,
     refresh_sync_module_local_storage_job,
 )
+from tests.conftest import PlainSettings
 
 
 class FakeBlinkService:
@@ -318,6 +319,28 @@ async def test_periodic_refresh_always_reschedules_itself(worker_ctx: dict[str, 
         PERIODIC_LOCAL_STORAGE_REFRESH_JOB_NAME,
         _defer_by=PERIODIC_LOCAL_STORAGE_REFRESH_INTERVAL_SECONDS,
     )
+
+
+async def test_periodic_refresh_short_circuits_when_network_calls_are_disabled(
+    worker_ctx: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """See Settings.disable_blink_network_calls, and sync_blink_account's
+    identical guard in blink_sync.py: must return before opening any
+    session (an eligible seeded e2e Sync Module would otherwise get
+    enqueued for a refresh that only ever fails) and must not reschedule
+    itself - both confirmed necessary by a real DeadlockDetectedError
+    against the e2e test-reset endpoint's TRUNCATE under a busy run."""
+    monkeypatch.setattr(
+        "app.worker.tasks.sync_module.get_settings",
+        lambda: PlainSettings(disable_blink_network_calls=True),
+    )
+    account = await _make_account(worker_ctx)
+    await _make_sync_module(worker_ctx, account)
+
+    result = await periodic_local_storage_refresh_job(worker_ctx)
+
+    assert result == "disabled"
+    worker_ctx["redis"].enqueue_job.assert_not_awaited()
 
 
 async def test_periodic_refresh_skips_a_virtual_non_hub_network(

@@ -125,6 +125,17 @@ async def periodic_local_storage_refresh_job(ctx: dict[Any, Any]) -> str:
     without requiring an admin to remember to click "Refresh files" -
     self-reschedules the same way sync_blink_account does, on its own
     interval (see PERIODIC_LOCAL_STORAGE_REFRESH_INTERVAL_SECONDS)."""
+    if get_settings().disable_blink_network_calls:
+        # See Settings.disable_blink_network_calls, and
+        # sync_blink_account's own identical guard in blink_sync.py: every
+        # per-module refresh this would enqueue fails immediately anyway
+        # (refresh_local_storage_manifest's own check), but not before
+        # silently flipping the seeded e2e Sync Module's local_storage_status
+        # to ERROR, and this job's own query is one more source of DB
+        # contention against the e2e test-reset endpoint's TRUNCATE for no
+        # benefit. Not re-scheduling is safe: this flag never flips at
+        # runtime, so every future cycle would only ever repeat "disabled".
+        return "disabled"
     sessionmaker: async_sessionmaker[AsyncSession] = ctx["sessionmaker"]
     try:
         async with sessionmaker() as session:

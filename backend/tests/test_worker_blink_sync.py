@@ -156,14 +156,17 @@ async def test_no_account_linked_is_a_clean_noop(worker_ctx: dict[str, Any]) -> 
     )
 
 
-async def test_disabled_network_calls_is_a_clean_noop_that_never_touches_the_account(
+async def test_disabled_network_calls_is_a_clean_noop_that_never_touches_the_database(
     worker_ctx: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """See Settings.disable_blink_network_calls: this job self-reschedules
     on a timer regardless of whether anything ever triggers it manually, so
     an unguarded real call here would flip the seeded e2e account's status
     to an auth error on its own, silently, out from under every other e2e
-    test that expects it to stay healthy."""
+    test that expects it to stay healthy. Must return before opening any
+    session at all (not just before calling Blink) and must not reschedule
+    itself - both confirmed necessary by a real DeadlockDetectedError
+    against the e2e test-reset endpoint's TRUNCATE under a busy run."""
     monkeypatch.setattr(
         "app.worker.tasks.blink_sync.get_settings",
         lambda: PlainSettings(disable_blink_network_calls=True),
@@ -175,6 +178,7 @@ async def test_disabled_network_calls_is_a_clean_noop_that_never_touches_the_acc
     result = await sync_blink_account(worker_ctx)
     assert result == "disabled"
     assert FakeBlinkService.instances == []
+    worker_ctx["redis"].enqueue_job.assert_not_awaited()
 
     async with worker_ctx["sessionmaker"]() as session:
         refreshed = await session.get(BlinkAccount, account_id)
