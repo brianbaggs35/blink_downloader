@@ -60,6 +60,7 @@ async def test_get_defaults(admin_client: AsyncClient) -> None:
     assert body["discord_enabled"] is False
     assert body["discord_webhook_set"] is False
     assert body["dedup_window_minutes"] == 15
+    assert body["alert_on_low_battery"] is True
 
 
 async def test_put_requires_admin(viewer_client: AsyncClient) -> None:

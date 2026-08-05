@@ -49,6 +49,7 @@ class AlertSettings(Base):
     alert_on_vehicle_proximity: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="true"
     )
+    alert_on_low_battery: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
 
     quiet_hours_start: Mapped[time | None] = mapped_column(Time)
     quiet_hours_end: Mapped[time | None] = mapped_column(Time)

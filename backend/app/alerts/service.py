@@ -58,6 +58,7 @@ async def update_alert_settings(
     row.alert_on_suspicious_clip = payload.alert_on_suspicious_clip
     row.suspicion_alert_threshold = payload.suspicion_alert_threshold
     row.alert_on_vehicle_proximity = payload.alert_on_vehicle_proximity
+    row.alert_on_low_battery = payload.alert_on_low_battery
 
     row.quiet_hours_start = payload.quiet_hours_start
     row.quiet_hours_end = payload.quiet_hours_end
