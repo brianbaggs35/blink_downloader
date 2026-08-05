@@ -68,12 +68,14 @@ class Settings(BaseSettings):
     log_json: bool | None = None
 
     enable_test_reset_endpoint: bool = False
-    """Mounts POST /api/testing/reset, which truncates every domain-data
-    table and re-seeds it (app.testing.seed.reset_data) - lets Playwright
-    reset to a known baseline before each test. Only ever set true by the
-    e2e/onboarding test-compose profiles; the route isn't mounted at all
-    (not just permission-gated) unless this is explicitly true, so it's
-    never reachable in a production image (see create_app())."""
+    """Mounts POST /api/testing/reset (domain data only), /wipe (also
+    identity - users/access_tokens, for the onboarding e2e spec's own
+    "fresh install" state), and /reset-baseline (wipe + full reseed, back to
+    exactly what a fresh container boot looks like) - see app.testing.seed.
+    Only ever set true by the e2e test-compose profile; these routes aren't
+    mounted at all (not just permission-gated) unless this is explicitly
+    true, so they're never reachable in a production image (see
+    create_app())."""
 
     disable_rate_limits: bool = False
     """Short-circuits app.security.ratelimit.RateLimiter (login/setup/
@@ -84,17 +86,7 @@ class Settings(BaseSettings):
     spec needing a fresh storage state, several more inside auth.spec.ts,
     each retry adding another) can trip the same budget a real attacker
     would - confirmed empirically via real 429s cascading through retries.
-    Only ever set true by the e2e/onboarding test-compose profiles."""
-
-    skip_seed: bool = False
-    """Skips app.testing.seed.seed() in the e2e container's own boot
-    sequence (app.testing.e2e_entry), leaving the database genuinely empty -
-    no admin/viewer users, nothing else. /setup is a one-shot gate reachable
-    only while the users table has zero rows (app.api.setup.status), so the
-    plain e2e profile (whose whole suite depends on the seeded admin/demo
-    data already existing at boot) must never set this; only the dedicated
-    onboarding test-compose profile does, specifically so its wizard e2e
-    coverage has real "brand new install" state to drive through."""
+    Only ever set true by the e2e test-compose profile."""
 
     @model_validator(mode="after")
     def _fill_or_require_secrets(self) -> Self:

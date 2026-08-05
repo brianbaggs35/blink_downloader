@@ -28,9 +28,11 @@ from app.testing.seed import (
     E2E_VIEWER_EMAIL,
     E2E_VIEWER_PASSWORD,
     reset_data,
+    restore_baseline,
     seed,
     seed_data,
     seed_identity,
+    wipe_all,
 )
 from app.users.models import User
 from app.vehicles.models import ProximityEvent, Vehicle
@@ -191,6 +193,61 @@ async def test_reset_data_is_repeatable(app_session: AsyncSession, tmp_path: Pat
 
     await reset_data(app_session)
     await reset_data(app_session)  # must not raise (duplicate-key, etc.)
+
+    clips = (await app_session.execute(select(Clip))).scalars().all()
+    assert len(clips) == 16
+
+
+async def test_wipe_all_removes_identity_and_domain_data_without_reseeding(
+    app_session: AsyncSession, tmp_path: Path
+) -> None:
+    """The onboarding e2e spec's whole point: a genuinely empty database
+    (not just an empty users table), since /setup is a one-shot gate
+    reachable only while zero users exist."""
+    await set_storage_dir(app_session, str(tmp_path))
+    await seed_identity(app_session)
+    await seed_data(app_session)
+
+    await wipe_all(app_session)
+
+    assert (await app_session.execute(select(User))).scalars().all() == []
+    assert (await app_session.execute(select(Camera))).scalars().all() == []
+    assert (await app_session.execute(select(Clip))).scalars().all() == []
+
+
+async def test_restore_baseline_reseeds_identity_and_domain_data_fresh(
+    app_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Used right after the onboarding e2e spec finishes - the database
+    must end up looking exactly like a fresh container boot, with brand
+    new (not reused) identity rows, since the onboarding wizard's own
+    account creation already consumed the "any user exists" seed_identity()
+    guard once."""
+    await set_storage_dir(app_session, str(tmp_path))
+    await seed_identity(app_session)
+    await seed_data(app_session)
+    admin_before = (
+        await app_session.execute(
+            select(User).where(User.email == E2E_ADMIN_EMAIL)  # pyright: ignore[reportArgumentType]
+        )
+    ).scalar_one()
+
+    await wipe_all(app_session)
+    await restore_baseline(app_session)
+
+    admin_after = (
+        await app_session.execute(
+            select(User).where(User.email == E2E_ADMIN_EMAIL)  # pyright: ignore[reportArgumentType]
+        )
+    ).scalar_one()
+    assert admin_after.id == admin_before.id  # same deterministic fixture id
+
+    viewer = (
+        await app_session.execute(
+            select(User).where(User.email == E2E_VIEWER_EMAIL)  # pyright: ignore[reportArgumentType]
+        )
+    ).scalar_one_or_none()
+    assert viewer is not None
 
     clips = (await app_session.execute(select(Clip))).scalars().all()
     assert len(clips) == 16
