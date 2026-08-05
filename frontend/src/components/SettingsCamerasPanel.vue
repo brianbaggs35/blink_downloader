@@ -9,6 +9,7 @@ import { useToast } from "primevue/usetoast";
 import { onMounted, reactive, ref } from "vue";
 
 import { ApiError, listCameras, updateCamera } from "@/api";
+import BatteryIndicator from "@/components/BatteryIndicator.vue";
 import { cameraModelLabel } from "@/lib/cameraModels";
 
 import type { CameraRead } from "@/api";
@@ -147,10 +148,11 @@ function contextChanged(camera: CameraRead): boolean {
               :value="cameraModelLabel(camera.camera_type)"
               severity="secondary"
             />
-            <span
+            <BatteryIndicator
               v-if="camera.battery"
-              class="muted"
-            >Battery: {{ camera.battery }}</span>
+              :battery="camera.battery"
+              :data-testid="`camera-battery-${camera.id}`"
+            />
           </div>
           <div class="camera-toggle">
             <span class="muted">{{ camera.enabled ? "Syncing" : "Paused" }}</span>

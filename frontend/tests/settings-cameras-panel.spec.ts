@@ -90,7 +90,7 @@ describe("SettingsCamerasPanel loading", () => {
     // camera_type "catalina" is translated to its real hardware name -
     // see frontend/src/lib/cameraModels.ts.
     expect(rowA.text()).toContain("Blink Outdoor Gen 3");
-    expect(rowA.text()).toContain("Battery: ok");
+    expect(wrapper.find(`[data-testid="camera-battery-${cameraA.id}"]`).text()).toBe("OK");
     expect(rowA.text()).toContain("Syncing");
     const contextA = wrapper.find(`[data-testid="camera-context-${cameraA.id}"]`)
       .element as HTMLTextAreaElement;
@@ -98,7 +98,7 @@ describe("SettingsCamerasPanel loading", () => {
 
     const rowB = wrapper.find(`[data-testid="camera-row-${cameraB.id}"]`);
     expect(rowB.text()).toContain("Paused");
-    expect(rowB.text()).not.toContain("Battery:");
+    expect(wrapper.find(`[data-testid="camera-battery-${cameraB.id}"]`).exists()).toBe(false);
     // An unmapped codename ("sedona") falls back to the raw string.
     expect(rowB.text()).toContain("sedona");
   });
