@@ -53,6 +53,16 @@ test("changing the default landing page persists across a reload", async ({ page
 
   await page.reload();
   await expect(page.getByTestId("default-landing-page")).toContainText("Security Feed");
+
+  // default_landing_page lives on the users table, which the per-test reset
+  // deliberately never touches (identity/session data must survive a
+  // reset) - unlike this suite's domain-data settings, this one really
+  // does need restoring, or every later test's fresh login (including
+  // auth.setup.ts's own) lands on Security Feed instead of Library.
+  await page.getByTestId("default-landing-page").click();
+  await page.getByRole("option", { name: "Library" }).click();
+  await page.getByTestId("save-profile").click();
+  await expect(page.getByText("Profile saved")).toBeVisible();
 });
 
 test("Live View settings can be changed and saved", async ({ page }) => {
