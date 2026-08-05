@@ -692,25 +692,26 @@ async def seed_data(session: AsyncSession) -> None:
     await session.commit()
 
 
-async def _truncate_domain_tables(session: AsyncSession) -> None:
-    """TRUNCATE ... CASCADE takes an ACCESS EXCLUSIVE lock on every domain
-    table, including everything that cascades from RESET_TABLES' own
-    explicit list (cameras, clips, and more - see that constant's comment).
-    An ordinary concurrent request (e.g. the Library page's own clip/
-    ai_settings fetch) can briefly hold a conflicting lock in the opposite
-    order, producing a genuine asyncpg.exceptions.DeadlockDetectedError under
-    a busy e2e run - confirmed empirically, and expected to keep happening
-    occasionally no matter how quiet the calling test suite tries to be,
-    since it takes a real in-flight *application* request, not a Playwright
-    scheduling issue. Retrying is the standard, correct response to
-    Postgres' own deadlock detection: it always resolves the conflict by
-    aborting exactly one side, so the other side's retry is expected to
-    succeed (blocking briefly on a plain lock wait if the survivor is still
-    mid-transaction, never deadlocking against itself)."""
+async def _truncate_with_deadlock_retry(session: AsyncSession, tables: str) -> None:
+    """TRUNCATE ... CASCADE takes an ACCESS EXCLUSIVE lock on every listed
+    table, including everything that cascades from it (e.g. RESET_TABLES'
+    own explicit list cascades to cameras, clips, and more - see that
+    constant's comment). An ordinary concurrent request (e.g. the Library
+    page's own clip/ai_settings fetch) can briefly hold a conflicting lock in
+    the opposite order, producing a genuine
+    asyncpg.exceptions.DeadlockDetectedError under a busy e2e run - confirmed
+    empirically, and expected to keep happening occasionally no matter how
+    quiet the calling test suite tries to be, since it takes a real in-flight
+    *application* request, not a Playwright scheduling issue. Retrying is the
+    standard, correct response to Postgres' own deadlock detection: it
+    always resolves the conflict by aborting exactly one side, so the other
+    side's retry is expected to succeed (blocking briefly on a plain lock
+    wait if the survivor is still mid-transaction, never deadlocking against
+    itself)."""
     attempts = 3
     for attempt in range(1, attempts + 1):  # pragma: no cover — every iteration returns or raises
         try:
-            await session.execute(text(f"TRUNCATE TABLE {RESET_TABLES} CASCADE"))
+            await session.execute(text(f"TRUNCATE TABLE {tables} CASCADE"))
             return
         except DBAPIError as exc:
             if not isinstance(exc.orig, DeadlockDetectedError) or attempt == attempts:
@@ -719,20 +720,19 @@ async def _truncate_domain_tables(session: AsyncSession) -> None:
             await session.rollback()
 
 
-async def reset_data(session: AsyncSession) -> None:
-    """Wipe every domain-data table (never users/access_tokens - see
-    RESET_TABLES) and re-seed it fresh. The endpoint that calls this
-    (app/api/testing.py) is only ever mounted when
-    Settings.enable_test_reset_endpoint is explicitly true."""
-    await _truncate_domain_tables(session)
-    # The raw TRUNCATE above bypasses the ORM entirely, so this session's
-    # identity map doesn't know the rows it may already hold are now gone -
-    # without this, re-seeding an object with a deterministic id matching one
-    # this session has already loaded raises a SAWarning (stale instance
-    # conflicts with the freshly-added one) rather than a clean re-seed.
-    # request-scoped sessions (the real /api/testing/reset endpoint) start
-    # empty and would never hit this, but a reused session (this function's
-    # own tests, a future script) can - cheap and correct either way.
+async def _truncate_domain_tables(session: AsyncSession) -> None:
+    await _truncate_with_deadlock_retry(session, RESET_TABLES)
+
+
+async def _expunge_and_reseed_domain(session: AsyncSession) -> None:
+    # The raw TRUNCATE bypasses the ORM entirely, so this session's identity
+    # map doesn't know the rows it may already hold are now gone - without
+    # this, re-seeding an object with a deterministic id matching one this
+    # session has already loaded raises a SAWarning (stale instance conflicts
+    # with the freshly-added one) rather than a clean re-seed. Request-scoped
+    # sessions (the real endpoints) start empty and would never hit this,
+    # but a reused session (this module's own tests) can - cheap and correct
+    # either way.
     session.expunge_all()
     await seed_data(session)
     # biometrics_settings (unlike app_settings) holds genuine
@@ -754,6 +754,47 @@ async def reset_data(session: AsyncSession) -> None:
         )
     except Exception as exc:
         logger.warning("reset_data.biometrics_model_reverify_failed", error=str(exc))
+
+
+async def reset_data(session: AsyncSession) -> None:
+    """Wipe every domain-data table (never users/access_tokens - see
+    RESET_TABLES) and re-seed it fresh. Used before every e2e test via the
+    Playwright `resetDatabase` auto-fixture's default "seeded" mode. The
+    endpoint that calls this (app/api/testing.py) is only ever mounted when
+    Settings.enable_test_reset_endpoint is explicitly true."""
+    await _truncate_domain_tables(session)
+    await _expunge_and_reseed_domain(session)
+
+
+async def wipe_all(session: AsyncSession) -> None:
+    """Truncates literally everything, including identity (users/
+    access_tokens) - used only by the onboarding e2e spec's own setup
+    (resetMode: "wipe"), to reach a genuinely fresh-install state: /setup is
+    a one-shot gate reachable only while the users table has zero rows.
+    Deliberately does not reseed anything - the whole point is for the
+    wizard itself to create the first account. Any saved Playwright storage
+    state captured before this runs becomes invalid the moment its
+    access_token row is gone - restore_baseline() (used by auth.setup.ts's
+    own "restore-baseline" mode, which runs right after the onboarding spec
+    finishes) is what re-establishes a valid seeded session afterward."""
+    await _truncate_with_deadlock_retry(session, f"access_tokens, users, {RESET_TABLES}")
+    # Unlike reset_data()/restore_baseline(), nothing downstream reseeds
+    # anything to commit alongside - get_session() doesn't auto-commit, so
+    # without this the TRUNCATE would just roll back when the request ends.
+    await session.commit()
+    session.expunge_all()
+
+
+async def restore_baseline(session: AsyncSession) -> None:
+    """Wipes everything, then re-seeds identity + domain data - exactly
+    what a fresh container boot looks like (see seed()). Used by
+    auth.setup.ts's "restore-baseline" resetMode, immediately after the
+    onboarding e2e spec finishes, so every later test's admin/viewer storage
+    state is backed by a session established fresh right here rather than
+    one wipe_all() just invalidated."""
+    await wipe_all(session)
+    await seed_identity(session)
+    await _expunge_and_reseed_domain(session)
 
 
 async def seed() -> bool:
