@@ -1,4 +1,6 @@
-import { expect, seededCameras, seededSyncModule, test } from "../fixtures";
+import { expect, seededCameras, seededSyncModule, storageStatePath, test } from "../fixtures";
+
+test.use({ storageState: storageStatePath("admin") });
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/sync-module");

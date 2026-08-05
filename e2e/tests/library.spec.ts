@@ -1,4 +1,13 @@
-import { expect, seededAnalyses, seededCameras, seededPerson, test } from "../fixtures";
+import {
+  expect,
+  seededAnalyses,
+  seededCameras,
+  seededPerson,
+  storageStatePath,
+  test,
+} from "../fixtures";
+
+test.use({ storageState: storageStatePath("admin") });
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
