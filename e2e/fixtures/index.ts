@@ -7,15 +7,42 @@ import type { Page } from "@playwright/test";
 
 /**
  * Every spec imports `test`/`expect` from here rather than "@playwright/test"
- * directly. Functionally identical unless COVERAGE_DIR is set (only true
- * under `make e2e-coverage`, against a frontend built with
- * VITE_COVERAGE=true - see vite.config.ts): then each test also drains
- * `window.__coverage__` (istanbul's instrumentation counters, injected into
- * the page by vite-plugin-istanbul) to a JSON file nyc can merge and report
- * on afterwards. A plain `make e2e`/`make e2e-test` run against the normal,
- * uninstrumented build has no such global, so this is a no-op there.
+ * directly. Two behaviors layered on top of the base test:
+ *
+ * 1. Resets the backend to its seeded baseline before every test (an
+ *    `{ auto: true }` fixture, so no spec file has to remember to call it) -
+ *    POSTs to /api/testing/reset, a route that only exists at all when the
+ *    backend boots with BLINK_ENABLE_TEST_RESET_ENDPOINT=true (every
+ *    e2e-flavored compose profile; never prod). This is what makes it safe
+ *    for a test to mutate shared state (toggle a setting, delete a clip,
+ *    arm/disarm) without leaking into whichever test runs next - the next
+ *    test always starts from the same fixtures backend/app/testing/seed.py
+ *    describes, regardless of what an earlier test changed. Uses Playwright's
+ *    own `request` fixture (no browser page needed) with `failOnStatusCode`
+ *    off so a real reset failure surfaces as a normal Playwright test error
+ *    at the point a test's own data assertions fail, not as an opaque
+ *    fixture-setup crash.
+ * 2. Drains coverage, unchanged from before - see below.
  */
-export const test = base.extend({
+interface Fixtures {
+  /** void - nothing reads its value, the reset is the whole point. */
+  resetDatabase: void;
+}
+
+export const test = base.extend<Fixtures>({
+  resetDatabase: [
+    async ({ request }, use) => {
+      const response = await request.post("/api/testing/reset", { failOnStatusCode: false });
+      if (!response.ok()) {
+        throw new Error(
+          `POST /api/testing/reset returned ${response.status()} - is ` +
+            "BLINK_ENABLE_TEST_RESET_ENDPOINT set on the backend service?",
+        );
+      }
+      await use();
+    },
+    { auto: true },
+  ],
   context: async ({ context }, use, testInfo) => {
     await use(context);
     const coverageDir = process.env.COVERAGE_DIR;
