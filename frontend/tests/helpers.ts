@@ -7,7 +7,13 @@ import { createMemoryHistory, createRouter, type Router } from "vue-router";
 
 import { routes } from "@/router";
 
-import type { BlinkStatusResponse, HealthReport, StorageIntegrationSettingsRead, UserRead } from "@/api";
+import type {
+  BlinkStatusResponse,
+  CameraRead,
+  HealthReport,
+  StorageIntegrationSettingsRead,
+  UserRead,
+} from "@/api";
 
 /** Guard-free router over the real route table. */
 export function makeRouter(): Router {
@@ -45,6 +51,20 @@ export const healthyReport: HealthReport = {
   redis: "ok",
   worker: "ok",
 };
+
+/** Battery "ok", syncing, no security context by default. */
+export function fakeCamera(overrides: Partial<CameraRead> = {}): CameraRead {
+  return {
+    id: "cccccccc-1111-2222-3333-444455556666",
+    name: "Front Door",
+    camera_type: "catalina",
+    enabled: true,
+    battery: "ok",
+    last_synced_at: "2026-07-20T12:00:00Z",
+    security_context: null,
+    ...overrides,
+  };
+}
 
 /** Unlinked by default - pass overrides for a linked/error/etc. shape. */
 export function fakeBlinkStatus(overrides: Partial<BlinkStatusResponse> = {}): BlinkStatusResponse {
