@@ -703,6 +703,25 @@ async def reset_data(session: AsyncSession) -> None:
     # own tests, a future script) can - cheap and correct either way.
     session.expunge_all()
     await seed_data(session)
+    # biometrics_settings (unlike app_settings) holds genuine
+    # user-configurable fields alongside model_download_status - it stays in
+    # RESET_TABLES so those fields really do reset, which means the truncate
+    # also wipes the "model verified" status the boot-time warm-up recorded,
+    # even though the model itself is still cached on disk. Re-verifying here
+    # is cheap (a cache hit, not a re-download) and correctly reflects
+    # reality rather than special-casing one column out of the reset. Never
+    # raises, mirroring warm_up_biometrics_model()'s own philosophy - a
+    # failure here just leaves biometrics on its normal lazy-load path,
+    # rather than failing the whole reset over a side concern.
+    try:
+        settings = get_settings()
+        biometrics_settings = await get_biometrics_settings(session)
+        await session.commit()
+        await download_biometrics_model(
+            session, biometrics_settings, settings.biometrics_model_cache_dir
+        )
+    except Exception as exc:
+        logger.warning("reset_data.biometrics_model_reverify_failed", error=str(exc))
 
 
 async def seed() -> bool:
