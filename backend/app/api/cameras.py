@@ -10,8 +10,8 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.blink.models import Camera
-from app.blink.schemas import CameraRead, CameraUpdate
+from app.blink.models import BatteryEvent, Camera
+from app.blink.schemas import BatteryEventRead, CameraRead, CameraUpdate
 from app.blink.service import BlinkAuthError, BlinkError, LiveViewUnsupportedError
 from app.config import get_settings
 from app.db import get_session
@@ -27,6 +27,10 @@ from app.users.models import User
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/cameras", tags=["cameras"])
+
+# Battery events are rare (a handful per camera per year at most) - a flat
+# cap needs no real pagination UI, just a sane ceiling.
+BATTERY_EVENTS_LIMIT = 50
 
 
 def _live_view_manager(request: Request) -> LiveViewSessionManager:
@@ -62,6 +66,22 @@ async def update_camera(
     await session.commit()
     await session.refresh(camera)
     return camera
+
+
+@router.get("/{camera_id}/battery-events", response_model=list[BatteryEventRead])
+async def list_battery_events(
+    camera_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _user: Annotated[object, Depends(current_active_user)],
+) -> list[BatteryEvent]:
+    await _get_camera_or_404(session, camera_id)
+    result = await session.execute(
+        select(BatteryEvent)
+        .where(BatteryEvent.camera_id == camera_id)
+        .order_by(BatteryEvent.occurred_at.desc())
+        .limit(BATTERY_EVENTS_LIMIT)
+    )
+    return list(result.scalars().all())
 
 
 @router.get("/{camera_id}/preview")

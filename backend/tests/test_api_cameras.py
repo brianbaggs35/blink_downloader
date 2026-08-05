@@ -10,6 +10,7 @@ test_worker_download.py's convention.
 
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -17,7 +18,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
 
-from app.blink.models import BlinkAccount, Camera
+from app.blink.models import BatteryEvent, BlinkAccount, Camera
 from app.blink.service import BlinkAuthError, BlinkError, LiveViewUnsupportedError
 from app.config import get_settings
 from app.livefeed.live_stream import LiveViewStartError
@@ -112,6 +113,58 @@ async def test_update_without_security_context_clears_it(
     response = await admin_client.patch(f"/api/cameras/{camera.id}", json={"enabled": True})
     assert response.status_code == 200
     assert response.json()["security_context"] is None
+
+
+# ------------------------------------------------------------------ battery events
+
+
+async def test_battery_events_requires_authentication(client: AsyncClient, app: FastAPI) -> None:
+    camera = await _make_camera(app)
+    response = await client.get(f"/api/cameras/{camera.id}/battery-events")
+    assert response.status_code == 401
+
+
+async def test_battery_events_unknown_camera_is_404(admin_client: AsyncClient) -> None:
+    response = await admin_client.get(f"/api/cameras/{uuid.uuid4()}/battery-events")
+    assert response.status_code == 404
+
+
+async def test_battery_events_empty_with_no_history(
+    admin_client: AsyncClient, app: FastAPI
+) -> None:
+    camera = await _make_camera(app)
+    response = await admin_client.get(f"/api/cameras/{camera.id}/battery-events")
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+async def test_battery_events_returns_newest_first(admin_client: AsyncClient, app: FastAPI) -> None:
+    camera = await _make_camera(app)
+    now = datetime.now(UTC)
+    async with app.state.sessionmaker() as session:
+        session.add_all(
+            [
+                BatteryEvent(
+                    camera_id=camera.id,
+                    battery="ok",
+                    previous_battery=None,
+                    occurred_at=now - timedelta(days=2),
+                ),
+                BatteryEvent(
+                    camera_id=camera.id,
+                    battery="low",
+                    previous_battery="ok",
+                    occurred_at=now - timedelta(days=1),
+                ),
+            ]
+        )
+        await session.commit()
+
+    response = await admin_client.get(f"/api/cameras/{camera.id}/battery-events")
+    assert response.status_code == 200
+    body = response.json()
+    assert [event["battery"] for event in body] == ["low", "ok"]
+    assert body[0]["previous_battery"] == "ok"
 
 
 # ------------------------------------------------------------------ preview

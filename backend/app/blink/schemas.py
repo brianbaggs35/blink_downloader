@@ -60,6 +60,15 @@ class CameraUpdate(BaseModel):
     security_context: str | None = Field(default=None, max_length=2000)
 
 
+class BatteryEventRead(BaseModel):
+    id: uuid.UUID
+    battery: str | None
+    previous_battery: str | None
+    occurred_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class ClipRead(BaseModel):
     id: uuid.UUID
     camera_id: uuid.UUID
