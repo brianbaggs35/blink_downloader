@@ -142,6 +142,11 @@ async function stopLiveView(slot: Slot): Promise<void> {
   slot.liveSessionId = null;
   slot.livePlaylistUrl = null;
   slot.liveError = "";
+  // Every call site already guards on slot.liveSessionId (which can only be
+  // set alongside a non-null cameraId) before calling this, so the false
+  // branch is unreachable through the UI - kept as a defensive check, not
+  // exercised by a contrived test.
+  /* v8 ignore next */
   if (cameraId && sessionId) {
     try {
       await stopCameraLiveView(cameraId, sessionId);

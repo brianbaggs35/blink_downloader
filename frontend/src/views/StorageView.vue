@@ -121,6 +121,10 @@ function isConnected(backend: StorageBackend): boolean {
 function isBackendVisible(backend: StorageBackend): boolean {
   if (backend === "local") return true;
   if (integrations.value) return isConnected(backend);
+  // visibleBackends (below) is only ever read from inside `v-else-if="summary"`
+  // in the template, so summary.value is always non-null here in practice -
+  // the ?? false fallback is defensive, not exercised by a contrived test.
+  /* v8 ignore next */
   return summary.value?.connected_backends.includes(backend) ?? false;
 }
 
