@@ -9,33 +9,69 @@ import type { Page } from "@playwright/test";
  * Every spec imports `test`/`expect` from here rather than "@playwright/test"
  * directly. Two behaviors layered on top of the base test:
  *
- * 1. Resets the backend to its seeded baseline before every test (an
- *    `{ auto: true }` fixture, so no spec file has to remember to call it) -
- *    POSTs to /api/testing/reset, a route that only exists at all when the
- *    backend boots with BLINK_ENABLE_TEST_RESET_ENDPOINT=true (every
- *    e2e-flavored compose profile; never prod). This is what makes it safe
- *    for a test to mutate shared state (toggle a setting, delete a clip,
- *    arm/disarm) without leaking into whichever test runs next - the next
- *    test always starts from the same fixtures backend/app/testing/seed.py
- *    describes, regardless of what an earlier test changed. Uses Playwright's
- *    own `request` fixture (no browser page needed) with `failOnStatusCode`
- *    off so a real reset failure surfaces as a normal Playwright test error
- *    at the point a test's own data assertions fail, not as an opaque
- *    fixture-setup crash.
+ * 1. Resets the backend before every test (an `{ auto: true }` fixture, so
+ *    no spec file has to remember to call it) via one of four `resetMode`s
+ *    (a test *option*, settable per-file with `test.use({ resetMode: ... })`
+ *    the same way `storageState` is):
+ *      - "seeded" (default) - POSTs /api/testing/reset: truncates domain
+ *        data only (never users/access_tokens) and re-seeds it. This is
+ *        what makes it safe for a test to mutate shared state (toggle a
+ *        setting, delete a clip, arm/disarm) without leaking into whichever
+ *        test runs next.
+ *      - "wipe" - POSTs /api/testing/wipe: truncates identity too, leaving
+ *        a genuinely empty database. Used only by
+ *        tests/onboarding/onboarding.setup.ts, since /setup is a one-shot
+ *        gate reachable only while the users table has zero rows.
+ *      - "restore-baseline" - POSTs /api/testing/reset-baseline: wipes
+ *        everything, then re-seeds identity + domain data (exactly what a
+ *        fresh container boot looks like). Used only by auth.setup.ts,
+ *        immediately after the onboarding project runs, so every later
+ *        test's admin/viewer storage state is backed by a session
+ *        established fresh right there rather than one "wipe" just
+ *        invalidated.
+ *      - "none" - skips the reset entirely. Used by
+ *        tests/onboarding/post-onboarding.spec.ts (so its assertions about
+ *        the freshly-onboarded account aren't disturbed) and by
+ *        viewer-auth.setup.ts (so it doesn't undo what auth.setup.ts's own
+ *        "restore-baseline" just established).
+ *    All three real endpoints only exist at all when the backend boots with
+ *    BLINK_ENABLE_TEST_RESET_ENDPOINT=true (the e2e compose profile; never
+ *    prod). Uses Playwright's own `request` fixture (no browser page
+ *    needed) with `failOnStatusCode` off so a real reset failure surfaces
+ *    as a normal Playwright test error at the point a test's own data
+ *    assertions fail, not as an opaque fixture-setup crash.
  * 2. Drains coverage, unchanged from before - see below.
  */
+export type ResetMode = "seeded" | "wipe" | "restore-baseline" | "none";
+
+const RESET_MODE_PATHS: Record<Exclude<ResetMode, "none">, string> = {
+  seeded: "/api/testing/reset",
+  wipe: "/api/testing/wipe",
+  "restore-baseline": "/api/testing/reset-baseline",
+};
+
 interface Fixtures {
   /** void - nothing reads its value, the reset is the whole point. */
   resetDatabase: void;
 }
+interface Options {
+  resetMode: ResetMode;
+}
 
-export const test = base.extend<Fixtures>({
+export const test = base.extend<Fixtures & Options>({
+  resetMode: ["seeded", { option: true }],
   resetDatabase: [
-    async ({ request }, use) => {
-      const response = await request.post("/api/testing/reset", { failOnStatusCode: false });
+    async ({ request, resetMode }, use) => {
+      if (resetMode === "none") {
+        await use();
+        return;
+      }
+      // eslint-disable-next-line security/detect-object-injection -- resetMode is the narrow ResetMode union (a test option), never untrusted input
+      const path = RESET_MODE_PATHS[resetMode];
+      const response = await request.post(path, { failOnStatusCode: false });
       if (!response.ok()) {
         throw new Error(
-          `POST /api/testing/reset returned ${response.status()} - is ` +
+          `POST ${path} returned ${response.status()} - is ` +
             "BLINK_ENABLE_TEST_RESET_ENDPOINT set on the backend service?",
         );
       }

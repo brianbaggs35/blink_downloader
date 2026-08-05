@@ -1,14 +1,12 @@
-import { expect, test } from "@playwright/test";
-
-import { storageStatePath } from "../fixtures";
+import { expect, storageStatePath, test } from "../../fixtures";
 
 // Cheap assertions about what a freshly-onboarded account looks like -
 // reuses onboarding.setup.ts's saved session instead of re-running the
 // wizard (which can only ever happen once per database - see that file's
-// own comment). Deliberately not using ../fixtures' auto-resetting `test`:
-// see onboarding.setup.ts for why domain-data resets don't belong in this
-// stack at all.
-test.use({ storageState: storageStatePath("onboarding") });
+// own comment). resetMode: "none" since the default "seeded" reset would
+// call seed_data() unconditionally, injecting demo cameras/clips into what's
+// supposed to be a brand-new, empty install.
+test.use({ storageState: storageStatePath("onboarding"), resetMode: "none" });
 
 test("Library shows the no-Blink-linked empty state, not any seeded demo data", async ({
   page,
