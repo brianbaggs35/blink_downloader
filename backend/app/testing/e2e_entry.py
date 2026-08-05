@@ -13,6 +13,7 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config as AlembicConfig
 
+from app.config import get_settings
 from app.testing.seed import seed, warm_up_biometrics_model
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -36,7 +37,10 @@ def main() -> None:
     cfg = AlembicConfig(str(BACKEND_DIR / "alembic.ini"))
     cfg.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
     command.upgrade(cfg, "head")
-    asyncio.run(seed())
+    # See Settings.skip_seed: only the onboarding profile sets this, so its
+    # database stays genuinely empty and /setup's one-shot gate stays open.
+    if not get_settings().skip_seed:
+        asyncio.run(seed())
     # Blocking here (rather than after uvicorn starts) means the container's
     # healthcheck - and so every other e2e-profile service that waits on
     # `condition: service_healthy` - doesn't go green until this is done,

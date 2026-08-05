@@ -86,6 +86,16 @@ class Settings(BaseSettings):
     would - confirmed empirically via real 429s cascading through retries.
     Only ever set true by the e2e/onboarding test-compose profiles."""
 
+    skip_seed: bool = False
+    """Skips app.testing.seed.seed() in the e2e container's own boot
+    sequence (app.testing.e2e_entry), leaving the database genuinely empty -
+    no admin/viewer users, nothing else. /setup is a one-shot gate reachable
+    only while the users table has zero rows (app.api.setup.status), so the
+    plain e2e profile (whose whole suite depends on the seeded admin/demo
+    data already existing at boot) must never set this; only the dedicated
+    onboarding test-compose profile does, specifically so its wizard e2e
+    coverage has real "brand new install" state to drive through."""
+
     @model_validator(mode="after")
     def _fill_or_require_secrets(self) -> Self:
         if self.environment == "production":
