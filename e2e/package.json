@@ -11,7 +11,7 @@
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit",
-    "coverage:report": "nyc report --cwd=/app --temp-dir=/e2e/.nyc_output --report-dir=/e2e/coverage --extension=.vue --extension=.ts --reporter=text --reporter=text-summary --reporter=html"
+    "coverage:report": "nyc report --cwd=/app --temp-dir=/e2e/.nyc_output --report-dir=/e2e/coverage --extension=.vue --extension=.ts --reporter=text --reporter=text-summary --reporter=html --reporter=cobertura"
   },
   "devDependencies": {
     "@playwright/test": "~1.62.0",
