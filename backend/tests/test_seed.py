@@ -1,11 +1,17 @@
 """e2e fixture seeding is idempotent and produces a usable admin + demo data."""
 
+# asyncpg ships no py.typed marker; asyncpg.exceptions comes back Unknown.
+# pyright: reportMissingTypeStubs=false
+
 from pathlib import Path
+from typing import Any
 
 import pytest
+from asyncpg.exceptions import DeadlockDetectedError
 from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy import select, text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.testing.seed as seed_module
@@ -188,6 +194,54 @@ async def test_reset_data_is_repeatable(app_session: AsyncSession, tmp_path: Pat
 
     clips = (await app_session.execute(select(Clip))).scalars().all()
     assert len(clips) == 16
+
+
+async def test_reset_data_retries_a_transient_truncate_deadlock(
+    app_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """TRUNCATE ... CASCADE's ACCESS EXCLUSIVE lock can collide with an
+    ordinary concurrent request under a busy e2e run (e.g. the Library
+    page's own clip/settings fetch) - confirmed via a real
+    DeadlockDetectedError. _truncate_domain_tables must retry that specific,
+    transient error rather than failing the whole reset."""
+    await set_storage_dir(app_session, str(tmp_path))
+    await seed_identity(app_session)
+    await seed_data(app_session)
+
+    real_execute = app_session.execute
+    calls = 0
+
+    async def flaky_execute(*args: Any, **kwargs: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise DBAPIError("TRUNCATE ...", {}, DeadlockDetectedError("deadlock detected"))
+        return await real_execute(*args, **kwargs)
+
+    monkeypatch.setattr(app_session, "execute", flaky_execute)
+
+    await reset_data(app_session)  # must not raise
+
+    clips = (await app_session.execute(select(Clip))).scalars().all()
+    assert len(clips) == 16
+    assert calls >= 2
+
+
+async def test_reset_data_gives_up_after_repeated_deadlocks(
+    app_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A real, non-transient failure must still surface, not retry forever."""
+    await set_storage_dir(app_session, str(tmp_path))
+    await seed_identity(app_session)
+    await seed_data(app_session)
+
+    async def always_deadlocks(*_args: Any, **_kwargs: Any) -> Any:
+        raise DBAPIError("TRUNCATE ...", {}, DeadlockDetectedError("deadlock detected"))
+
+    monkeypatch.setattr(app_session, "execute", always_deadlocks)
+
+    with pytest.raises(DBAPIError):
+        await reset_data(app_session)
 
 
 async def test_reset_data_reverifies_the_biometrics_model(
