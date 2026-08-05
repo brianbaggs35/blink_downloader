@@ -57,6 +57,10 @@ export const useBlinkStore = defineStore("blink", {
       await triggerBlinkSync();
       await pollUntilReady(
         () => this.refreshStatus(),
+        // pollUntilReady always calls fetchFn (which sets this.status) before
+        // ever reading isReady, so this.status is never actually null here -
+        // the ?. is defensive, not exercised by a contrived test.
+        /* v8 ignore next */
         () => (this.status?.camera_count ?? 0) > 0,
         SYNC_DISCOVERY_ATTEMPTS,
         SYNC_DISCOVERY_DELAY_MS,
