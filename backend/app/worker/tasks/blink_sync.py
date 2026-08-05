@@ -43,6 +43,18 @@ SYNC_JOB_NAME = "sync_blink_account"
 
 async def sync_blink_account(ctx: dict[Any, Any]) -> str:
     settings = get_settings()
+    if settings.disable_blink_network_calls:
+        # See Settings.disable_blink_network_calls. This must return before
+        # touching the database at all, not just before calling Blink: this
+        # job self-reschedules every blink_sync_interval_seconds regardless
+        # of whether anything ever clicks "Sync now", and every cycle's
+        # would-be reads (the interval override, then the account row)
+        # briefly held their own transaction open against the e2e test-reset
+        # endpoint's TRUNCATE (ACCESS EXCLUSIVE) - confirmed empirically via
+        # a real asyncpg.exceptions.DeadlockDetectedError under a busy e2e
+        # run. Not re-scheduling is safe too: this flag never flips at
+        # runtime, so every future cycle would only ever repeat "disabled".
+        return "disabled"
     sessionmaker: async_sessionmaker[AsyncSession] = ctx["sessionmaker"]
     # Its own short-lived session: needed in the finally block below, by
     # which point _run_sync's own session has already closed.
@@ -60,18 +72,11 @@ async def sync_blink_account(ctx: dict[Any, Any]) -> str:
 
 
 async def _run_sync(session: AsyncSession, settings: Settings, ctx: dict[Any, Any]) -> str:
+    # disable_blink_network_calls is already handled by sync_blink_account
+    # itself, before this is ever called - see its own docstring-comment.
     account = (await session.execute(select(BlinkAccount))).scalars().first()
     if account is None:
         return "no_account_linked"
-
-    if settings.disable_blink_network_calls:
-        # See Settings.disable_blink_network_calls: the seeded e2e account's
-        # credentials can only ever fail a real call, and this job
-        # self-reschedules every blink_sync_interval_seconds regardless of
-        # whether anything ever clicks "Sync now" - left unguarded, it would
-        # silently flip the seeded "healthy" account status to an auth error
-        # on its own, on a timer, out from under every other e2e test.
-        return "disabled"
 
     box = SecretBox(settings.encryption_key)
     token_data = json.loads(box.decrypt(account.encrypted_token_data))
