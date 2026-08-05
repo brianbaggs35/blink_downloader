@@ -1,4 +1,13 @@
-import { expect, openSettingsSection, seededCameras, seededSyncModule, test } from "../fixtures";
+import {
+  expect,
+  openSettingsSection,
+  seededCameras,
+  seededSyncModule,
+  storageStatePath,
+  test,
+} from "../fixtures";
+
+test.use({ storageState: storageStatePath("admin") });
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/settings");
@@ -64,14 +73,32 @@ test("Alerts panel enables Discord and saves a webhook URL", async ({ page }) =>
   await openSettingsSection(page, "Alerts");
   await expect(page.getByTestId("alerts-form")).toBeVisible();
 
-  // Persistent database, not reseeded between runs - a prior successful run
-  // of this same test may have already left Discord enabled, and .click()
-  // would turn an already-checked switch back off. .check() is idempotent
-  // (a no-op if already checked), so this reaches "enabled" either way.
   await page.getByTestId("discord-enabled").locator("input").check();
   await page.getByTestId("discord-webhook").fill("https://discord.com/api/webhooks/123/abc");
   await page.getByTestId("save-alerts").click();
   await expect(page.getByText("Alert settings saved")).toBeVisible();
+
+  // The database resets before every test (see ../fixtures' auto-reset
+  // fixture), so a reload-based persistence proof is safe here - unlike the
+  // old .check()-only idempotency workaround this replaced, a save from an
+  // earlier test can never leak into this one.
+  await page.reload();
+  await openSettingsSection(page, "Alerts");
+  await expect(page.getByTestId("discord-enabled").locator("input")).toBeChecked();
+});
+
+test("Alerts panel toggles the low-battery alert setting", async ({ page }) => {
+  await openSettingsSection(page, "Alerts");
+  await expect(page.getByTestId("alerts-form")).toBeVisible();
+  await expect(page.getByTestId("alert-on-low-battery").locator("input")).toBeChecked();
+
+  await page.getByTestId("alert-on-low-battery").locator("input").uncheck();
+  await page.getByTestId("save-alerts").click();
+  await expect(page.getByText("Alert settings saved")).toBeVisible();
+
+  await page.reload();
+  await openSettingsSection(page, "Alerts");
+  await expect(page.getByTestId("alert-on-low-battery").locator("input")).not.toBeChecked();
 });
 
 test("Sync Module panel shows the seeded identity, read-only", async ({ page }) => {
