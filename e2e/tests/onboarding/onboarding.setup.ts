@@ -1,22 +1,19 @@
-import { expect, test as setup } from "@playwright/test";
+import { expect, storageStatePath, test as setup } from "../../fixtures";
 
-import { storageStatePath } from "../fixtures";
-
-// Drives the /setup wizard once, on a stack booted with BLINK_SKIP_SEED=true
-// (docker-compose.onboarding.yml) - a genuinely empty database, since /setup
-// is a one-shot gate reachable only while the users table has zero rows
+// Drives the /setup wizard once. resetMode: "wipe" truncates identity too
+// (not just domain data), leaving a genuinely empty database - /setup is a
+// one-shot gate reachable only while the users table has zero rows
 // (frontend/src/router/guards.ts). This must stay a single, linear journey
 // in one test (not split across tests or files): the moment POST /api/setup
-// succeeds, that gate closes for the rest of this stack's lifetime, so
-// there's no "start over" for a second attempt. Everything downstream
-// (post-onboarding-tests/*.spec.ts) reuses the resulting session via
-// storageStatePath("onboarding") instead of re-running this.
-//
-// Deliberately not using ../fixtures' `test`/`expect` (which auto-reset
-// domain data via POST /api/testing/reset before every test) - that reset
-// calls seed_data() unconditionally, which would inject demo cameras/clips
-// into what's supposed to be a brand-new, empty install. Only the
-// side-effect-free storageStatePath() helper is reused from there.
+// succeeds, that gate closes for the rest of this run, so there's no "start
+// over" for a second attempt. post-onboarding.spec.ts (this project's
+// dependent) reuses the resulting session via storageStatePath("onboarding")
+// instead of re-running this; identity-setup-admin (auth.setup.ts, this
+// project's own dependent-of-a-dependent) is what brings the database back
+// to the normal seeded baseline afterward - see playwright.config.ts's own
+// project-graph comment.
+setup.use({ resetMode: "wipe" });
+
 const ADMIN_EMAIL = "onboarding-e2e-admin@example.com";
 const ADMIN_PASSWORD = "a-strong-onboarding-password-123";
 

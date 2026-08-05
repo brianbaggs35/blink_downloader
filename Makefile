@@ -6,13 +6,11 @@ COMPOSE_PROD_GPU := $(COMPOSE_PROD) -f docker-compose.prod.gpu.yml
 COMPOSE_DEV      := docker compose -f docker-compose.dev.yml
 COMPOSE_DEV_GPU  := $(COMPOSE_DEV) -f docker-compose.gpu.yml
 COMPOSE_TEST     := docker compose -f docker-compose.test.yml
-COMPOSE_ONBOARDING := docker compose -f docker-compose.onboarding.yml
 
 .PHONY: help secrets certs prod prod-start prod-gpu prod-gpu-start prod-stop prod-logs prod-down \
 	dev dev-start dev-gpu dev-gpu-start dev-stop dev-logs dev-down \
 	test test-db test-stop test-backend test-backend-fast test-frontend \
 	e2e e2e-up e2e-up-start e2e-test e2e-down \
-	e2e-onboarding e2e-onboarding-up e2e-onboarding-test e2e-onboarding-down \
 	lint lint-backend lint-frontend fmt migrate makemigration api-types \
 	db-shell clean
 
@@ -130,25 +128,6 @@ e2e-test: ## Run Playwright against an already-running `make e2e-up` stack
 e2e-down: ## Tear down the e2e stack
 	$(COMPOSE_TEST) --profile e2e down -v
 
-e2e-onboarding: certs ## Build, boot an unseeded stack, and run the onboarding wizard suite end to end (tears down after)
-	@$(COMPOSE_ONBOARDING) down -v --remove-orphans 2>/dev/null || true
-	$(COMPOSE_ONBOARDING) up --build -d postgres redis backend worker frontend
-	$(COMPOSE_ONBOARDING) run --rm --no-deps playwright; \
-	status=$$?; \
-	if [ "$$status" -ne 0 ]; then $(COMPOSE_ONBOARDING) logs postgres redis backend worker frontend; fi; \
-	$(COMPOSE_ONBOARDING) down -v; exit $$status
-
-e2e-onboarding-up: certs ## Bring up the unseeded onboarding stack and leave it running, always (re)building images first
-	@$(COMPOSE_ONBOARDING) down -v --remove-orphans 2>/dev/null || true
-	$(COMPOSE_ONBOARDING) up --build -d postgres redis backend worker frontend
-	@echo "onboarding stack up: https://localhost:8444 - run 'make e2e-onboarding-test' to run Playwright, 'make e2e-onboarding-down' when done"
-
-e2e-onboarding-test: ## Run the onboarding Playwright suite against an already-running `make e2e-onboarding-up` stack
-	$(COMPOSE_ONBOARDING) run --rm --no-deps playwright
-
-e2e-onboarding-down: ## Tear down the onboarding stack
-	$(COMPOSE_ONBOARDING) down -v
-
 e2e-coverage: certs ## Run e2e against an istanbul-instrumented frontend and report code coverage
 	@$(COMPOSE_TEST) --profile e2e down -v --remove-orphans 2>/dev/null || true
 	@rm -rf e2e/.nyc_output e2e/coverage
@@ -206,4 +185,3 @@ clean: ## Stop everything and remove volumes (DESTROYS local data)
 	$(COMPOSE_PROD) down -v --remove-orphans 2>/dev/null || true
 	$(COMPOSE_DEV) down -v --remove-orphans 2>/dev/null || true
 	$(COMPOSE_TEST) --profile e2e --profile unit down -v --remove-orphans 2>/dev/null || true
-	$(COMPOSE_ONBOARDING) down -v --remove-orphans 2>/dev/null || true
