@@ -484,6 +484,23 @@ export interface paths {
         patch: operations["update_camera_api_cameras__camera_id__patch"];
         trace?: never;
     };
+    "/api/cameras/{camera_id}/battery-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Battery Events */
+        get: operations["list_battery_events_api_cameras__camera_id__battery_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/cameras/{camera_id}/preview": {
         parameters: {
             query?: never;
@@ -1687,6 +1704,8 @@ export interface components {
             suspicion_alert_threshold: number;
             /** Alert On Vehicle Proximity */
             alert_on_vehicle_proximity: boolean;
+            /** Alert On Low Battery */
+            alert_on_low_battery: boolean;
             /** Quiet Hours Start */
             quiet_hours_start: string | null;
             /** Quiet Hours End */
@@ -1750,6 +1769,11 @@ export interface components {
              * @default true
              */
             alert_on_vehicle_proximity: boolean;
+            /**
+             * Alert On Low Battery
+             * @default true
+             */
+            alert_on_low_battery: boolean;
             /** Quiet Hours Start */
             quiet_hours_start?: string | null;
             /** Quiet Hours End */
@@ -1829,6 +1853,23 @@ export interface components {
             clip_count: number;
             /** Total Bytes */
             total_bytes: number;
+        };
+        /** BatteryEventRead */
+        BatteryEventRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Battery */
+            battery: string | null;
+            /** Previous Battery */
+            previous_battery: string | null;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
         };
         /** BiometricsSettingsRead */
         BiometricsSettingsRead: {
@@ -3984,6 +4025,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CameraRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_battery_events_api_cameras__camera_id__battery_events_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                camera_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatteryEventRead"][];
                 };
             };
             /** @description Validation Error */

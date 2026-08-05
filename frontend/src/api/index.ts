@@ -16,6 +16,7 @@ export type BlinkStatusResponse = components["schemas"]["BlinkStatusResponse"];
 export type DailyClipCount = components["schemas"]["DailyClipCount"];
 
 export type CameraRead = components["schemas"]["CameraRead"];
+export type BatteryEventRead = components["schemas"]["BatteryEventRead"];
 
 export type LiveViewSettingsRead = components["schemas"]["LiveViewSettingsRead"];
 export type LiveViewSettingsUpdate = components["schemas"]["LiveViewSettingsUpdate"];
@@ -172,6 +173,10 @@ export function updateCamera(
     method: "PATCH",
     json: { enabled, security_context: securityContext },
   });
+}
+
+export function getCameraBatteryEvents(cameraId: string): Promise<BatteryEventRead[]> {
+  return api<BatteryEventRead[]>(`/cameras/${cameraId}/battery-events`);
 }
 
 /** Same-origin, cookie-authenticated - use directly as an <img src>.

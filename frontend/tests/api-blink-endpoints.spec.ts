@@ -9,6 +9,7 @@ import {
   downloadClipsAsZip,
   getBlinkStatus,
   getBlinkSyncSettings,
+  getCameraBatteryEvents,
   getClip,
   getStorageSettings,
   linkBlinkAccount,
@@ -100,6 +101,12 @@ describe("camera endpoints", () => {
       enabled: true,
       security_context: "Watches the driveway",
     });
+  });
+
+  it("getCameraBatteryEvents GETs the camera's battery-events history", async () => {
+    const mock = capture(jsonResponse([]));
+    await getCameraBatteryEvents("1");
+    expect(mock.mock.calls[0]?.[0]).toBe("/api/cameras/1/battery-events");
   });
 });
 
