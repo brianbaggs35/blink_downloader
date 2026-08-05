@@ -26,10 +26,8 @@ test("toggles never-mark-suspicious for the seeded person", async ({ page }) => 
   await page.getByText(seededPerson.name).click();
   await expect(page.getByTestId("person-detail-panel")).toBeVisible();
 
-  // .check()/.uncheck() are idempotent (a no-op if already in that state),
-  // unlike .click() - this suite runs against a persistent, not-reseeded-
-  // between-runs database, so a prior run may have left this checked.
   const toggle = page.getByTestId("never-mark-suspicious-toggle").locator("input");
+  await expect(toggle).not.toBeChecked();
   await toggle.check();
   await expect(toggle).toBeChecked();
   // The checked state above is v-model's own optimistic UI update, not
@@ -42,12 +40,6 @@ test("toggles never-mark-suspicious for the seeded person", async ({ page }) => 
 
   await page.getByTestId("back-to-people").click();
   await expect(page.getByTestId("trusted-icon")).toBeVisible();
-
-  // Leave it as found for any other test that reuses this seeded person.
-  await page.getByText(seededPerson.name).click();
-  const cleanupToggle = page.getByTestId("never-mark-suspicious-toggle").locator("input");
-  await cleanupToggle.uncheck();
-  await expect(cleanupToggle).toBeEnabled();
 });
 
 test("opens the add-person dialog", async ({ page }) => {
@@ -84,7 +76,7 @@ test("creates a new person and deletes it again", async ({ page }) => {
   await expect(page.getByText(name)).toBeHidden();
 });
 
-test("renames the seeded person, then restores the original name", async ({ page }) => {
+test("renames the seeded person", async ({ page }) => {
   await page.getByText(seededPerson.name).click();
   await expect(page.getByTestId("person-detail-panel")).toBeVisible();
 
@@ -97,12 +89,6 @@ test("renames the seeded person, then restores the original name", async ({ page
   await expect(
     page.getByRole("heading", { name: `${seededPerson.name} (renamed)`, exact: true }),
   ).toBeVisible();
-
-  // Leave it as found for any other test that looks this person up by name.
-  await page.getByTestId("person-rename-start").click();
-  await page.getByTestId("person-name-input").fill(seededPerson.name);
-  await page.getByTestId("person-name-save").click();
-  await expect(page.getByRole("heading", { name: seededPerson.name, exact: true })).toBeVisible();
 });
 
 test("cancels an in-progress rename without saving", async ({ page }) => {

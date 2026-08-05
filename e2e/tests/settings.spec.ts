@@ -53,12 +53,6 @@ test("changing the default landing page persists across a reload", async ({ page
 
   await page.reload();
   await expect(page.getByTestId("default-landing-page")).toContainText("Security Feed");
-
-  // Restore the default so other tests (and a fresh login) land on Library.
-  await page.getByTestId("default-landing-page").click();
-  await page.getByRole("option", { name: "Library" }).click();
-  await page.getByTestId("save-profile").click();
-  await expect(page.getByText("Profile saved")).toBeVisible();
 });
 
 test("Live View settings can be changed and saved", async ({ page }) => {
@@ -67,15 +61,7 @@ test("Live View settings can be changed and saved", async ({ page }) => {
 
   await page.getByTestId("auto-refresh-default").click();
   await page.getByTestId("save-live-view-settings").click();
-  // .last(): saving twice in this test (to restore state below) can leave
-  // two toasts with identical text on screen briefly - either is fine proof
-  // the save succeeded, so avoid strict-mode ambiguity by taking the latest.
-  await expect(page.getByText("Live View settings saved").last()).toBeVisible();
-
-  // Leave it as it started for any other test that opens Live View itself.
-  await page.getByTestId("auto-refresh-default").click();
-  await page.getByTestId("save-live-view-settings").click();
-  await expect(page.getByText("Live View settings saved").last()).toBeVisible();
+  await expect(page.getByText("Live View settings saved")).toBeVisible();
 });
 
 test("Security Feed settings can reorder chosen cameras and save", async ({ page }) => {
@@ -85,11 +71,5 @@ test("Security Feed settings can reorder chosen cameras and save", async ({ page
   await page.getByTestId("security-feed-columns").click();
   await page.getByRole("option", { name: "3 columns" }).click();
   await page.getByTestId("save-security-feed-settings").click();
-  await expect(page.getByText("Security Feed settings saved").last()).toBeVisible();
-
-  // Restore the default column count.
-  await page.getByTestId("security-feed-columns").click();
-  await page.getByRole("option", { name: "2 columns" }).click();
-  await page.getByTestId("save-security-feed-settings").click();
-  await expect(page.getByText("Security Feed settings saved").last()).toBeVisible();
+  await expect(page.getByText("Security Feed settings saved")).toBeVisible();
 });

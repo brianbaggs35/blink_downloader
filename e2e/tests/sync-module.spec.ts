@@ -22,8 +22,7 @@ test("shows the seeded armed state prominently", async ({ page }) => {
 
 // The seeded e2e stack always runs with BLINK_DISABLE_BLINK_NETWORK_CALLS=true
 // (no live Blink account), and each of these guards fires before any DB
-// write, so clicking never actually changes the seeded state - safe to run
-// repeatedly against the same, not-reseeded-between-runs database.
+// write, so clicking never actually changes the seeded state.
 test("disarming surfaces the disabled-network-calls error and leaves state unchanged", async ({
   page,
 }) => {
