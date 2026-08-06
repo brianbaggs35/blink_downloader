@@ -91,8 +91,17 @@ async function refreshAll(): Promise<void> {
   }
 }
 
-function ensurePolling(): void {
-  if (pollTimer || !isSettling()) return;
+// force is for right after triggering an action (refresh/download/delete):
+// the request that kicked it off has already resolved (the job is merely
+// *enqueued*), so isSettling() reading the state from just before the
+// worker has even started - or already raced past REFRESHING straight to a
+// terminal status matching some *other* pre-click value, like a download
+// button's own "available" starting state - would otherwise skip polling
+// altogether and leave the row showing stale status forever. Forcing one
+// poll cycle guarantees a fresh look after the (typically sub-second)
+// worker run has actually landed, regardless of what this snapshot saw.
+function ensurePolling({ force = false }: { force?: boolean } = {}): void {
+  if (pollTimer || (!force && !isSettling())) return;
   pollTimer = setInterval(() => {
     void (async () => {
       await refreshAll();
@@ -162,7 +171,7 @@ async function triggerRefresh(): Promise<void> {
   } finally {
     refreshingManifest.value = false;
     await refreshAll();
-    ensurePolling();
+    ensurePolling({ force: true });
   }
 }
 
@@ -180,7 +189,7 @@ async function triggerDownload(item: SyncModuleLocalItemRead): Promise<void> {
     });
   } finally {
     await refreshAll();
-    ensurePolling();
+    ensurePolling({ force: true });
   }
 }
 
@@ -206,7 +215,7 @@ async function triggerDelete(item: SyncModuleLocalItemRead): Promise<void> {
     });
   } finally {
     await refreshAll();
-    ensurePolling();
+    ensurePolling({ force: true });
   }
 }
 
