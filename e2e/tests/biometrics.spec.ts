@@ -99,6 +99,23 @@ test("cancels an in-progress rename without saving", async ({ page }) => {
   await expect(page.getByRole("heading", { name: seededPerson.name, exact: true })).toBeVisible();
 });
 
+test("deletes the seeded person's face sample", async ({ page }) => {
+  await page.getByText(seededPerson.name).click();
+  await expect(page.getByTestId("face-grid")).toBeVisible();
+  const faceItem = page.locator('[data-testid^="face-item-"]');
+  await expect(faceItem).toHaveCount(1);
+
+  await page.locator('[data-testid^="delete-face-"]').click();
+  const dialog = page.getByRole("alertdialog", { name: "Delete face sample" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Delete" }).click();
+
+  // face-grid only renders while faces.length > 0 - deleting the only
+  // sample replaces it with the EmptyState.
+  await expect(page.getByText("0 enrolled face sample(s)")).toBeVisible();
+  await expect(page.getByText("No face samples yet")).toBeVisible();
+});
+
 test("the enrollment panel walks camera and time-range selection down to a clip picker", async ({
   page,
 }) => {
