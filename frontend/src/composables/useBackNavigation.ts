@@ -11,7 +11,11 @@ interface UseBackNavigation {
   goBack: () => void;
 }
 
-const previousRoute = ref<RouteSnapshot | null>(null);
+// Exported directly (not just via useBackNavigation()'s return value) so
+// call sites that only need to read/reset it - e.g. a test's beforeEach -
+// don't have to invoke useRouter() (and its own inject()) outside a
+// component's setup().
+export const previousRoute: Ref<RouteSnapshot | null> = ref(null);
 
 /** Registered once, in router/index.ts alongside the auth guard. Ignores the
  * app's very first navigation (from has no matched route yet) and

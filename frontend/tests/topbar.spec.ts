@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createMemoryHistory, createRouter } from "vue-router";
 
 import TopBar from "@/components/TopBar.vue";
-import { recordPreviousRoute, useBackNavigation } from "@/composables/useBackNavigation";
+import { previousRoute, recordPreviousRoute } from "@/composables/useBackNavigation";
 import { useMobileNav } from "@/composables/useMobileNav";
 import { useAuthStore } from "@/stores/auth";
 import { fakeUser, makePinia, makeRouter, mountGlobal } from "./helpers";
@@ -20,7 +20,10 @@ import { logout } from "@/api";
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(logout).mockResolvedValue(undefined);
-  useBackNavigation().previousRoute.value = null;
+  // Reset the module-level ref directly, not via useBackNavigation() - that
+  // also calls useRouter(), which warns ("inject() can only be used inside
+  // setup()") when invoked outside a component's setup(), as it would be here.
+  previousRoute.value = null;
 });
 
 async function mountBar(path = "/status") {
