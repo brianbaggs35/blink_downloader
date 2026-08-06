@@ -417,6 +417,33 @@ describe("SyncModuleLocalStorageBrowser download", () => {
     );
   });
 
+  it("recovers via polling even if the immediate post-click refetch races ahead of the worker", async () => {
+    // The click's own refetch (triggerDownload's finally) can land before the
+    // background worker has written anything at all - still "available",
+    // not yet "preparing". A snapshot-only isSettling() check would read
+    // that as "nothing to wait for" and never start polling, leaving the
+    // row stuck forever once the worker's real, later write never gets
+    // seen. ensurePolling({ force: true }) must poll again regardless.
+    mockedItems
+      .mockResolvedValueOnce([availableItem])
+      .mockResolvedValueOnce([availableItem])
+      .mockResolvedValue([{ ...availableItem, status: "error", last_error: "Device busy." }]);
+    mockedSyncModules.mockResolvedValue([syncModuleFixture()]);
+    mockedDownload.mockResolvedValue(undefined);
+    const wrapper = mountBrowser();
+    await flushPromises();
+
+    await wrapper.find(`[data-testid="download-item-${availableItem.id}"]`).trigger("click");
+    await flushPromises();
+    expect(wrapper.find(`[data-testid="item-status-${availableItem.id}"]`).text()).toBe(
+      "Available",
+    );
+
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(wrapper.find(`[data-testid="item-status-${availableItem.id}"]`).text()).toBe("Error");
+    expect(wrapper.text()).toContain("Device busy.");
+  });
+
   it("toasts an error when queuing a download fails", async () => {
     mockedItems.mockResolvedValue([availableItem]);
     mockedSyncModules.mockResolvedValue([syncModuleFixture()]);
