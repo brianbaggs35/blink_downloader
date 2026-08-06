@@ -61,6 +61,45 @@ test("starting a live stream surfaces the outcome inline, without breaking the p
   await expect(page.getByTestId("primary-preview")).toBeVisible();
 });
 
+test("auto-refresh can be toggled on and off", async ({ page }) => {
+  const toggle = page.getByTestId("auto-refresh-toggle").locator("input");
+  await expect(toggle).not.toBeChecked();
+  await toggle.check();
+  await expect(toggle).toBeChecked();
+  await toggle.uncheck();
+  await expect(toggle).not.toBeChecked();
+});
+
+test("the Screenshot button downloads a snapshot of the current preview", async ({ page }) => {
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByTestId("primary-screenshot").click(),
+  ]);
+  expect(download.suggestedFilename()).toMatch(/\.jpg$/);
+});
+
+test("the secondary panel supports switching cameras, refreshing, saving a clip, and starting a live stream", async ({
+  page,
+}) => {
+  await page.getByTestId("toggle-compare").click();
+  await expect(page.getByTestId("secondary-preview")).toBeVisible();
+
+  await page.getByTestId("secondary-camera-select").click();
+  await page.getByRole("option", { name: seededCameras.frontDoor }).click();
+  await expect(page.getByTestId("secondary-preview")).toBeVisible();
+
+  await page.getByTestId("secondary-refresh").click();
+  await expect(page.getByTestId("secondary-refresh")).toBeEnabled();
+  await expect(page.locator(".preview-overlay")).toHaveCount(0);
+
+  await page.getByTestId("secondary-save-clip").click();
+  await expect(page.getByText("Could not start recording")).toBeVisible();
+
+  await page.getByTestId("secondary-live-toggle").click();
+  await expect(page.getByTestId("secondary-live-error")).toBeVisible();
+  await expect(page.getByTestId("secondary-preview")).toBeVisible();
+});
+
 test("collapsing the sidebar from Live View's own toggle frees up width", async ({ page }) => {
   await page.getByTestId("live-view-sidebar-toggle").click();
   await expect(page.locator(".sidebar.collapsed")).toBeVisible();

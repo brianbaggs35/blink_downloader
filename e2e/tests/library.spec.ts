@@ -57,6 +57,89 @@ test("opens a clip and shows its AI analysis, closing on request", async ({ page
   await expect(page.getByTestId("clip-modal")).toBeHidden();
 });
 
+test("re-analyzing a clip queues a fresh analysis", async ({ page }) => {
+  const recognizedCard = page.locator(
+    '[data-testid="clip-card"]:has([data-testid="recognized-badge"])',
+  );
+  await recognizedCard.click();
+  await expect(page.getByTestId("analysis-body")).toBeVisible();
+
+  await page.getByTestId("reanalyze").click();
+  await expect(page.getByText("Analysis queued")).toBeVisible();
+});
+
+test("downloading a clip's file actually serves it", async ({ page }) => {
+  await page.getByTestId("clip-card").first().click();
+  const link = page.getByTestId("modal-download");
+  await expect(link).toBeVisible();
+  const href = await link.getAttribute("href");
+  const response = await page.request.get(href!);
+  expect(response.ok()).toBe(true);
+  expect(response.headers()["content-type"]).toContain("video/mp4");
+});
+
+test("giving feedback on an analysis is recorded and thanks the reviewer", async ({ page }) => {
+  const recognizedCard = page.locator(
+    '[data-testid="clip-card"]:has([data-testid="recognized-badge"])',
+  );
+  await recognizedCard.click();
+  await expect(page.getByTestId("analysis-body")).toBeVisible();
+
+  await page.getByTestId("feedback-false-positive").click();
+  await expect(page.getByTestId("feedback-thanks")).toBeVisible();
+  await expect(page.getByTestId("feedback-correct")).toHaveCount(0);
+});
+
+test("reporting a recognized entity as a false positive corrects it", async ({ page }) => {
+  const recognizedCard = page.locator(
+    '[data-testid="clip-card"]:has([data-testid="recognized-badge"])',
+  );
+  await recognizedCard.click();
+  await expect(page.getByTestId("recognized-entity-tag").first()).toBeVisible();
+
+  await page.locator('[data-testid^="report-false-positive-"]').click();
+  const dialog = page.getByRole("alertdialog", { name: "Report incorrect recognition" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Report" }).click();
+
+  await expect(page.getByText("Thanks — recognition corrected")).toBeVisible();
+  await expect(page.getByTestId("recognized-entity-tag")).toHaveCount(0);
+});
+
+test("the missed-face flow opens the enrollment dialog and keeps submit disabled without a picked face", async ({
+  page,
+}) => {
+  const recognizedCard = page.locator(
+    '[data-testid="clip-card"]:has([data-testid="recognized-badge"])',
+  );
+  await recognizedCard.click();
+  await expect(page.getByTestId("analysis-body")).toBeVisible();
+
+  await page.getByTestId("report-missed-face").click();
+  await expect(page.getByText("Didn't recognize someone in this clip?")).toBeVisible();
+  await page.getByTestId("report-missed-face-confirm").click();
+
+  const dialog = page.getByTestId("report-missed-face-dialog");
+  await expect(dialog).toBeVisible();
+  await expect(page.getByTestId("picker-no-faces")).toBeVisible();
+
+  const submit = dialog.getByTestId("report-missed-face-confirm");
+  await expect(submit).toBeDisabled();
+
+  await page.getByTestId("report-missed-person-select").click();
+  await page.getByRole("option", { name: seededPerson.name }).click();
+  await expect(submit).toBeDisabled();
+
+  await page.getByTestId("report-missed-new-person-name").fill("Someone New");
+  await expect(page.getByTestId("report-missed-person-select")).toContainText(
+    "Choose someone already enrolled",
+  );
+  await expect(submit).toBeDisabled();
+
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
+});
+
 test("selecting clips reveals the bulk action bar", async ({ page }) => {
   await expect(page.getByTestId("bulk-bar")).toBeHidden();
   await page.getByTestId("clip-select").first().click();
