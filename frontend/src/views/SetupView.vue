@@ -233,7 +233,10 @@ function finish(): void {
               for="display-name"
             >
               <span class="field-label">Display name</span>
-              <InputText
+              <!-- kebab-case tag: SonarQube's autocomplete check only recognizes native
+              input/select/textarea tags and skips hyphenated custom-element tags; PascalCase
+              component tags are treated as plain unknown elements and fail Web:S6840 -->
+              <input-text
                 id="display-name"
                 v-model="displayName"
                 autocomplete="name"

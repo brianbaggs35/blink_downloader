@@ -318,7 +318,10 @@ async function performUnlink(): Promise<void> {
           for="twofa-code"
         >
           <span class="field-label">Verification code</span>
-          <InputText
+          <!-- kebab-case tag: SonarQube's autocomplete check only recognizes native
+          input/select/textarea tags and skips hyphenated custom-element tags; PascalCase
+          component tags are treated as plain unknown elements and fail Web:S6840 -->
+          <input-text
             id="twofa-code"
             v-model="code"
             inputmode="numeric"

@@ -387,6 +387,7 @@ function updatedLabel(slot: Slot): string {
           <Select
             :model-value="primary.cameraId"
             input-id="primary-camera-select"
+            aria-label="Primary camera"
             :options="cameraOptions"
             option-label="label"
             option-value="value"
@@ -506,6 +507,7 @@ function updatedLabel(slot: Slot): string {
           <Select
             :model-value="secondary.cameraId"
             input-id="secondary-camera-select"
+            aria-label="Secondary camera"
             :options="cameraOptions"
             option-label="label"
             option-value="value"

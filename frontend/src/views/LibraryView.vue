@@ -445,6 +445,7 @@ async function performSingleDelete(clip: ClipRead): Promise<void> {
           <Select
             v-model="cameraFilter"
             input-id="camera-filter"
+            aria-label="Filter by camera"
             :options="cameras"
             option-label="name"
             option-value="id"
@@ -475,6 +476,7 @@ async function performSingleDelete(clip: ClipRead): Promise<void> {
             v-if="people.length > 0"
             v-model="recognizedPersonFilter"
             input-id="recognized-person-filter"
+            aria-label="Filter by recognized person"
             :options="people"
             option-label="name"
             option-value="id"
@@ -536,6 +538,7 @@ async function performSingleDelete(clip: ClipRead): Promise<void> {
             v-if="configuredCloudBackends.length > 0"
             v-model="archiveDestination"
             input-id="bulk-archive-destination"
+            aria-label="Archive destination"
             :options="configuredCloudBackends"
             option-label="label"
             option-value="value"
