@@ -25,6 +25,17 @@ async def download_biometrics_model_job(ctx: dict[Any, Any]) -> str:
     sessionmaker: async_sessionmaker[AsyncSession] = ctx["sessionmaker"]
     async with sessionmaker() as session:
         biometrics_settings = await get_biometrics_settings(session)
+        # Postgres holds a SELECT's ACCESS SHARE table lock until the
+        # transaction actually commits, not just until the statement
+        # finishes - without this commit, that lock would sit open for the
+        # full duration of download_biometrics_model's slow, thread-pooled
+        # model load below, which can collide with an e2e test reset's
+        # TRUNCATE (ACCESS EXCLUSIVE conflicts with every other lock mode).
+        # Safe to keep using biometrics_settings afterward: sessionmaker is
+        # built with expire_on_commit=False. Mirrors the commit-before-the-
+        # slow-call pattern app.testing.seed's own reset-time re-verify call
+        # to this same function already uses.
+        await session.commit()
         try:
             await download_biometrics_model(
                 session, biometrics_settings, settings.biometrics_model_cache_dir
