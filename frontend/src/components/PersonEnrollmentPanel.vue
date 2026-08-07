@@ -139,6 +139,7 @@ async function confirmEnroll(): Promise<void> {
         <Select
           v-model="cameraId"
           input-id="enroll-camera-select"
+          aria-label="Camera"
           :options="cameras"
           option-label="name"
           option-value="id"

@@ -265,6 +265,7 @@ const hoveredProvider = ref<number | null>(null);
             v-for="(entry, index) in byProviderSorted"
             :key="`${entry.provider}-${entry.model}`"
             class="bar-row"
+            role="button"
             tabindex="0"
             :data-testid="`bar-row-${index}`"
             @mouseenter="hoveredProvider = index"

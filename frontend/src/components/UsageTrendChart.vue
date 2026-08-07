@@ -150,6 +150,7 @@ function clearHover(): void {
           :key="point.date"
           class="hit-band"
           :style="{ left: `${(index / points.length) * 100}%`, width: `${(bandWidth / CHART_W) * 100}%` }"
+          role="button"
           tabindex="0"
           :data-testid="`hit-${index}`"
           :aria-label="`${dayLabel(point.date)}: ${formatValue(point.value)}`"
