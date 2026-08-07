@@ -31,6 +31,7 @@ from app.security.crypto import CryptoError, SecretBox
 from app.storage.service import ClipStorage
 
 PREVIEW_FRESHNESS_SECONDS = 8
+_NO_BLINK_ACCOUNT_LINKED_MESSAGE = "No Blink account linked."
 
 
 async def _load_token_data(
@@ -147,7 +148,7 @@ async def get_camera_preview(
 
     account = await session.get(BlinkAccount, camera.blink_account_id)
     if account is None:  # pragma: no cover — FK guarantees this can't happen
-        raise BlinkError("No Blink account linked.")
+        raise BlinkError(_NO_BLINK_ACCOUNT_LINKED_MESSAGE)
 
     token_data = await _load_token_data(session, settings, account)
     service = BlinkPyService(token_data)
@@ -202,7 +203,7 @@ async def start_live_view(
 
     account = await session.get(BlinkAccount, camera.blink_account_id)
     if account is None:  # pragma: no cover — FK guarantees this can't happen
-        raise BlinkError("No Blink account linked.")
+        raise BlinkError(_NO_BLINK_ACCOUNT_LINKED_MESSAGE)
 
     token_data = await _load_token_data(session, settings, account)
     service = BlinkPyService(token_data)
@@ -236,7 +237,7 @@ async def record_camera_clip(session: AsyncSession, settings: Settings, camera: 
 
     account = await session.get(BlinkAccount, camera.blink_account_id)
     if account is None:  # pragma: no cover — FK guarantees this can't happen
-        raise BlinkError("No Blink account linked.")
+        raise BlinkError(_NO_BLINK_ACCOUNT_LINKED_MESSAGE)
 
     token_data = await _load_token_data(session, settings, account)
     service = BlinkPyService(token_data)

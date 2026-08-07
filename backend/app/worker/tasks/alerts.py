@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.alerts.delivery import AlertDeliveryError, send_discord, send_email, send_slack
+from app.alerts.models import AlertSettings
 from app.alerts.service import get_alert_settings, is_within_quiet_hours, should_dedupe
 from app.config import get_settings
 from app.logs import get_logger
@@ -31,6 +32,52 @@ async def _deliver(
     return True
 
 
+async def _try_discord(
+    alert_settings: AlertSettings,
+    box: SecretBox,
+    reason: str,
+    message: str,
+    failures: list[str],
+) -> bool:
+    if not (alert_settings.discord_enabled and alert_settings.encrypted_discord_webhook_url):
+        return False
+    webhook_url = box.decrypt(alert_settings.encrypted_discord_webhook_url)
+    return await _deliver("discord", reason, failures, lambda: send_discord(webhook_url, message))
+
+
+async def _try_slack(
+    alert_settings: AlertSettings,
+    box: SecretBox,
+    reason: str,
+    message: str,
+    failures: list[str],
+) -> bool:
+    if not (alert_settings.slack_enabled and alert_settings.encrypted_slack_webhook_url):
+        return False
+    webhook_url = box.decrypt(alert_settings.encrypted_slack_webhook_url)
+    return await _deliver("slack", reason, failures, lambda: send_slack(webhook_url, message))
+
+
+async def _try_smtp(
+    alert_settings: AlertSettings,
+    box: SecretBox,
+    reason: str,
+    message: str,
+    failures: list[str],
+) -> bool:
+    if not alert_settings.smtp_enabled:
+        return False
+    password = (
+        box.decrypt(alert_settings.encrypted_smtp_password)
+        if alert_settings.encrypted_smtp_password
+        else None
+    )
+    subject = f"Blink AI Security: {reason}"
+    return await _deliver(
+        "smtp", reason, failures, lambda: send_email(alert_settings, subject, message, password)
+    )
+
+
 async def send_alert(ctx: dict[Any, Any], *, camera_id: str, reason: str, message: str) -> str:
     settings = get_settings()
     async with ctx["sessionmaker"]() as session:
@@ -42,35 +89,14 @@ async def send_alert(ctx: dict[Any, Any], *, camera_id: str, reason: str, messag
             return "deduped"
 
         box = SecretBox(settings.encryption_key)
-        sent_any = False
         failures: list[str] = []
-
-        if alert_settings.discord_enabled and alert_settings.encrypted_discord_webhook_url:
-            webhook_url = box.decrypt(alert_settings.encrypted_discord_webhook_url)
-            if await _deliver(
-                "discord", reason, failures, lambda: send_discord(webhook_url, message)
-            ):
-                sent_any = True
-
-        if alert_settings.slack_enabled and alert_settings.encrypted_slack_webhook_url:
-            webhook_url = box.decrypt(alert_settings.encrypted_slack_webhook_url)
-            if await _deliver("slack", reason, failures, lambda: send_slack(webhook_url, message)):
-                sent_any = True
-
-        if alert_settings.smtp_enabled:
-            password = (
-                box.decrypt(alert_settings.encrypted_smtp_password)
-                if alert_settings.encrypted_smtp_password
-                else None
-            )
-            subject = f"Blink AI Security: {reason}"
-            if await _deliver(
-                "smtp",
-                reason,
-                failures,
-                lambda: send_email(alert_settings, subject, message, password),
-            ):
-                sent_any = True
+        sent_any = any(
+            [
+                await _try_discord(alert_settings, box, reason, message, failures),
+                await _try_slack(alert_settings, box, reason, message, failures),
+                await _try_smtp(alert_settings, box, reason, message, failures),
+            ]
+        )
 
         if sent_any:
             logger.info("alerts.sent", reason=reason, camera_id=camera_id, failures=len(failures))
