@@ -340,6 +340,57 @@ jobs:
         # own per-platform builds, not reused from docker-build's amd64
         # native one - a missing arm64 wheel would surface right here.
         run: docker run --rm --platform ${{ matrix.platform }} blink-app:smoke-${{ matrix.arch }} /app/.venv/bin/python -c "import app.main"
+      - name: Generate a self-signed TLS cert
+        run: make certs
+      - name: Start a throwaway Redis + the app image as real running containers (${{ matrix.platform }})
+        # Unlike the import-only check above, this runs the image's real
+        # entrypoint (supervisord: nginx + uvicorn + arq worker) to confirm
+        # all three come up and stay up together. A reachable Redis is a
+        # hard requirement even just to boot - arq's create_pool() pings it
+        # during FastAPI's own startup lifespan, so the API process
+        # crash-loops without one (confirmed empirically). Postgres has no
+        # such requirement (SQLAlchemy's engine connects lazily), so
+        # /health reporting "degraded" for the database component below is
+        # expected and fine - a real Postgres+migrations is prod-smoke's
+        # job (amd64-only). A dedicated bridge network is required for
+        # container-name DNS between the two (confirmed empirically that
+        # --network host does not reach the host's published ports at all
+        # under a VM-backed Docker engine, e.g. Docker Desktop).
+        run: |
+          docker network create smoke-net-${{ matrix.arch }}
+          docker run -d --name smoke-redis-${{ matrix.arch }} --network smoke-net-${{ matrix.arch }} redis:8-alpine
+          docker run -d --name smoke-${{ matrix.arch }} --platform ${{ matrix.platform }} \
+            --network smoke-net-${{ matrix.arch }} \
+            -e BLINK_REDIS_URL=redis://smoke-redis-${{ matrix.arch }}:6379/0 \
+            -p 8443:8443 \
+            -v "${{ github.workspace }}/docker/certs:/etc/nginx/certs:ro" \
+            blink-app:smoke-${{ matrix.arch }}
+      - name: Wait for it to actually respond over HTTPS (${{ matrix.platform }})
+        # /api/health hits the DB/Redis itself and reports "degraded" (503)
+        # rather than erroring when a dependency is unreachable, exactly
+        # the database's case here - 200 or 503 both prove nginx, uvicorn,
+        # and the TLS cert are genuinely wired together and serving
+        # requests; anything else (curl failing to connect at all, or a
+        # timeout) means the container isn't actually running and healthy.
+        run: |
+          for _ in $(seq 1 30); do
+            code=$(curl -sk -o /dev/null -w "%{http_code}" https://localhost:8443/api/health || true)
+            if [ "$code" = "200" ] || [ "$code" = "503" ]; then
+              echo "Got HTTP $code from /api/health - container is up and serving requests"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Container never answered https://localhost:8443/api/health within 60s"
+          exit 1
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker logs smoke-${{ matrix.arch }}
+      - name: Stop and remove the smoke containers
+        if: always()
+        run: |
+          docker rm -f smoke-${{ matrix.arch }} smoke-redis-${{ matrix.arch }} >/dev/null 2>&1 || true
+          docker network rm smoke-net-${{ matrix.arch }} >/dev/null 2>&1 || true
 
   prod-smoke:
     name: Docker · production stack smoke test
