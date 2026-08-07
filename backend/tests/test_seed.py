@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from asyncpg.exceptions import DeadlockDetectedError
+from asyncpg.exceptions import DeadlockDetectedError, LockNotAvailableError
 from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy import select, text
@@ -273,6 +273,36 @@ async def test_reset_data_retries_a_transient_truncate_deadlock(
         calls += 1
         if calls == 1:
             raise DBAPIError("TRUNCATE ...", {}, DeadlockDetectedError("deadlock detected"))
+        return await real_execute(*args, **kwargs)
+
+    monkeypatch.setattr(app_session, "execute", flaky_execute)
+
+    await reset_data(app_session)  # must not raise
+
+    clips = (await app_session.execute(select(Clip))).scalars().all()
+    assert len(clips) == 16
+    assert calls >= 2
+
+
+async def test_reset_data_retries_a_transient_lock_timeout(
+    app_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A non-cyclic variant of the same contention: the conflicting request
+    holds its lock long enough that the TRUNCATE just blocks rather than
+    deadlocking, which SET LOCAL lock_timeout turns into a catchable
+    LockNotAvailableError - _truncate_with_retry must retry that too."""
+    await set_storage_dir(app_session, str(tmp_path))
+    await seed_identity(app_session)
+    await seed_data(app_session)
+
+    real_execute = app_session.execute
+    calls = 0
+
+    async def flaky_execute(*args: Any, **kwargs: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise DBAPIError("TRUNCATE ...", {}, LockNotAvailableError("lock timeout"))
         return await real_execute(*args, **kwargs)
 
     monkeypatch.setattr(app_session, "execute", flaky_execute)

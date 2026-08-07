@@ -32,7 +32,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from asyncpg.exceptions import DeadlockDetectedError
+from asyncpg.exceptions import DeadlockDetectedError, LockNotAvailableError
 from fastapi_users.password import PasswordHelper
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import DBAPIError
@@ -692,7 +692,10 @@ async def seed_data(session: AsyncSession) -> None:
     await session.commit()
 
 
-async def _truncate_with_deadlock_retry(session: AsyncSession, tables: str) -> None:
+_TRUNCATE_LOCK_TIMEOUT = "2s"
+
+
+async def _truncate_with_retry(session: AsyncSession, tables: str) -> None:
     """TRUNCATE ... CASCADE takes an ACCESS EXCLUSIVE lock on every listed
     table, including everything that cascades from it (e.g. RESET_TABLES'
     own explicit list cascades to cameras, clips, and more - see that
@@ -707,21 +710,37 @@ async def _truncate_with_deadlock_retry(session: AsyncSession, tables: str) -> N
     always resolves the conflict by aborting exactly one side, so the other
     side's retry is expected to succeed (blocking briefly on a plain lock
     wait if the survivor is still mid-transaction, never deadlocking against
-    itself)."""
+    itself).
+
+    A second, non-cyclic shape of the same contention has also been observed
+    in practice: the conflicting request holds its lock just long enough
+    that this TRUNCATE blocks waiting for it rather than deadlocking against
+    it - no exception at all, just a wait that can occasionally outlast a
+    calling Playwright test's own hook timeout even though the TRUNCATE
+    would have gone through fine a moment later. SET LOCAL lock_timeout
+    converts that indefinite wait into a fast, catchable
+    asyncpg.exceptions.LockNotAvailableError - LOCAL scopes it to this
+    transaction only, so it never leaks onto a later request that reuses
+    this connection - retried the same way, since the lock is expected to be
+    free within another attempt or two."""
     attempts = 3
     for attempt in range(1, attempts + 1):  # pragma: no cover — every iteration returns or raises
         try:
+            await session.execute(text(f"SET LOCAL lock_timeout = '{_TRUNCATE_LOCK_TIMEOUT}'"))
             await session.execute(text(f"TRUNCATE TABLE {tables} CASCADE"))
             return
         except DBAPIError as exc:
-            if not isinstance(exc.orig, DeadlockDetectedError) or attempt == attempts:
+            retryable = (DeadlockDetectedError, LockNotAvailableError)
+            if not isinstance(exc.orig, retryable) or attempt == attempts:
                 raise
-            logger.warning("reset_data.truncate_deadlock_retry", attempt=attempt)
+            logger.warning(
+                "reset_data.truncate_retry", attempt=attempt, error_type=type(exc.orig).__name__
+            )
             await session.rollback()
 
 
 async def _truncate_domain_tables(session: AsyncSession) -> None:
-    await _truncate_with_deadlock_retry(session, RESET_TABLES)
+    await _truncate_with_retry(session, RESET_TABLES)
 
 
 async def _expunge_and_reseed_domain(session: AsyncSession) -> None:
@@ -777,7 +796,7 @@ async def wipe_all(session: AsyncSession) -> None:
     access_token row is gone - restore_baseline() (used by auth.setup.ts's
     own "restore-baseline" mode, which runs right after the onboarding spec
     finishes) is what re-establishes a valid seeded session afterward."""
-    await _truncate_with_deadlock_retry(session, f"access_tokens, users, {RESET_TABLES}")
+    await _truncate_with_retry(session, f"access_tokens, users, {RESET_TABLES}")
     # Unlike reset_data()/restore_baseline(), nothing downstream reseeds
     # anything to commit alongside - get_session() doesn't auto-commit, so
     # without this the TRUNCATE would just roll back when the request ends.
