@@ -158,6 +158,8 @@ function clearHover(): void {
           @mouseleave="clearHover"
           @focus="hover(index)"
           @blur="clearHover"
+          @keydown.enter="hover(index)"
+          @keydown.space.prevent="hover(index)"
         />
 
         <div
