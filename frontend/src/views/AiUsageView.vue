@@ -272,6 +272,8 @@ const hoveredProvider = ref<number | null>(null);
             @mouseleave="hoveredProvider = null"
             @focus="hoveredProvider = index"
             @blur="hoveredProvider = null"
+            @keydown.enter="hoveredProvider = index"
+            @keydown.space.prevent="hoveredProvider = index"
           >
             <span class="bar-label">{{ entry.provider }} / {{ entry.model }}</span>
             <div class="bar-track">
