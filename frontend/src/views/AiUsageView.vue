@@ -261,19 +261,16 @@ const hoveredProvider = ref<number | null>(null);
           class="bars"
           data-testid="provider-bars"
         >
-          <div
+          <button
             v-for="(entry, index) in byProviderSorted"
             :key="`${entry.provider}-${entry.model}`"
+            type="button"
             class="bar-row"
-            role="button"
-            tabindex="0"
             :data-testid="`bar-row-${index}`"
             @mouseenter="hoveredProvider = index"
             @mouseleave="hoveredProvider = null"
             @focus="hoveredProvider = index"
             @blur="hoveredProvider = null"
-            @keydown.enter="hoveredProvider = index"
-            @keydown.space.prevent="hoveredProvider = index"
           >
             <span class="bar-label">{{ entry.provider }} / {{ entry.model }}</span>
             <div class="bar-track">
@@ -294,7 +291,7 @@ const hoveredProvider = ref<number | null>(null);
               <span>{{ formatCompact(entry.tokens) }} tokens</span>
               <span>{{ entry.calls }} call(s)</span>
             </div>
-          </div>
+          </button>
         </div>
 
         <div
@@ -473,6 +470,14 @@ tbody tr + tr td {
   grid-template-columns: minmax(120px, 220px) 1fr auto;
   align-items: center;
   gap: 12px;
+  width: 100%;
+  border: none;
+  margin: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .bar-label {

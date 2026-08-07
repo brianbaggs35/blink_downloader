@@ -145,21 +145,18 @@ function clearHover(): void {
           />
         </svg>
 
-        <div
+        <button
           v-for="(point, index) in points"
           :key="point.date"
+          type="button"
           class="hit-band"
           :style="{ left: `${(index / points.length) * 100}%`, width: `${(bandWidth / CHART_W) * 100}%` }"
-          role="button"
-          tabindex="0"
           :data-testid="`hit-${index}`"
           :aria-label="`${dayLabel(point.date)}: ${formatValue(point.value)}`"
           @mouseenter="hover(index)"
           @mouseleave="clearHover"
           @focus="hover(index)"
           @blur="clearHover"
-          @keydown.enter="hover(index)"
-          @keydown.space.prevent="hover(index)"
         />
 
         <div
@@ -300,6 +297,9 @@ function clearHover(): void {
   height: 100%;
   cursor: crosshair;
   background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
 }
 
 .hit-band:focus-visible {
