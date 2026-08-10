@@ -20,6 +20,7 @@ from app.integrations.service import (
     get_storage_integration_settings,
     set_google_drive_refresh_token,
     set_onedrive_refresh_token,
+    set_pending_oauth_code_verifier,
     update_storage_integration_settings,
 )
 
@@ -109,33 +110,76 @@ async def test_begin_oauth_sets_a_pending_state(app_session: AsyncSession) -> No
     row = await get_storage_integration_settings(app_session)
     assert row.pending_oauth_provider == "google_drive"
     assert row.pending_oauth_state == state
+    assert row.pending_oauth_code_verifier is None
+    assert row.pending_oauth_expires_at is not None
+
+
+async def test_begin_oauth_clears_a_stale_code_verifier_from_a_prior_flow(
+    app_session: AsyncSession,
+) -> None:
+    """A restarted flow (e.g. the user clicks Connect again before
+    finishing) must not let a previous attempt's verifier leak into the
+    new one."""
+    await begin_oauth(app_session, "google_drive")
+    await set_pending_oauth_code_verifier(app_session, "stale-verifier")
+    await begin_oauth(app_session, "google_drive")
+    row = await get_storage_integration_settings(app_session)
+    assert row.pending_oauth_code_verifier is None
     assert row.pending_oauth_expires_at is not None
     assert row.pending_oauth_expires_at > datetime.now(UTC)
 
 
 async def test_consume_oauth_state_matches_and_clears(app_session: AsyncSession) -> None:
     state = await begin_oauth(app_session, "onedrive")
-    assert await consume_oauth_state(app_session, "onedrive", state) is True
+    assert await consume_oauth_state(app_session, "onedrive", state) == (True, None)
     row = await get_storage_integration_settings(app_session)
     assert row.pending_oauth_provider is None
     assert row.pending_oauth_state is None
+    assert row.pending_oauth_code_verifier is None
     assert row.pending_oauth_expires_at is None
+
+
+async def test_consume_oauth_state_returns_the_stored_code_verifier(
+    app_session: AsyncSession,
+) -> None:
+    state = await begin_oauth(app_session, "google_drive")
+    await set_pending_oauth_code_verifier(app_session, "verifier-abc")
+    assert await consume_oauth_state(app_session, "google_drive", state) == (
+        True,
+        "verifier-abc",
+    )
+
+
+async def test_consume_oauth_state_clears_the_code_verifier_even_on_mismatch(
+    app_session: AsyncSession,
+) -> None:
+    await begin_oauth(app_session, "google_drive")
+    await set_pending_oauth_code_verifier(app_session, "verifier-abc")
+    assert await consume_oauth_state(app_session, "google_drive", "not-the-real-state") == (
+        False,
+        None,
+    )
+    row = await get_storage_integration_settings(app_session)
+    assert row.pending_oauth_code_verifier is None
 
 
 async def test_consume_oauth_state_cannot_be_replayed(app_session: AsyncSession) -> None:
     state = await begin_oauth(app_session, "onedrive")
-    assert await consume_oauth_state(app_session, "onedrive", state) is True
-    assert await consume_oauth_state(app_session, "onedrive", state) is False
+    assert await consume_oauth_state(app_session, "onedrive", state) == (True, None)
+    assert await consume_oauth_state(app_session, "onedrive", state) == (False, None)
 
 
 async def test_consume_oauth_state_rejects_wrong_provider(app_session: AsyncSession) -> None:
     state = await begin_oauth(app_session, "google_drive")
-    assert await consume_oauth_state(app_session, "onedrive", state) is False
+    assert await consume_oauth_state(app_session, "onedrive", state) == (False, None)
 
 
 async def test_consume_oauth_state_rejects_wrong_state(app_session: AsyncSession) -> None:
     await begin_oauth(app_session, "google_drive")
-    assert await consume_oauth_state(app_session, "google_drive", "not-the-real-state") is False
+    assert await consume_oauth_state(app_session, "google_drive", "not-the-real-state") == (
+        False,
+        None,
+    )
 
 
 async def test_consume_oauth_state_rejects_expired_state(app_session: AsyncSession) -> None:
@@ -143,11 +187,11 @@ async def test_consume_oauth_state_rejects_expired_state(app_session: AsyncSessi
     row = await get_storage_integration_settings(app_session)
     row.pending_oauth_expires_at = datetime.now(UTC) - timedelta(minutes=1)
     await app_session.commit()
-    assert await consume_oauth_state(app_session, "google_drive", state) is False
+    assert await consume_oauth_state(app_session, "google_drive", state) == (False, None)
 
 
 async def test_consume_oauth_state_with_nothing_pending(app_session: AsyncSession) -> None:
-    assert await consume_oauth_state(app_session, "google_drive", "anything") is False
+    assert await consume_oauth_state(app_session, "google_drive", "anything") == (False, None)
 
 
 async def test_set_google_drive_refresh_token(app_session: AsyncSession) -> None:

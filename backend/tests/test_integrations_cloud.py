@@ -15,6 +15,8 @@ handling around them.
 # pyright: reportMissingParameterType=false
 # pyright: reportUnknownLambdaType=false
 
+import base64
+import hashlib
 from typing import Any
 
 import httplib2
@@ -23,6 +25,7 @@ import pytest
 from botocore.exceptions import ClientError
 from google.auth.exceptions import GoogleAuthError
 from googleapiclient.errors import HttpError as GoogleHttpError
+from oauthlib.oauth2.rfc6749.errors import InvalidGrantError
 
 from app.integrations.cloud import (
     CloudStorageError,
@@ -326,9 +329,11 @@ class _FakeFlow:
         *,
         refresh_token: str | None = "refresh-abc",  # noqa: S107 # nosec B107 - test fixture value, not a secret
         raise_on_fetch: bool = False,
+        code_verifier: str | None = "fake-verifier",
     ) -> None:
         self.raise_on_fetch = raise_on_fetch
         self.fetched_code: str | None = None
+        self.code_verifier = code_verifier
 
         class _Creds:
             def __init__(self, token: str | None) -> None:
@@ -341,37 +346,65 @@ class _FakeFlow:
 
     def fetch_token(self, *, code: str) -> None:
         if self.raise_on_fetch:
-            raise GoogleAuthError("bad code")
+            # The real failure mode this guards: oauthlib's own OAuth2Error
+            # family (e.g. a PKCE code_verifier mismatch), not
+            # google-auth's GoogleAuthError - confirmed these are two
+            # unrelated exception hierarchies by reproducing the real
+            # "Missing code verifier" InvalidGrantError empirically against
+            # the actual oauthlib/google-auth-oauthlib stack.
+            raise InvalidGrantError("Missing code verifier.")
         self.fetched_code = code
 
 
 def test_google_drive_authorize_url_includes_state(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.integrations.cloud._google_flow", lambda *_a, **_kw: _FakeFlow())
-    url = google_drive_authorize_url("client-id", "secret", "https://app.example/cb", "state-123")
+    url, code_verifier = google_drive_authorize_url(
+        "client-id", "secret", "https://app.example/cb", "state-123"
+    )
     assert "state=state-123" in url
+    assert code_verifier == "fake-verifier"
 
 
 def test_google_flow_builds_a_real_flow_from_client_config() -> None:
     """Exercises the real google_auth_oauthlib.flow.Flow (not the fake) -
     building the Flow and rendering its authorization_url() are both pure
     local URL construction with no network call, so this is safe to run
-    unmocked and gives real coverage of the client_config wiring itself."""
-    url = google_drive_authorize_url(
+    unmocked and gives real coverage of the client_config wiring itself,
+    including that the returned code_verifier really does correspond to
+    the URL's own code_challenge (the crux of the PKCE bug this guards)."""
+    url, code_verifier = google_drive_authorize_url(
         "client-id", "client-secret", "https://app.example/cb", "state-xyz"
     )
     assert url.startswith("https://accounts.google.com/o/oauth2/auth")
     assert "client_id=client-id" in url
     assert "state=state-xyz" in url
+    assert "code_challenge=" in url
+    assert "code_challenge_method=S256" in url
+    expected_challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest())
+        .decode()
+        .rstrip("=")
+    )
+    assert f"code_challenge={expected_challenge}" in url
 
 
 async def test_google_drive_exchange_code_returns_refresh_token(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "app.integrations.cloud._google_flow", lambda *_a, **_kw: _FakeFlow(refresh_token="rt-1")
+    captured: dict[str, Any] = {}
+
+    def fake_google_flow(*args: Any, **kwargs: Any) -> _FakeFlow:
+        captured["code_verifier"] = kwargs.get("code_verifier")
+        return _FakeFlow(refresh_token="rt-1")
+
+    monkeypatch.setattr("app.integrations.cloud._google_flow", fake_google_flow)
+    token = await google_drive_exchange_code(
+        "id", "secret", "https://app.example/cb", "code-1", "verifier-xyz"
     )
-    token = await google_drive_exchange_code("id", "secret", "https://app.example/cb", "code-1")
     assert token == "rt-1"
+    # The exact fix: the exchange must rebuild its Flow with the *same*
+    # verifier the authorize step produced, not a fresh/unrelated one.
+    assert captured["code_verifier"] == "verifier-xyz"
 
 
 async def test_google_drive_exchange_code_raises_without_a_refresh_token(
@@ -381,17 +414,43 @@ async def test_google_drive_exchange_code_raises_without_a_refresh_token(
         "app.integrations.cloud._google_flow", lambda *_a, **_kw: _FakeFlow(refresh_token=None)
     )
     with pytest.raises(CloudStorageError, match="did not return a refresh token"):
-        await google_drive_exchange_code("id", "secret", "https://app.example/cb", "code-1")
+        await google_drive_exchange_code(
+            "id", "secret", "https://app.example/cb", "code-1", "verifier-xyz"
+        )
 
 
-async def test_google_drive_exchange_code_wraps_auth_errors(
+async def test_google_drive_exchange_code_wraps_oauth2_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The real-world failure this whole fix targets: a PKCE mismatch
+    raises oauthlib's InvalidGrantError (an OAuth2Error), not a
+    GoogleAuthError - must still surface as this app's own
+    CloudStorageError, not an unhandled 500."""
     monkeypatch.setattr(
         "app.integrations.cloud._google_flow", lambda *_a, **_kw: _FakeFlow(raise_on_fetch=True)
     )
     with pytest.raises(CloudStorageError, match="authorization failed"):
-        await google_drive_exchange_code("id", "secret", "https://app.example/cb", "code-1")
+        await google_drive_exchange_code(
+            "id", "secret", "https://app.example/cb", "code-1", "verifier-xyz"
+        )
+
+
+async def test_google_drive_exchange_code_wraps_google_auth_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GoogleAuthError (a completely separate hierarchy from oauthlib's
+    OAuth2Error) must still also be caught - this was the only exception
+    type caught before this fix broadened it."""
+
+    class _RaisingFlow(_FakeFlow):
+        def fetch_token(self, *, code: str) -> None:
+            raise GoogleAuthError("bad code")
+
+    monkeypatch.setattr("app.integrations.cloud._google_flow", lambda *_a, **_kw: _RaisingFlow())
+    with pytest.raises(CloudStorageError, match="authorization failed"):
+        await google_drive_exchange_code(
+            "id", "secret", "https://app.example/cb", "code-1", "verifier-xyz"
+        )
 
 
 class _FakeGoogleRequest:
@@ -700,6 +759,25 @@ async def test_onedrive_exchange_code_raises_without_a_refresh_token(
         lambda *_a, **_kw: _FakeMsalApp(token_result={"error_description": "denied"}),
     )
     with pytest.raises(CloudStorageError, match="denied"):
+        await onedrive_exchange_code("id", "secret", "https://app.example/cb", "code-1")
+
+
+async def test_onedrive_exchange_code_wraps_authority_validation_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_onedrive_app() can perform authority validation against
+    Microsoft's endpoint during construction - msal's own Authority class
+    raises a plain ValueError when that discovery call fails (confirmed by
+    reading its source), which must surface as this app's own
+    CloudStorageError rather than an unhandled 500, the same "uncaught
+    exception past the app's own error wrapping" shape as the Google Drive
+    PKCE bug."""
+
+    def _raise_authority_error(*_a: Any, **_kw: Any) -> _FakeMsalApp:
+        raise ValueError("Unable to get authority configuration for https://example.com/bad.")
+
+    monkeypatch.setattr("app.integrations.cloud._onedrive_app", _raise_authority_error)
+    with pytest.raises(CloudStorageError, match="OneDrive authorization failed"):
         await onedrive_exchange_code("id", "secret", "https://app.example/cb", "code-1")
 
 

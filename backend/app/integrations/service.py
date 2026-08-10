@@ -75,15 +75,30 @@ async def begin_oauth(session: AsyncSession, provider: str) -> str:
     state = secrets.token_urlsafe(32)
     row.pending_oauth_provider = provider
     row.pending_oauth_state = state
+    row.pending_oauth_code_verifier = None
     row.pending_oauth_expires_at = datetime.now(UTC) + timedelta(minutes=OAUTH_STATE_TTL_MINUTES)
     await session.commit()
     return state
 
 
-async def consume_oauth_state(session: AsyncSession, provider: str, state: str) -> bool:
-    """True if `state` matches an unexpired, in-progress flow for
-    `provider` - clears the pending state either way, so a state can never
-    be replayed."""
+async def set_pending_oauth_code_verifier(session: AsyncSession, code_verifier: str) -> None:
+    """Attaches a PKCE code_verifier to the flow begin_oauth() just started
+    - a separate call because Google Drive's authorize-URL construction
+    (which generates the verifier) needs the CSRF state begin_oauth()
+    already produced, so it can't happen before that call."""
+    row = await get_storage_integration_settings(session)
+    row.pending_oauth_code_verifier = code_verifier
+    await session.commit()
+
+
+async def consume_oauth_state(
+    session: AsyncSession, provider: str, state: str
+) -> tuple[bool, str | None]:
+    """(True, code_verifier) if `state` matches an unexpired, in-progress
+    flow for `provider` - clears the pending state either way, so a state
+    can never be replayed. code_verifier is whatever
+    set_pending_oauth_code_verifier() stored for this flow, or None for a
+    non-PKCE provider (OneDrive) that never calls it."""
     row = await get_storage_integration_settings(session)
     matches = (
         row.pending_oauth_provider == provider
@@ -92,11 +107,13 @@ async def consume_oauth_state(session: AsyncSession, provider: str, state: str) 
         and row.pending_oauth_expires_at is not None
         and row.pending_oauth_expires_at > datetime.now(UTC)
     )
+    code_verifier = row.pending_oauth_code_verifier if matches else None
     row.pending_oauth_provider = None
     row.pending_oauth_state = None
+    row.pending_oauth_code_verifier = None
     row.pending_oauth_expires_at = None
     await session.commit()
-    return matches
+    return matches, code_verifier
 
 
 async def set_google_drive_refresh_token(
