@@ -40,7 +40,7 @@ RUN uv sync --frozen --no-dev --no-install-project \
 
 # --------------------------------------------------------------- prod stage
 FROM cgr.dev/chainguard/python:latest-dev AS prod
-USER root
+USER 0
 # supervisord (process supervision for this image's 3 sibling processes)
 # comes from Wolfi's own apk package, not pip's `supervisor` - pip's build
 # imports the legacy pkg_resources API at runtime, which current setuptools
@@ -79,7 +79,7 @@ COPY docker/supervisord.conf /etc/supervisord.conf
 # (copy the image's dir + ownership onto a fresh, empty volume on first
 # mount) carries nonroot ownership over instead - verified empirically.
 RUN mkdir -p /data/clips /data/insightface \
-    && chown -R nonroot:nonroot /app /data /usr/share/nginx/html /etc/supervisord.conf
-USER nonroot
+    && chown -R 65532:65532 /app /data /usr/share/nginx/html /etc/supervisord.conf
+USER 65532:65532
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
