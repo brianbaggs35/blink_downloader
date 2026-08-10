@@ -34,6 +34,12 @@ from app.worker.tasks.download import download_clip
 class FakeBlinkService:
     next_bytes: ClassVar[bytes] = b""
     next_error: ClassVar[Exception | None] = None
+    byte_sequence: ClassVar[list[bytes] | None] = None
+    """When set, download_media() returns successive items from this list
+    (one per call, repeating the last once exhausted) instead of the
+    constant next_bytes - lets a test simulate a corrupt first attempt
+    followed by a good retry."""
+    download_call_count: ClassVar[int] = 0
     instances: ClassVar[list[FakeBlinkService]] = []
 
     def __init__(self, token_data: dict[str, Any]) -> None:
@@ -44,6 +50,12 @@ class FakeBlinkService:
     async def download_media(self, item: Any) -> bytes:
         if FakeBlinkService.next_error:
             raise FakeBlinkService.next_error
+        FakeBlinkService.download_call_count += 1
+        if FakeBlinkService.byte_sequence is not None:
+            index = min(
+                FakeBlinkService.download_call_count - 1, len(FakeBlinkService.byte_sequence) - 1
+            )
+            return FakeBlinkService.byte_sequence[index]
         return FakeBlinkService.next_bytes
 
     async def close(self) -> None:
@@ -55,6 +67,8 @@ def _reset_fake_service(monkeypatch: pytest.MonkeyPatch) -> None:
     FakeBlinkService.instances = []
     FakeBlinkService.next_bytes = b""
     FakeBlinkService.next_error = None
+    FakeBlinkService.byte_sequence = None
+    FakeBlinkService.download_call_count = 0
     monkeypatch.setattr("app.worker.tasks.download.BlinkPyService", FakeBlinkService)
 
 
@@ -329,3 +343,37 @@ async def test_ffmpeg_failure_does_not_fail_the_download(
         assert clip.downloaded_at is not None
         assert clip.duration_seconds is None
         assert clip.thumbnail_generated is False
+    # Bounded, not unlimited or a single attempt: every retry got the same
+    # bad bytes (this fake returns a constant), so all 3 were exhausted.
+    assert FakeBlinkService.download_call_count == 3
+
+
+async def test_corrupt_first_download_is_retried_and_recovers(
+    worker_ctx: dict[str, Any], tmp_path: Path, synthetic_clip_bytes: bytes
+) -> None:
+    """The actual self-healing behavior this fix adds - not just "a bad
+    download doesn't fail the job" (already covered above), but "a later
+    good attempt is what actually gets kept", matching the reported
+    corrupted-thumbnail symptom (a transient truncated transfer, not a
+    permanently broken source)."""
+    async with worker_ctx["sessionmaker"]() as session:
+        await set_storage_dir(session, str(tmp_path))
+        _account, _camera, clip = await _make_account_camera_clip(session)
+        clip_id = clip.id
+
+    FakeBlinkService.byte_sequence = [b"truncated garbage", synthetic_clip_bytes]
+    result = await download_clip(worker_ctx, str(clip_id))
+    assert result == "ok"
+
+    async with worker_ctx["sessionmaker"]() as session:
+        clip = await session.get(Clip, clip_id)
+        assert clip is not None
+        assert clip.duration_seconds is not None
+        assert 1.8 <= clip.duration_seconds <= 2.2
+        assert clip.file_size_bytes == len(synthetic_clip_bytes)
+        assert clip.thumbnail_generated is True
+        assert clip.storage_path is not None
+        # The retry's good bytes ended up on disk, not the first corrupt
+        # attempt's.
+        assert Path(clip.storage_path).read_bytes() == synthetic_clip_bytes
+    assert FakeBlinkService.download_call_count == 2
