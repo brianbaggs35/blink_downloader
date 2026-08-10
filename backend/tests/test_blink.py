@@ -111,21 +111,20 @@ class FakeLiveStream:
         self.stopped = True
 
 
-class FakeManifestItem:
-    def __init__(self, item_id: int, name: str, created_at: datetime, size: int) -> None:
-        self.id = item_id
-        self.name = name
-        self.created_at = created_at
-        self.size = size
-
-
 class FakeSyncModule:
     """Duck-types blinkpy's BlinkSyncModule closely enough for our adapter -
     a real BlinkSyncModule needs a live Blink instance to construct, which
     this avoids. is_physical_hub relies on isinstance(_, (BlinkOwl,
     BlinkLotus)) though, which a plain object like this always fails (in the
     correct direction) - the one test that needs is_physical_hub=False
-    constructs a real BlinkOwl instead (see below)."""
+    constructs a real BlinkOwl instead (see below).
+
+    poll_local_storage_manifest defaults to faking blinkpy's real two-phase
+    exchange (called once with no id -> {"id": ...}, once with that id ->
+    {"clips": [...], "manifest_id": ...}) so most tests just supply raw
+    manifest_clips; a test that needs to simulate a stale/never-ready
+    manifest or an auth error overrides the AsyncMock directly, same pattern
+    as before."""
 
     def __init__(
         self,
@@ -140,7 +139,8 @@ class FakeSyncModule:
         local_storage_compatible: bool = True,
         local_storage_enabled: bool = True,
         local_storage_active: bool = True,
-        manifest: list[FakeManifestItem] | None = None,
+        manifest_clips: list[dict[str, Any]] | None = None,
+        names_table: dict[str, str] | None = None,
     ) -> None:
         self.network_id = network_id
         self.sync_id = sync_id
@@ -153,19 +153,22 @@ class FakeSyncModule:
             "compatible": local_storage_compatible,
             "enabled": local_storage_enabled,
             "status": local_storage_active,
-            "manifest_stale": False,
-            "last_manifest_id": "manifest-1",
-            "manifest": manifest or [],
         }
-        self.update_local_storage_manifest = AsyncMock()
+        self._names_table = names_table if names_table is not None else {}
+        clips = manifest_clips if manifest_clips is not None else []
+
+        async def default_poll(
+            manifest_request_id: str | None = None, max_retries: int = 4
+        ) -> dict[str, Any]:
+            if manifest_request_id is None:
+                return {"id": "request-1"}
+            return {"clips": clips, "manifest_id": "manifest-1"}
+
+        self.poll_local_storage_manifest = AsyncMock(side_effect=default_poll)
 
     @property
     def local_storage(self) -> bool:
         return bool(self._local_storage["status"])
-
-    @property
-    def local_storage_manifest_ready(self) -> bool:
-        return not self._local_storage["manifest_stale"]
 
 
 class FakeAuth:
@@ -748,7 +751,16 @@ async def test_refresh_local_storage_manifest_returns_items() -> None:
     recorded_at = datetime(2026, 7, 20, 10, 0, tzinfo=UTC)
     blink.sync = {
         "Home": FakeSyncModule(
-            "10", manifest=[FakeManifestItem(1, "Front Door", recorded_at, 1024)]
+            "10",
+            manifest_clips=[
+                {
+                    "id": 1,
+                    "camera_name": "FrontDoor",
+                    "created_at": recorded_at.isoformat(),
+                    "size": 1024,
+                }
+            ],
+            names_table={"FrontDoor": "Front Door"},
         )
     }
     manifest = await service.refresh_local_storage_manifest("10")
@@ -760,6 +772,56 @@ async def test_refresh_local_storage_manifest_returns_items() -> None:
             )
         ],
     )
+
+
+async def test_refresh_local_storage_manifest_resolves_names_case_insensitively() -> None:
+    """The confirmed root cause of clips silently disappearing: blinkpy's
+    own manifest processing requires an exact-case key match and drops
+    anything that doesn't - this app's own resolution now falls back to a
+    case-insensitive match rather than losing the item."""
+    service, _auth, blink = _make_service()
+    recorded_at = datetime(2026, 7, 20, 10, 0, tzinfo=UTC)
+    blink.sync = {
+        "Home": FakeSyncModule(
+            "10",
+            manifest_clips=[
+                {
+                    "id": 1,
+                    "camera_name": "frontdoor",  # lowercased, vs "FrontDoor" below
+                    "created_at": recorded_at.isoformat(),
+                    "size": 1024,
+                }
+            ],
+            names_table={"FrontDoor": "Front Door"},
+        )
+    }
+    manifest = await service.refresh_local_storage_manifest("10")
+    assert manifest.items[0].camera_name == "Front Door"
+
+
+async def test_refresh_local_storage_manifest_keeps_unresolvable_names() -> None:
+    """An item is never dropped just because its name can't be resolved at
+    all (neither exact nor case-insensitive match) - it's still returned,
+    with its raw name, for app.sync_module.service's own tolerant
+    reconciliation to handle."""
+    service, _auth, blink = _make_service()
+    recorded_at = datetime(2026, 7, 20, 10, 0, tzinfo=UTC)
+    blink.sync = {
+        "Home": FakeSyncModule(
+            "10",
+            manifest_clips=[
+                {
+                    "id": 1,
+                    "camera_name": "SomeUnknownCamera",
+                    "created_at": recorded_at.isoformat(),
+                    "size": 1024,
+                }
+            ],
+            names_table={"FrontDoor": "Front Door"},
+        )
+    }
+    manifest = await service.refresh_local_storage_manifest("10")
+    assert manifest.items[0].camera_name == "SomeUnknownCamera"
 
 
 async def test_refresh_local_storage_manifest_raises_when_sync_module_not_found() -> None:
@@ -804,22 +866,59 @@ async def test_refresh_local_storage_manifest_raises_when_not_active() -> None:
     blink.sync = {"Home": sync_module}
     with pytest.raises(LocalStorageUnavailableError):
         await service.refresh_local_storage_manifest("10")
-    sync_module.update_local_storage_manifest.assert_not_awaited()
+    sync_module.poll_local_storage_manifest.assert_not_awaited()
 
 
-async def test_refresh_local_storage_manifest_raises_when_it_stays_stale() -> None:
+async def test_refresh_local_storage_manifest_raises_when_request_phase_never_completes() -> None:
     service, _auth, blink = _make_service()
     sync_module = FakeSyncModule("10")
-    sync_module._local_storage["manifest_stale"] = True  # pyright: ignore[reportPrivateUsage]
+    # Exhausted retries: blinkpy's own poll_local_storage_manifest returns
+    # whatever the last attempt produced, which lacks "id" if it never
+    # succeeded - not an exception, just an incomplete response.
+    sync_module.poll_local_storage_manifest = AsyncMock(return_value={})
     blink.sync = {"Home": sync_module}
     with pytest.raises(BlinkError):
         await service.refresh_local_storage_manifest("10")
 
 
-async def test_refresh_local_storage_manifest_maps_auth_errors() -> None:
+async def test_refresh_local_storage_manifest_raises_when_manifest_phase_never_completes() -> None:
     service, _auth, blink = _make_service()
     sync_module = FakeSyncModule("10")
-    sync_module.update_local_storage_manifest = AsyncMock(side_effect=_client_response_error(401))
+
+    async def request_ok_manifest_never_ready(
+        manifest_request_id: str | None = None, max_retries: int = 4
+    ) -> dict[str, Any]:
+        if manifest_request_id is None:
+            return {"id": "request-1"}
+        return {}  # exhausted retries without ever getting "clips"
+
+    sync_module.poll_local_storage_manifest = AsyncMock(side_effect=request_ok_manifest_never_ready)
+    blink.sync = {"Home": sync_module}
+    with pytest.raises(BlinkError):
+        await service.refresh_local_storage_manifest("10")
+
+
+async def test_refresh_local_storage_manifest_maps_auth_errors_on_the_request_phase() -> None:
+    service, _auth, blink = _make_service()
+    sync_module = FakeSyncModule("10")
+    sync_module.poll_local_storage_manifest = AsyncMock(side_effect=_client_response_error(401))
+    blink.sync = {"Home": sync_module}
+    with pytest.raises(BlinkAuthError):
+        await service.refresh_local_storage_manifest("10")
+
+
+async def test_refresh_local_storage_manifest_maps_auth_errors_on_the_manifest_phase() -> None:
+    service, _auth, blink = _make_service()
+    sync_module = FakeSyncModule("10")
+
+    async def request_ok_manifest_401(
+        manifest_request_id: str | None = None, max_retries: int = 4
+    ) -> dict[str, Any]:
+        if manifest_request_id is None:
+            return {"id": "request-1"}
+        raise _client_response_error(401)
+
+    sync_module.poll_local_storage_manifest = AsyncMock(side_effect=request_ok_manifest_401)
     blink.sync = {"Home": sync_module}
     with pytest.raises(BlinkAuthError):
         await service.refresh_local_storage_manifest("10")

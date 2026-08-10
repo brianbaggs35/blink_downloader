@@ -28,6 +28,10 @@ from blinkpy.blinkpy import Blink, BlinkSetupError
 from blinkpy.helpers.util import backoff_seconds, local_storage_clip_url_template
 from blinkpy.sync_module import BlinkLotus, BlinkOwl
 
+from app.logs import get_logger
+
+logger = get_logger(__name__)
+
 # Matches blinkpy's own LocalStorageMediaItem.download_video/delete_video
 # default - these two methods reimplement that retry loop instead of calling
 # it directly because the app addresses clips by (network_id, sync_id,
@@ -501,23 +505,75 @@ class BlinkPyService:
             raise LocalStorageUnavailableError(
                 f"Network {network_id} has no active local (USB) storage to browse."
             )
+        # blinkpy's own update_local_storage_manifest() silently drops any
+        # clip whose raw camera_name isn't an exact-match key in its
+        # internal _names_table (populated from a *different* endpoint) -
+        # no exception, no log, and it still reports success. Calling its
+        # own two-phase poll_local_storage_manifest() directly instead (a
+        # public method, not underscore-prefixed) gives access to the raw,
+        # unfiltered clips list, so nothing is ever silently lost - the
+        # local-storage download/delete/prepare methods below already don't
+        # depend on blinkpy's filtered _local_storage["manifest"] SortedSet
+        # at all (they rebuild URLs from DB-stored ids), so bypassing it
+        # here is safe.
         try:
-            await sync_module.update_local_storage_manifest()
+            request_response = await sync_module.poll_local_storage_manifest()
         except ClientResponseError as exc:
             raise BlinkAuthError(str(exc)) from exc
-        if not sync_module.local_storage_manifest_ready:
+        manifest_request_id = request_response.get("id") if request_response else None
+        if manifest_request_id is None:
+            raise BlinkError(f"Could not request a local storage manifest for {network_id}.")
+
+        try:
+            manifest_response = await sync_module.poll_local_storage_manifest(manifest_request_id)
+        except ClientResponseError as exc:
+            raise BlinkAuthError(str(exc)) from exc
+        if (
+            not manifest_response
+            or "clips" not in manifest_response
+            or "manifest_id" not in manifest_response
+        ):
             raise BlinkError(f"Could not refresh the local storage manifest for {network_id}.")
-        local_storage = sync_module._local_storage
-        items = [
-            BlinkLocalStorageItem(
-                item_id=item.id,
-                camera_name=item.name,
-                recorded_at=item.created_at,
-                size_bytes=int(item.size),
+
+        # Best-effort display-name resolution against blinkpy's own table
+        # (exact match, matching today's correct common case; then
+        # case-insensitive, covering the most likely real-world divergence)
+        # - but an item is never dropped just because neither resolves, only
+        # shown with its raw name (app.sync_module.service already tolerates
+        # an unresolved camera_id gracefully, rendering it as "(unmatched)").
+        names_table: dict[str, str] = sync_module._names_table
+        names_table_lower = {key.lower(): value for key, value in names_table.items()}
+        items = []
+        unresolved = 0
+        for clip in manifest_response["clips"]:
+            alphanumeric_name = clip["camera_name"]
+            if alphanumeric_name in names_table:
+                camera_name = names_table[alphanumeric_name]
+            elif alphanumeric_name.lower() in names_table_lower:
+                camera_name = names_table_lower[alphanumeric_name.lower()]
+            else:
+                camera_name = alphanumeric_name
+                unresolved += 1
+            items.append(
+                BlinkLocalStorageItem(
+                    item_id=int(clip["id"]),
+                    camera_name=camera_name,
+                    recorded_at=datetime.fromisoformat(clip["created_at"]),
+                    size_bytes=int(clip["size"]),
+                )
             )
-            for item in local_storage["manifest"]
-        ]
-        manifest_id = str(local_storage["last_manifest_id"])
+        if unresolved:
+            # Not necessarily a problem (an unresolved name still shows up,
+            # just as "(unmatched)") - but worth surfacing, since previously
+            # there was no way to tell from logs alone whether a refresh
+            # found 0 real clips or found N and silently dropped all of them.
+            logger.warning(
+                "sync_module.local_storage_unresolved_camera_names",
+                network_id=network_id,
+                total_clips=len(items),
+                unresolved=unresolved,
+            )
+        manifest_id = str(manifest_response["manifest_id"])
         return BlinkLocalStorageManifest(manifest_id=manifest_id, items=items)
 
     async def prepare_local_storage_clip(
