@@ -31,13 +31,17 @@ const props = withDefaults(
     clip: ClipRead | null;
     cameraName: string;
     canManage?: boolean;
+    hasPrev?: boolean;
+    hasNext?: boolean;
   }>(),
-  { canManage: true },
+  { canManage: true, hasPrev: false, hasNext: false },
 );
 
 const emit = defineEmits<{
   close: [];
   delete: [];
+  prev: [];
+  next: [];
 }>();
 
 const { formatDateTime, formatDuration, formatFileSize } = useFormatting();
@@ -222,6 +226,32 @@ async function onMissedFaceEnrolled(): Promise<void> {
     class="clip-modal"
     data-testid="clip-modal"
   >
+    <template #header>
+      <div class="modal-header-nav">
+        <Button
+          icon="pi pi-chevron-left"
+          text
+          rounded
+          severity="secondary"
+          :disabled="!hasPrev"
+          aria-label="Previous clip"
+          data-testid="clip-modal-prev"
+          @click="emit('prev')"
+        />
+        <span class="p-dialog-title modal-header-title">{{ cameraName }}</span>
+        <Button
+          icon="pi pi-chevron-right"
+          text
+          rounded
+          severity="secondary"
+          :disabled="!hasNext"
+          aria-label="Next clip"
+          data-testid="clip-modal-next"
+          @click="emit('next')"
+        />
+      </div>
+    </template>
+
     <template v-if="clip">
       <div class="modal-layout">
         <div class="modal-main">
@@ -483,6 +513,23 @@ async function onMissedFaceEnrolled(): Promise<void> {
 </template>
 
 <style scoped>
+.modal-header-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.modal-header-title {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .modal-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;

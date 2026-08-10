@@ -134,6 +134,26 @@ function clipsResponse(items: ClipRead[], total = items.length, page = 1): ClipL
   return { items, total, page, page_size: 24 };
 }
 
+function makeClips(count: number, startIndex = 1): ClipRead[] {
+  return Array.from({ length: count }, (_, i) => makeClip({ id: `clip-${startIndex + i}` }));
+}
+
+/** Routes listClips calls to a fixed response per page number, leaving the
+ * separate recognized-count badge call (has_recognized_person: true) as an
+ * empty/irrelevant response - used by the Prev/Next page-boundary tests,
+ * which need to control exactly what each page number returns regardless of
+ * call order. */
+function pagedClipsMock(pages: Record<number, ClipListResponse>) {
+  return async (params: ClipListParams = {}): Promise<ClipListResponse> => {
+    if (params.has_recognized_person) {
+      return clipsResponse([], 0);
+    }
+    const page = params.page ?? 1;
+    // eslint-disable-next-line security/detect-object-injection
+    return pages[page] ?? clipsResponse([], 0, page);
+  };
+}
+
 async function mountLibrary(isAdmin = true) {
   const router = makeRouter();
   await router.push("/");
@@ -1032,6 +1052,224 @@ describe("LibraryView — clip detail modal", () => {
     await flushPromises();
 
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: "Unexpected error." }));
+  });
+});
+
+describe("LibraryView — clip modal prev/next", () => {
+  beforeEach(() => {
+    mockedStatus.mockResolvedValue(linkedStatus());
+  });
+
+  it("disables prev on the first clip and enables next when a sibling exists", async () => {
+    mockedClips.mockResolvedValue(clipsResponse(makeClips(3), 3));
+    const { wrapper } = await mountLibrary();
+
+    await wrapper.findAllComponents(ClipCard)[0]!.vm.$emit("open");
+    await flushPromises();
+
+    const modal = wrapper.findComponent(ClipDetailModal);
+    expect(modal.props("hasPrev")).toBe(false);
+    expect(modal.props("hasNext")).toBe(true);
+  });
+
+  it("disables next on the last clip of the last page", async () => {
+    mockedClips.mockResolvedValue(clipsResponse(makeClips(3), 3));
+    const { wrapper } = await mountLibrary();
+
+    await wrapper.findAllComponents(ClipCard)[2]!.vm.$emit("open");
+    await flushPromises();
+
+    const modal = wrapper.findComponent(ClipDetailModal);
+    expect(modal.props("hasPrev")).toBe(true);
+    expect(modal.props("hasNext")).toBe(false);
+  });
+
+  it("moves to the next clip on the same page", async () => {
+    mockedClips.mockResolvedValue(clipsResponse(makeClips(3), 3));
+    const { wrapper } = await mountLibrary();
+    await wrapper.findAllComponents(ClipCard)[0]!.vm.$emit("open");
+    await flushPromises();
+
+    await wrapper.findComponent(ClipDetailModal).vm.$emit("next");
+    await flushPromises();
+
+    expect(wrapper.findComponent(ClipDetailModal).props("clip")?.id).toBe("clip-2");
+  });
+
+  it("moves to the previous clip on the same page", async () => {
+    mockedClips.mockResolvedValue(clipsResponse(makeClips(3), 3));
+    const { wrapper } = await mountLibrary();
+    await wrapper.findAllComponents(ClipCard)[1]!.vm.$emit("open");
+    await flushPromises();
+
+    await wrapper.findComponent(ClipDetailModal).vm.$emit("prev");
+    await flushPromises();
+
+    expect(wrapper.findComponent(ClipDetailModal).props("clip")?.id).toBe("clip-1");
+  });
+
+  it("crosses forward into the next page without disturbing the visible grid", async () => {
+    const page1 = clipsResponse(makeClips(24, 1), 25, 1);
+    const page2 = clipsResponse(makeClips(1, 25), 25, 2);
+    mockedClips.mockImplementation(pagedClipsMock({ 1: page1, 2: page2 }));
+    const { wrapper } = await mountLibrary();
+    const callsBeforeCrossing = mockedClips.mock.calls.length;
+
+    await wrapper.findAllComponents(ClipCard)[23]!.vm.$emit("open");
+    await flushPromises();
+    expect(wrapper.findComponent(ClipDetailModal).props("hasNext")).toBe(true);
+
+    await wrapper.findComponent(ClipDetailModal).vm.$emit("next");
+    await flushPromises();
+
+    expect(wrapper.findComponent(ClipDetailModal).props("clip")?.id).toBe("clip-25");
+    expect(mockedClips).toHaveBeenCalledWith(expect.objectContaining({ page: 2 }));
+    expect(mockedClips.mock.calls.length).toBeGreaterThan(callsBeforeCrossing);
+    // The grid itself never moved off page 1.
+    expect(wrapper.findComponent({ name: "Paginator" }).props("first")).toBe(0);
+    expect(wrapper.findAllComponents(ClipCard)).toHaveLength(24);
+    expect(wrapper.findAllComponents(ClipCard)[0]!.props("clip").id).toBe("clip-1");
+  });
+
+  it("continues navigating within an already-fetched adjacent page without refetching", async () => {
+    const page1 = clipsResponse(makeClips(24, 1), 26, 1);
+    const page2 = clipsResponse(makeClips(2, 25), 26, 2);
+    mockedClips.mockImplementation(pagedClipsMock({ 1: page1, 2: page2 }));
+    const { wrapper } = await mountLibrary();
+
+    await wrapper.findAllComponents(ClipCard)[23]!.vm.$emit("open");
+    await flushPromises();
+    await wrapper.findComponent(ClipDetailModal).vm.$emit("next");
+    await flushPromises();
+    expect(wrapper.findComponent(ClipDetailModal).props("clip")?.id).toBe("clip-25");
+    const callsAfterCrossing = mockedClips.mock.calls.length;
+
+    await wrapper.findComponent(ClipDetailModal).vm.$emit("next");
+    await flushPromises();
+
+    expect(wrapper.findComponent(ClipDetailModal).props("clip")?.id).toBe("clip-26");
+    expect(mockedClips.mock.calls.length).toBe(callsAfterCrossing);
+  });
+
+  it("crosses backward into the previous page, landing on its last clip", async () => {
+    const page1 = clipsResponse(makeClips(24, 1), 25, 1);
+    const page2 = clipsResponse(makeClips(1, 25), 25, 2);
+    mockedClips.mockImplementation(pagedClipsMock({ 1: page1, 2: page2 }));
+    const { wrapper } = await mountLibrary();
+
+    await wrapper.findComponent({ name: "Paginator" }).vm.$emit("page", { page: 1 });
+    await flushPromises();
+    await wrapper.findAllComponents(ClipCard)[0]!.vm.$emit("open");
+    await flushPromises();
+    expect(wrapper.findComponent(ClipDetailModal).props("hasPrev")).toBe(true);
+
+    await wrapper.findComponent(ClipDetailModal).vm.$emit("prev");
+    await flushPromises();
+
+    expect(wrapper.findComponent(ClipDetailModal).props("clip")?.id).toBe("clip-24");
+    expect(mockedClips).toHaveBeenCalledWith(expect.objectContaining({ page: 1 }));
+    // The grid itself never moved off page 2.
+    expect(wrapper.findComponent({ name: "Paginator" }).props("first")).toBe(24);
+  });
+
+  it("shows an error toast and keeps the current clip when the boundary fetch fails", async () => {
+    mockedClips.mockImplementation(async (params: ClipListParams = {}) => {
+      if (params.has_recognized_person) return clipsResponse([], 0);
+      if ((params.page ?? 1) === 2) throw new ApiError(500, "Server exploded.");
+      return clipsResponse(makeClips(24, 1), 25, 1);
+    });
+    const { wrapper } = await mountLibrary();
+    await wrapper.findAllComponents(ClipCard)[23]!.vm.$emit("open");
+    await flushPromises();
+
+    await wrapper.findComponent(ClipDetailModal).vm.$emit("next");
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: "error",
+        summary: "Could not load the next clip",
+        detail: "Server exploded.",
+      }),
+    );
+    expect(wrapper.findComponent(ClipDetailModal).props("clip")?.id).toBe("clip-24");
+  });
+
+  it("shows a generic error detail when the boundary fetch fails with a non-API error", async () => {
+    mockedClips.mockImplementation(async (params: ClipListParams = {}) => {
+      if (params.has_recognized_person) return clipsResponse([], 0);
+      if ((params.page ?? 1) === 2) throw new TypeError("boom");
+      return clipsResponse(makeClips(24, 1), 25, 1);
+    });
+    const { wrapper } = await mountLibrary();
+    await wrapper.findAllComponents(ClipCard)[23]!.vm.$emit("open");
+    await flushPromises();
+
+    await wrapper.findComponent(ClipDetailModal).vm.$emit("next");
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: "Unexpected error." }));
+  });
+
+  it("does nothing if the boundary page unexpectedly comes back empty", async () => {
+    mockedClips.mockImplementation(async (params: ClipListParams = {}) => {
+      if (params.has_recognized_person) return clipsResponse([], 0);
+      if ((params.page ?? 1) === 2) return clipsResponse([], 25, 2);
+      return clipsResponse(makeClips(24, 1), 25, 1);
+    });
+    const { wrapper } = await mountLibrary();
+    await wrapper.findAllComponents(ClipCard)[23]!.vm.$emit("open");
+    await flushPromises();
+
+    await wrapper.findComponent(ClipDetailModal).vm.$emit("next");
+    await flushPromises();
+
+    expect(wrapper.findComponent(ClipDetailModal).props("clip")?.id).toBe("clip-24");
+    expect(toastAdd).not.toHaveBeenCalled();
+  });
+
+  it("re-anchors to the grid's own list after the modal is closed and reopened", async () => {
+    const page1 = clipsResponse(makeClips(24, 1), 25, 1);
+    const page2 = clipsResponse(makeClips(1, 25), 25, 2);
+    mockedClips.mockImplementation(pagedClipsMock({ 1: page1, 2: page2 }));
+    const { wrapper } = await mountLibrary();
+    await wrapper.findAllComponents(ClipCard)[23]!.vm.$emit("open");
+    await flushPromises();
+    await wrapper.findComponent(ClipDetailModal).vm.$emit("next");
+    await flushPromises();
+    expect(wrapper.findComponent(ClipDetailModal).props("clip")?.id).toBe("clip-25");
+
+    await wrapper.findComponent(ClipDetailModal).vm.$emit("close");
+    await flushPromises();
+    await wrapper.findAllComponents(ClipCard)[0]!.vm.$emit("open");
+    await flushPromises();
+
+    const modal = wrapper.findComponent(ClipDetailModal);
+    expect(modal.props("clip")?.id).toBe("clip-1");
+    expect(modal.props("hasPrev")).toBe(false);
+  });
+
+  it("re-anchors to the grid's own list after deleting an overridden clip", async () => {
+    const page1 = clipsResponse(makeClips(24, 1), 25, 1);
+    const page2 = clipsResponse(makeClips(1, 25), 25, 2);
+    mockedClips.mockImplementation(pagedClipsMock({ 1: page1, 2: page2 }));
+    mockedDeleteClip.mockResolvedValue(undefined);
+    const { wrapper } = await mountLibrary();
+    await wrapper.findAllComponents(ClipCard)[23]!.vm.$emit("open");
+    await flushPromises();
+    await wrapper.findComponent(ClipDetailModal).vm.$emit("next");
+    await flushPromises();
+    expect(wrapper.findComponent(ClipDetailModal).props("clip")?.id).toBe("clip-25");
+
+    await wrapper.findComponent(ClipDetailModal).vm.$emit("delete");
+    acceptLastConfirm();
+    await flushPromises();
+    await wrapper.findAllComponents(ClipCard)[0]!.vm.$emit("open");
+    await flushPromises();
+
+    const modal = wrapper.findComponent(ClipDetailModal);
+    expect(modal.props("clip")?.id).toBe("clip-1");
+    expect(modal.props("hasPrev")).toBe(false);
   });
 });
 
