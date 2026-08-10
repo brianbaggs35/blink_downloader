@@ -4,6 +4,8 @@ import uuid
 
 from pydantic import BaseModel, Field
 
+from app.livefeed.models import SecurityFeedRefreshMode
+
 
 class LiveViewSettingsRead(BaseModel):
     default_camera_id: uuid.UUID | None
@@ -21,12 +23,14 @@ class SecurityFeedSettingsRead(BaseModel):
     camera_ids: list[uuid.UUID]
     columns: int
     refresh_interval_seconds: int
+    refresh_mode: SecurityFeedRefreshMode
 
 
 class SecurityFeedSettingsUpdate(BaseModel):
     camera_ids: list[uuid.UUID] = Field(default_factory=list[uuid.UUID], max_length=24)
     columns: int = Field(default=2, ge=1, le=4)
     refresh_interval_seconds: int = Field(default=20, ge=5, le=300)
+    refresh_mode: SecurityFeedRefreshMode = SecurityFeedRefreshMode.INTERVAL
 
 
 class LiveViewSessionRead(BaseModel):

@@ -59,7 +59,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockedBlinkStatus.mockResolvedValue(linkedStatus());
   mockedListCameras.mockResolvedValue([cameraA, cameraB]);
-  mockedSettings.mockResolvedValue({ camera_ids: [], columns: 2, refresh_interval_seconds: 20 });
+  mockedSettings.mockResolvedValue({
+    camera_ids: [],
+    columns: 2,
+    refresh_interval_seconds: 20,
+    refresh_mode: "interval",
+  });
   // snapNow() creates a real Image() and calls .decode() on it to force a
   // fresh load before flipping the tile - happy-dom's real decode() attempts
   // an actual network fetch for the (relative, test-fixture) src, which
@@ -125,6 +130,7 @@ describe("SecurityFeedView camera grid", () => {
       camera_ids: [cameraB.id, cameraA.id],
       columns: 3,
       refresh_interval_seconds: 20,
+      refresh_mode: "interval",
     });
     const wrapper = await mountView();
     const tiles = wrapper.findAll("[data-testid^='feed-tile-']");
@@ -139,6 +145,7 @@ describe("SecurityFeedView camera grid", () => {
       camera_ids: [cameraB.id],
       columns: 2,
       refresh_interval_seconds: 20,
+      refresh_mode: "interval",
     });
     const wrapper = await mountView();
     expect(wrapper.find(`[data-testid="feed-tile-${cameraB.id}"]`).text()).toContain("Paused");
@@ -250,6 +257,47 @@ describe("SecurityFeedView polling", () => {
       await vi.advanceTimersByTimeAsync(20_000);
       const srcAfter = wrapper.find("img").attributes("src");
       expect(srcAfter).not.toBe(srcBefore);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("forces a genuinely fresh capture on each tick in interval mode, for an admin", async () => {
+    // The default mockedSettings resolution (set in beforeEach) is already
+    // refresh_mode: "interval".
+    vi.useFakeTimers();
+    try {
+      const wrapper = await mountView(true);
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(wrapper.find("img").attributes("src")).toContain("force=true");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never forces a capture in motion mode, even for an admin", async () => {
+    mockedSettings.mockResolvedValue({
+      camera_ids: [],
+      columns: 2,
+      refresh_interval_seconds: 20,
+      refresh_mode: "motion",
+    });
+    vi.useFakeTimers();
+    try {
+      const wrapper = await mountView(true);
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(wrapper.find("img").attributes("src")).not.toContain("force=true");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never forces a capture for a non-admin viewer, even in interval mode", async () => {
+    vi.useFakeTimers();
+    try {
+      const wrapper = await mountView(false);
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(wrapper.find("img").attributes("src")).not.toContain("force=true");
     } finally {
       vi.useRealTimers();
     }

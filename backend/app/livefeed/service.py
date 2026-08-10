@@ -92,6 +92,7 @@ async def update_security_feed_settings(
     row.camera_ids = [str(camera_id) for camera_id in payload.camera_ids]
     row.columns = payload.columns
     row.refresh_interval_seconds = payload.refresh_interval_seconds
+    row.refresh_mode = payload.refresh_mode
     await session.commit()
     await session.refresh(row)
     return row

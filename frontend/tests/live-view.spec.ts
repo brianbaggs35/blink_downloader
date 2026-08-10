@@ -374,6 +374,40 @@ describe("LiveView auto-refresh and sidebar toggle", () => {
     }
   });
 
+  it("forces a genuinely fresh capture on each auto-refresh tick for an admin", async () => {
+    vi.useFakeTimers();
+    try {
+      const wrapper = await mountView(true);
+      const toggle = wrapper.findComponent(ToggleSwitch);
+      await toggle.vm.$emit("update:modelValue", true);
+      await flushPromises();
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(wrapper.find('[data-testid="primary-preview"]').attributes("src")).toContain(
+        "force=true",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never forces a capture on auto-refresh for a non-admin viewer", async () => {
+    vi.useFakeTimers();
+    try {
+      const wrapper = await mountView(false);
+      const toggle = wrapper.findComponent(ToggleSwitch);
+      await toggle.vm.$emit("update:modelValue", true);
+      await flushPromises();
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(wrapper.find('[data-testid="primary-preview"]').attributes("src")).not.toContain(
+        "force=true",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("toggles the sidebar collapse state", async () => {
     const wrapper = await mountView();
     const button = wrapper.find('[data-testid="live-view-sidebar-toggle"]');

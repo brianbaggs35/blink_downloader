@@ -2449,6 +2449,11 @@ export interface components {
             /** Clip Ids */
             clip_ids: string[];
         };
+        /**
+         * SecurityFeedRefreshMode
+         * @enum {string}
+         */
+        SecurityFeedRefreshMode: "interval" | "motion";
         /** SecurityFeedSettingsRead */
         SecurityFeedSettingsRead: {
             /** Camera Ids */
@@ -2457,6 +2462,7 @@ export interface components {
             columns: number;
             /** Refresh Interval Seconds */
             refresh_interval_seconds: number;
+            refresh_mode: components["schemas"]["SecurityFeedRefreshMode"];
         };
         /** SecurityFeedSettingsUpdate */
         SecurityFeedSettingsUpdate: {
@@ -2472,6 +2478,8 @@ export interface components {
              * @default 20
              */
             refresh_interval_seconds: number;
+            /** @default interval */
+            refresh_mode: components["schemas"]["SecurityFeedRefreshMode"];
         };
         /**
          * SetupRequest

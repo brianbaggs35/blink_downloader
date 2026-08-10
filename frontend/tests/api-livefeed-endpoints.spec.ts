@@ -99,7 +99,12 @@ describe("livefeed settings endpoints", () => {
 
   it("updateSecurityFeedSettings PUTs the payload", async () => {
     const mock = capture(jsonResponse({ camera_ids: [], columns: 3, refresh_interval_seconds: 30 }));
-    await updateSecurityFeedSettings({ camera_ids: [], columns: 3, refresh_interval_seconds: 30 });
+    await updateSecurityFeedSettings({
+      camera_ids: [],
+      columns: 3,
+      refresh_interval_seconds: 30,
+      refresh_mode: "interval",
+    });
     expect(mock.mock.calls[0]?.[0]).toBe("/api/livefeed/settings/security-feed");
     expect((mock.mock.calls[0]?.[1] as RequestInit).method).toBe("PUT");
   });

@@ -11,18 +11,31 @@ grid showing whatever Blink's own motion-triggered capture last produced.
 
 import uuid
 from datetime import datetime
+from enum import StrEnum
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
+from app.db import str_enum as _str_enum
 
 SINGLETON_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
 DEFAULT_LIVE_VIEW_REFRESH_SECONDS = 10
 DEFAULT_SECURITY_FEED_REFRESH_SECONDS = 20
 DEFAULT_SECURITY_FEED_COLUMNS = 2
+
+
+class SecurityFeedRefreshMode(StrEnum):
+    # Forces a fresh capture from the camera every refresh_interval_seconds
+    # (admin-only server-side - see app.livefeed.service.get_camera_preview
+    # via api/cameras.py's force flag; a non-admin viewer transparently
+    # falls back to MOTION's passive behavior instead of erroring).
+    INTERVAL = "interval"
+    # Never forces a capture - just re-polls whatever Blink's cloud already
+    # has cached, which already reflects real motion-triggered updates.
+    MOTION = "motion"
 
 
 class LiveViewSettings(Base):
@@ -64,6 +77,11 @@ class SecurityFeedSettings(Base):
         Integer,
         default=DEFAULT_SECURITY_FEED_REFRESH_SECONDS,
         server_default=str(DEFAULT_SECURITY_FEED_REFRESH_SECONDS),
+    )
+    refresh_mode: Mapped[SecurityFeedRefreshMode] = mapped_column(
+        _str_enum(SecurityFeedRefreshMode, "security_feed_refresh_mode", length=10),
+        default=SecurityFeedRefreshMode.INTERVAL,
+        server_default=SecurityFeedRefreshMode.INTERVAL.name,
     )
 
     updated_at: Mapped[datetime] = mapped_column(
