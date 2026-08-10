@@ -496,7 +496,8 @@ async def test_google_drive_oauth_start_redirects_to_the_authorize_url(
     monkeypatch.setattr(
         "app.api.integrations.google_drive_authorize_url",
         lambda client_id, _client_secret, _redirect_uri, state: (
-            f"https://accounts.google.com/authorize?client_id={client_id}&state={state}"
+            f"https://accounts.google.com/authorize?client_id={client_id}&state={state}",
+            "fake-code-verifier",
         ),
     )
     response = await admin_client.get(
@@ -538,7 +539,8 @@ async def test_google_drive_oauth_callback_rejects_credentials_cleared_after_sta
     monkeypatch.setattr(
         "app.api.integrations.google_drive_authorize_url",
         lambda _client_id, _client_secret, _redirect_uri, state: (
-            f"https://accounts.google.com/?state={state}"
+            f"https://accounts.google.com/?state={state}",
+            "fake-code-verifier",
         ),
     )
     start_response = await admin_client.get(
@@ -567,7 +569,8 @@ async def test_google_drive_oauth_callback_completes_the_flow(
     monkeypatch.setattr(
         "app.api.integrations.google_drive_authorize_url",
         lambda _client_id, _client_secret, _redirect_uri, state: (
-            f"https://accounts.google.com/?state={state}"
+            f"https://accounts.google.com/?state={state}",
+            "fake-code-verifier",
         ),
     )
     start_response = await admin_client.get(
@@ -576,9 +579,12 @@ async def test_google_drive_oauth_callback_completes_the_flow(
     state = _query(start_response.headers["location"])["state"][0]
 
     async def _fake_exchange(
-        _client_id: str, _client_secret: str, _redirect_uri: str, code: str
+        _client_id: str, _client_secret: str, _redirect_uri: str, code: str, code_verifier: str
     ) -> str:
         assert code == "auth-code"
+        # The exact fix: the callback must pass through the same verifier
+        # set_pending_oauth_code_verifier() persisted from the start step.
+        assert code_verifier == "fake-code-verifier"
         return "gd-refresh-token"
 
     monkeypatch.setattr("app.api.integrations.google_drive_exchange_code", _fake_exchange)
@@ -605,7 +611,8 @@ async def test_google_drive_oauth_callback_wraps_exchange_errors(
     monkeypatch.setattr(
         "app.api.integrations.google_drive_authorize_url",
         lambda _client_id, _client_secret, _redirect_uri, state: (
-            f"https://accounts.google.com/?state={state}"
+            f"https://accounts.google.com/?state={state}",
+            "fake-code-verifier",
         ),
     )
     start_response = await admin_client.get(
@@ -613,7 +620,9 @@ async def test_google_drive_oauth_callback_wraps_exchange_errors(
     )
     state = _query(start_response.headers["location"])["state"][0]
 
-    async def _raise(client_id: str, client_secret: str, redirect_uri: str, code: str) -> str:
+    async def _raise(
+        client_id: str, client_secret: str, redirect_uri: str, code: str, code_verifier: str
+    ) -> str:
         raise CloudStorageError("consent denied")
 
     monkeypatch.setattr("app.api.integrations.google_drive_exchange_code", _raise)
@@ -624,6 +633,37 @@ async def test_google_drive_oauth_callback_wraps_exchange_errors(
         follow_redirects=False,
     )
     assert callback_response.headers["location"] == "/integrations?error=google_drive"
+
+
+async def test_google_drive_oauth_callback_rejects_a_matched_state_with_no_code_verifier(
+    monkeypatch: pytest.MonkeyPatch, admin_client: AsyncClient
+) -> None:
+    """Defends a narrow but real race: begin_oauth() and
+    set_pending_oauth_code_verifier() are two separate writes in the start
+    route - if a process died between them (or something else cleared the
+    verifier), the state could still validly match with no verifier to
+    exchange with. Must not proceed and call the exchange with None."""
+
+    async def _matched_without_verifier(*_a: object, **_kw: object) -> tuple[bool, str | None]:
+        return True, None
+
+    monkeypatch.setattr("app.api.integrations.consume_oauth_state", _matched_without_verifier)
+    exchange_called = False
+
+    async def _unexpected_exchange(*_a: object, **_kw: object) -> str:
+        nonlocal exchange_called
+        exchange_called = True
+        return "should-not-be-reached"
+
+    monkeypatch.setattr("app.api.integrations.google_drive_exchange_code", _unexpected_exchange)
+
+    callback_response = await admin_client.get(
+        "/api/settings/storage-integrations/google-drive/oauth/callback",
+        params={"code": "auth-code", "state": "irrelevant-state"},
+        follow_redirects=False,
+    )
+    assert callback_response.headers["location"] == "/integrations?error=google_drive"
+    assert exchange_called is False
 
 
 # ------------------------------------------------------------------ onedrive
@@ -725,6 +765,17 @@ async def test_onedrive_oauth_callback_rejects_a_missing_state(admin_client: Asy
     response = await admin_client.get(
         "/api/settings/storage-integrations/onedrive/oauth/callback",
         params={"code": "auth-code"},
+        follow_redirects=False,
+    )
+    assert response.headers["location"] == "/integrations?error=onedrive"
+
+
+async def test_onedrive_oauth_callback_rejects_an_unknown_state(
+    admin_client: AsyncClient,
+) -> None:
+    response = await admin_client.get(
+        "/api/settings/storage-integrations/onedrive/oauth/callback",
+        params={"code": "auth-code", "state": "not-the-real-state"},
         follow_redirects=False,
     )
     assert response.headers["location"] == "/integrations?error=onedrive"

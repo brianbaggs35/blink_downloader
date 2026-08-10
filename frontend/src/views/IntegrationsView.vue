@@ -272,6 +272,10 @@ async function saveProvider(key: ProviderKey): Promise<void> {
 
 const testing = ref(false);
 const testResults = ref<Partial<Record<ProviderKey, StorageTestResult>>>({});
+// Distinguishes "never ran a test yet" (stay silent) from "ran a test and
+// this provider came back null" (show it's not fully configured, rather
+// than looking like the button silently did nothing).
+const hasTested = ref(false);
 
 async function runTest(): Promise<void> {
   testing.value = true;
@@ -282,6 +286,7 @@ async function runTest(): Promise<void> {
       google_drive: response.google_drive ?? undefined,
       onedrive: response.onedrive ?? undefined,
     };
+    hasTested.value = true;
   } catch (caught) {
     toast.add({
       severity: "error",
@@ -432,6 +437,14 @@ const redirectOrigin = window.location.origin;
         >
           <i :class="testResults[integration.key]!.ok ? 'pi pi-check-circle' : 'pi pi-times-circle'" />
           {{ testResults[integration.key]!.detail }}
+        </div>
+        <div
+          v-else-if="hasTested && isEnabled(integration.key)"
+          class="test-result unconfigured"
+          :data-testid="`integration-test-result-${integration.key}`"
+        >
+          <i class="pi pi-question-circle" />
+          Not configured — finish connecting this provider, then test again.
         </div>
 
         <form
@@ -874,6 +887,10 @@ const redirectOrigin = window.location.origin;
 
 .test-result.fail {
   color: var(--p-red-500);
+}
+
+.test-result.unconfigured {
+  color: var(--p-surface-500);
 }
 
 .config-form {

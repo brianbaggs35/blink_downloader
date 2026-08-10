@@ -478,6 +478,28 @@ describe("IntegrationsView test connections", () => {
     );
   });
 
+  it("shows a Not configured indicator for an enabled provider that tested null", async () => {
+    mockedGet.mockResolvedValue({ ...baseSettings, s3_enabled: true });
+    mockedTest.mockResolvedValue({ s3: null, google_drive: null, onedrive: null });
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="test-all-integrations"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="integration-test-result-s3"]').text()).toContain(
+      "Not configured",
+    );
+    // Still disabled - stays silent, same as before this fix.
+    expect(wrapper.find('[data-testid="integration-test-result-google_drive"]').exists()).toBe(
+      false,
+    );
+  });
+
+  it("does not show Not configured before a test has actually been run", async () => {
+    mockedGet.mockResolvedValue({ ...baseSettings, s3_enabled: true });
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="integration-test-result-s3"]').exists()).toBe(false);
+  });
+
   it("toasts an error if the test request itself fails", async () => {
     mockedTest.mockRejectedValue(new ApiError(500, "down"));
     const wrapper = await mountView();

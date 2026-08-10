@@ -36,6 +36,7 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build as build_drive_service
 from googleapiclient.errors import HttpError as GoogleHttpError
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
+from oauthlib.oauth2.rfc6749.errors import OAuth2Error
 
 GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/auth"
 GOOGLE_OAUTH_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"  # noqa: S105 # nosec B105 - a URL, not a secret
@@ -231,7 +232,9 @@ class S3Client:
 # ------------------------------------------------------------- Google Drive
 
 
-def _google_flow(client_id: str, client_secret: str, redirect_uri: str) -> Flow:
+def _google_flow(
+    client_id: str, client_secret: str, redirect_uri: str, *, code_verifier: str | None = None
+) -> Flow:
     client_config = {
         "web": {
             "client_id": client_id,
@@ -242,28 +245,59 @@ def _google_flow(client_id: str, client_secret: str, redirect_uri: str) -> Flow:
         }
     }
     return Flow.from_client_config(
-        client_config, scopes=GOOGLE_DRIVE_SCOPES, redirect_uri=redirect_uri
+        client_config,
+        scopes=GOOGLE_DRIVE_SCOPES,
+        redirect_uri=redirect_uri,
+        code_verifier=code_verifier,
+        # Only auto-generate a fresh verifier for the "start" call (no
+        # verifier supplied yet); the "exchange" call always supplies the
+        # one persisted from the matching start call, and must reuse it
+        # exactly - see google_drive_authorize_url's docstring.
+        autogenerate_code_verifier=code_verifier is None,
     )
 
 
 def google_drive_authorize_url(
     client_id: str, client_secret: str, redirect_uri: str, state: str
-) -> str:
+) -> tuple[str, str]:
+    """Returns (authorize_url, code_verifier).
+
+    The caller MUST persist code_verifier and pass it back into
+    google_drive_exchange_code() for the matching callback. PKCE means the
+    authorize URL embeds a code_challenge derived from this verifier;
+    Google's token endpoint then requires the *same* verifier at exchange
+    time. Losing it (e.g. by building a second, unrelated Flow for the
+    callback that auto-generates its own) reproduces exactly the reported
+    "invalid_grant: Missing code verifier" failure - confirmed by
+    reproducing it empirically against the real oauthlib/google-auth-
+    oauthlib stack during investigation.
+    """
     flow = _google_flow(client_id, client_secret, redirect_uri)
     # offline + consent guarantees a refresh_token even if this app was
     # already authorized before (Google otherwise omits it on repeat
     # consent).
     authorize_url, _ = flow.authorization_url(access_type="offline", prompt="consent", state=state)
-    return str(authorize_url)
+    # authorization_url() always sets this when autogenerate_code_verifier
+    # is True (guaranteed above, since _google_flow was called with no
+    # code_verifier) - never None by the time this line runs.
+    if flow.code_verifier is None:  # pragma: no cover
+        raise AssertionError("authorization_url() did not generate a code_verifier")
+    return str(authorize_url), flow.code_verifier
 
 
 def _exchange_google_code_sync(
-    client_id: str, client_secret: str, redirect_uri: str, code: str
+    client_id: str, client_secret: str, redirect_uri: str, code: str, code_verifier: str
 ) -> str:
-    flow = _google_flow(client_id, client_secret, redirect_uri)
+    flow = _google_flow(client_id, client_secret, redirect_uri, code_verifier=code_verifier)
     try:
         flow.fetch_token(code=code)
-    except GoogleAuthError as exc:
+    except (GoogleAuthError, OAuth2Error) as exc:
+        # oauthlib's own OAuth2Error family (e.g. InvalidGrantError for a
+        # PKCE mismatch) is a completely separate exception hierarchy from
+        # google-auth's GoogleAuthError - confirmed via MRO inspection that
+        # neither is a subclass of the other, so both must be caught
+        # explicitly or a real Google-side rejection propagates as an
+        # unhandled 500 instead of this app's own friendly error redirect.
         raise CloudStorageError(f"Google Drive authorization failed: {exc}") from exc
     refresh_token = flow.credentials.refresh_token
     if not refresh_token:
@@ -275,11 +309,11 @@ def _exchange_google_code_sync(
 
 
 async def google_drive_exchange_code(
-    client_id: str, client_secret: str, redirect_uri: str, code: str
+    client_id: str, client_secret: str, redirect_uri: str, code: str, code_verifier: str
 ) -> str:
     """Exchanges an OAuth authorization code for a refresh token."""
     return await asyncio.to_thread(
-        _exchange_google_code_sync, client_id, client_secret, redirect_uri, code
+        _exchange_google_code_sync, client_id, client_secret, redirect_uri, code, code_verifier
     )
 
 
@@ -440,10 +474,20 @@ def onedrive_authorize_url(
 def _exchange_onedrive_code_sync(
     client_id: str, client_secret: str, redirect_uri: str, code: str
 ) -> str:
-    app = _onedrive_app(client_id, client_secret)
-    result = app.acquire_token_by_authorization_code(
-        code, scopes=MS_GRAPH_SCOPES, redirect_uri=redirect_uri
-    )
+    try:
+        app = _onedrive_app(client_id, client_secret)
+        result = app.acquire_token_by_authorization_code(
+            code, scopes=MS_GRAPH_SCOPES, redirect_uri=redirect_uri
+        )
+    except ValueError as exc:
+        # _onedrive_app() can perform authority validation against
+        # Microsoft's endpoint during construction - msal's own Authority
+        # class raises a plain ValueError (confirmed by reading its source)
+        # when that discovery call fails, e.g. a network hiccup. Same
+        # "uncaught exception surfaces as a raw 500" shape as the Google
+        # Drive PKCE bug above, just a different, less likely trigger
+        # (OneDrive's flow itself has no PKCE step to lose).
+        raise CloudStorageError(f"OneDrive authorization failed: {exc}") from exc
     refresh_token = result.get("refresh_token")
     if not refresh_token:
         detail = result.get("error_description", "Microsoft did not return a refresh token.")

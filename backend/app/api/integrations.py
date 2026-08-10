@@ -43,6 +43,7 @@ from app.integrations.service import (
     get_storage_integration_settings,
     set_google_drive_refresh_token,
     set_onedrive_refresh_token,
+    set_pending_oauth_code_verifier,
     update_storage_integration_settings,
 )
 from app.logs import get_logger
@@ -251,9 +252,10 @@ async def start_google_drive_oauth(
     )
     state = await begin_oauth(session, GOOGLE_DRIVE)
     redirect_uri = str(request.url_for("callback_google_drive_oauth"))
-    authorize_url = google_drive_authorize_url(
+    authorize_url, code_verifier = google_drive_authorize_url(
         row.google_drive_client_id, client_secret, redirect_uri, state
     )
+    await set_pending_oauth_code_verifier(session, code_verifier)
     return RedirectResponse(authorize_url, status_code=status.HTTP_302_FOUND)
 
 
@@ -264,7 +266,10 @@ async def callback_google_drive_oauth(
     code: str | None = Query(default=None),
     state: str | None = Query(default=None),
 ) -> RedirectResponse:
-    if not code or not state or not await consume_oauth_state(session, GOOGLE_DRIVE, state):
+    if not code or not state:
+        return RedirectResponse(f"{SETTINGS_REDIRECT_PATH}?error=google_drive")
+    matched, code_verifier = await consume_oauth_state(session, GOOGLE_DRIVE, state)
+    if not matched or not code_verifier:
         return RedirectResponse(f"{SETTINGS_REDIRECT_PATH}?error=google_drive")
     row = await get_storage_integration_settings(session)
     settings = get_settings()
@@ -276,7 +281,7 @@ async def callback_google_drive_oauth(
     redirect_uri = str(request.url_for("callback_google_drive_oauth"))
     try:
         refresh_token = await google_drive_exchange_code(
-            row.google_drive_client_id, client_secret, redirect_uri, code
+            row.google_drive_client_id, client_secret, redirect_uri, code, code_verifier
         )
     except CloudStorageError as exc:
         logger.warning("integrations.google_drive_oauth_failed", error=str(exc))
@@ -316,7 +321,10 @@ async def callback_onedrive_oauth(
     code: str | None = Query(default=None),
     state: str | None = Query(default=None),
 ) -> RedirectResponse:
-    if not code or not state or not await consume_oauth_state(session, ONEDRIVE, state):
+    if not code or not state:
+        return RedirectResponse(f"{SETTINGS_REDIRECT_PATH}?error=onedrive")
+    matched, _code_verifier = await consume_oauth_state(session, ONEDRIVE, state)
+    if not matched:
         return RedirectResponse(f"{SETTINGS_REDIRECT_PATH}?error=onedrive")
     row = await get_storage_integration_settings(session)
     settings = get_settings()
