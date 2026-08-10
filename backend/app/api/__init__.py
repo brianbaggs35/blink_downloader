@@ -36,9 +36,20 @@ api_router.include_router(
     tags=["auth"],
     dependencies=[Depends(login_rate_limit)],
 )
-api_router.include_router(
-    fastapi_users.get_users_router(UserRead, UserUpdate), prefix="/users", tags=["users"]
-)
+users_router = fastapi_users.get_users_router(UserRead, UserUpdate)
+# fastapi-users' generic PATCH/DELETE /{id} have no protection against
+# locking a household out of its own admin account (demoting or deleting
+# the last superuser) or an admin deleting their own session out from
+# under themselves - users_admin_router provides guarded replacements for
+# just those two routes. Dropped here (rather than left shadowed) so
+# there's only ever one route per path+method, not a registration-order-
+# dependent ambiguity between two competing handlers for the same path.
+users_router.routes = [
+    route
+    for route in users_router.routes
+    if not (route.path == "/{id}" and route.methods & {"PATCH", "DELETE"})  # type: ignore[attr-defined]
+]
+api_router.include_router(users_router, prefix="/users", tags=["users"])
 api_router.include_router(users_admin_router)
 api_router.include_router(biometrics_router)
 api_router.include_router(blink_router)
