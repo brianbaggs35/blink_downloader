@@ -74,6 +74,11 @@ class StorageIntegrationSettings(Base):
     # so this lives on the singleton row rather than a separate table.
     pending_oauth_provider: Mapped[str | None] = mapped_column(Text)
     pending_oauth_state: Mapped[str | None] = mapped_column(Text)
+    # PKCE verifier for the in-flight flow (Google Drive only - OneDrive's
+    # msal-based flow doesn't use PKCE). Same plain-text treatment as
+    # pending_oauth_state: equally short-lived/single-use CSRF-adjacent
+    # flow state, not a long-lived secret like a refresh token.
+    pending_oauth_code_verifier: Mapped[str | None] = mapped_column(Text)
     pending_oauth_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     updated_at: Mapped[datetime] = mapped_column(
