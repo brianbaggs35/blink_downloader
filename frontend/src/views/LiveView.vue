@@ -180,9 +180,14 @@ async function onCameraChange(slot: Slot, cameraId: string | null): Promise<void
 }
 
 function refreshAll(): void {
-  refreshSlot(primary);
+  // The passive preview endpoint never asks the camera for a new picture -
+  // only force=true does, and that's admin-only server-side (it wakes a
+  // battery-powered camera on demand). A non-admin viewer's auto-refresh
+  // still re-polls passively, same as before; only an admin's tick now
+  // genuinely forces a fresh snapshot.
+  refreshSlot(primary, { force: auth.isAdmin });
   if (compareMode.value) {
-    refreshSlot(secondary);
+    refreshSlot(secondary, { force: auth.isAdmin });
   }
 }
 

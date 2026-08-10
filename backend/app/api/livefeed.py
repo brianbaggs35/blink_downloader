@@ -65,6 +65,7 @@ async def read_security_feed_settings(
         camera_ids=[uuid.UUID(c) for c in row.camera_ids],
         columns=row.columns,
         refresh_interval_seconds=row.refresh_interval_seconds,
+        refresh_mode=row.refresh_mode,
     )
 
 
@@ -80,4 +81,5 @@ async def write_security_feed_settings(
         camera_ids=[uuid.UUID(c) for c in row.camera_ids],
         columns=row.columns,
         refresh_interval_seconds=row.refresh_interval_seconds,
+        refresh_mode=row.refresh_mode,
     )

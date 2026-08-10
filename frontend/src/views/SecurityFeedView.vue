@@ -58,7 +58,13 @@ function visibleCameras(): CameraRead[] {
 function tileSrc(camera: CameraRead): string {
   // bumpAllTiles() always seeds this before the grid (and thus any <img>) renders.
   const version = tileVersion[camera.id]!;
-  return `${cameraPreviewUrl(camera.id)}?t=${version}`;
+  // Interval mode forces a genuinely fresh capture on every poll tick -
+  // force=true is admin-only server-side (it wakes a battery-powered
+  // camera on demand), so a non-admin viewer transparently falls back to
+  // motion mode's passive behavior instead of every poll 403ing.
+  const force = feedSettings.value?.refresh_mode === "interval" && auth.isAdmin;
+  const base = cameraPreviewUrl(camera.id, { force });
+  return `${base}${base.includes("?") ? "&" : "?"}t=${version}`;
 }
 
 function onTileLoad(camera: CameraRead): void {

@@ -74,7 +74,12 @@ async def test_security_feed_get_requires_authentication(client: AsyncClient) ->
 async def test_security_feed_get_defaults(admin_client: AsyncClient) -> None:
     response = await admin_client.get("/api/livefeed/settings/security-feed")
     assert response.status_code == 200
-    assert response.json() == {"camera_ids": [], "columns": 2, "refresh_interval_seconds": 20}
+    assert response.json() == {
+        "camera_ids": [],
+        "columns": 2,
+        "refresh_interval_seconds": 20,
+        "refresh_mode": "interval",
+    }
 
 
 async def test_security_feed_put_requires_superuser(viewer_client: AsyncClient) -> None:
@@ -95,6 +100,33 @@ async def test_security_feed_put_updates_and_persists(admin_client: AsyncClient)
 
     followup = await admin_client.get("/api/livefeed/settings/security-feed")
     assert followup.json()["refresh_interval_seconds"] == 30
+
+
+async def test_security_feed_put_defaults_refresh_mode_to_interval(
+    admin_client: AsyncClient,
+) -> None:
+    response = await admin_client.put(
+        "/api/livefeed/settings/security-feed",
+        json={"camera_ids": [], "columns": 2, "refresh_interval_seconds": 20},
+    )
+    assert response.json()["refresh_mode"] == "interval"
+
+
+async def test_security_feed_put_sets_motion_mode_and_persists(admin_client: AsyncClient) -> None:
+    response = await admin_client.put(
+        "/api/livefeed/settings/security-feed",
+        json={
+            "camera_ids": [],
+            "columns": 2,
+            "refresh_interval_seconds": 20,
+            "refresh_mode": "motion",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["refresh_mode"] == "motion"
+
+    followup = await admin_client.get("/api/livefeed/settings/security-feed")
+    assert followup.json()["refresh_mode"] == "motion"
 
 
 async def test_security_feed_put_rejects_too_many_cameras(admin_client: AsyncClient) -> None:

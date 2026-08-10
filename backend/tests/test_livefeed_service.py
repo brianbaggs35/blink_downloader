@@ -25,6 +25,7 @@ from app.blink.service import (
 )
 from app.config import get_settings
 from app.livefeed.live_stream import ClosableBlinkService, LiveViewSession, LiveViewStartError
+from app.livefeed.models import SecurityFeedRefreshMode
 from app.livefeed.schemas import (
     LiveViewSettingsUpdate,
     SecurityFeedSettingsUpdate,
@@ -194,18 +195,25 @@ async def test_security_feed_settings_defaults_on_first_access(app_session: Asyn
     assert row.camera_ids == []
     assert row.columns == 2
     assert row.refresh_interval_seconds == 20
+    assert row.refresh_mode == SecurityFeedRefreshMode.INTERVAL
 
 
 async def test_security_feed_settings_update_persists(app_session: AsyncSession) -> None:
     _account, camera = await _make_account_and_camera(app_session)
     await update_security_feed_settings(
         app_session,
-        SecurityFeedSettingsUpdate(camera_ids=[camera.id], columns=3, refresh_interval_seconds=45),
+        SecurityFeedSettingsUpdate(
+            camera_ids=[camera.id],
+            columns=3,
+            refresh_interval_seconds=45,
+            refresh_mode=SecurityFeedRefreshMode.MOTION,
+        ),
     )
     row = await get_security_feed_settings(app_session)
     assert row.camera_ids == [str(camera.id)]
     assert row.columns == 3
     assert row.refresh_interval_seconds == 45
+    assert row.refresh_mode == SecurityFeedRefreshMode.MOTION
 
 
 # ---------------------------------------------------------- camera preview

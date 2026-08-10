@@ -43,7 +43,12 @@ const cameraB = {
   security_context: null,
 };
 
-const defaultSettings = { camera_ids: [], columns: 2, refresh_interval_seconds: 20 };
+const defaultSettings = {
+  camera_ids: [],
+  columns: 2,
+  refresh_interval_seconds: 20,
+  refresh_mode: "interval" as const,
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -153,6 +158,7 @@ describe("SettingsSecurityFeedPanel save", () => {
       camera_ids: [],
       columns: 4,
       refresh_interval_seconds: 60,
+      refresh_mode: "interval",
     });
   });
 
@@ -167,6 +173,7 @@ describe("SettingsSecurityFeedPanel save", () => {
       camera_ids: [cameraA.id],
       columns: 2,
       refresh_interval_seconds: 20,
+      refresh_mode: "interval",
     });
     expect(toastAdd).toHaveBeenCalledWith(
       expect.objectContaining({ severity: "success", summary: "Security Feed settings saved" }),
@@ -192,6 +199,26 @@ describe("SettingsSecurityFeedPanel save", () => {
     await flushPromises();
     expect(wrapper.find('[data-testid="security-feed-settings-save-error"]').text()).toBe(
       "Unexpected error.",
+    );
+  });
+
+  it("loads the saved refresh mode and sends the changed value on save", async () => {
+    mockedGet.mockResolvedValue({ ...defaultSettings, refresh_mode: "motion" });
+    mockedUpdate.mockResolvedValue({ ...defaultSettings, refresh_mode: "interval" });
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    const refreshModeSelect = wrapper
+      .findAllComponents(Select)
+      .find((s) => s.attributes("data-testid") === "security-feed-refresh-mode")!;
+    expect(refreshModeSelect.props("modelValue")).toBe("motion");
+
+    await refreshModeSelect.vm.$emit("update:modelValue", "interval");
+    await wrapper.find('[data-testid="security-feed-settings-form"]').trigger("submit.prevent");
+    await flushPromises();
+
+    expect(mockedUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ refresh_mode: "interval" }),
     );
   });
 });

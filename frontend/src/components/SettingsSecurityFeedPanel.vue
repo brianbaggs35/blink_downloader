@@ -15,13 +15,18 @@ import {
   updateSecurityFeedSettings,
 } from "@/api";
 
-import type { CameraRead } from "@/api";
+import type { CameraRead, SecurityFeedRefreshMode } from "@/api";
 
 const COLUMN_OPTIONS = [
   { label: "1 column", value: 1 },
   { label: "2 columns", value: 2 },
   { label: "3 columns", value: 3 },
   { label: "4 columns", value: 4 },
+];
+
+const REFRESH_MODE_OPTIONS: { label: string; value: SecurityFeedRefreshMode }[] = [
+  { label: "Every interval (forces a fresh snapshot)", value: "interval" },
+  { label: "Only on motion (passive, no camera wake)", value: "motion" },
 ];
 
 const toast = useToast();
@@ -37,6 +42,7 @@ const cameras = ref<CameraRead[]>([]);
 const selectedIds = ref<string[]>([]);
 const columns = ref(2);
 const refreshIntervalSeconds = ref(20);
+const refreshMode = ref<SecurityFeedRefreshMode>("interval");
 
 const selectedCameras = computed(() =>
   selectedIds.value
@@ -94,6 +100,7 @@ async function load(): Promise<void> {
     selectedIds.value = [...settings.camera_ids];
     columns.value = settings.columns;
     refreshIntervalSeconds.value = settings.refresh_interval_seconds;
+    refreshMode.value = settings.refresh_mode;
   } catch (caught) {
     loadError.value =
       caught instanceof ApiError ? caught.message : "Could not load Security Feed settings.";
@@ -112,6 +119,7 @@ async function save(): Promise<void> {
       camera_ids: selectedIds.value,
       columns: columns.value,
       refresh_interval_seconds: refreshIntervalSeconds.value,
+      refresh_mode: refreshMode.value,
     });
     toast.add({ severity: "success", summary: "Security Feed settings saved", life: 2500 });
   } catch (caught) {
@@ -271,6 +279,21 @@ async function save(): Promise<void> {
             show-buttons
             fluid
             data-testid="security-feed-interval"
+          />
+        </label>
+        <label
+          class="field"
+          for="security-feed-refresh-mode"
+        >
+          <span class="field-label">Refresh mode</span>
+          <Select
+            v-model="refreshMode"
+            input-id="security-feed-refresh-mode"
+            :options="REFRESH_MODE_OPTIONS"
+            option-label="label"
+            option-value="value"
+            fluid
+            data-testid="security-feed-refresh-mode"
           />
         </label>
       </div>

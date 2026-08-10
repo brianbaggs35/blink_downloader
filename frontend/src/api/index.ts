@@ -23,6 +23,7 @@ export type LiveViewSettingsUpdate = components["schemas"]["LiveViewSettingsUpda
 export type LiveViewSessionRead = components["schemas"]["LiveViewSessionRead"];
 export type SecurityFeedSettingsRead = components["schemas"]["SecurityFeedSettingsRead"];
 export type SecurityFeedSettingsUpdate = components["schemas"]["SecurityFeedSettingsUpdate"];
+export type SecurityFeedRefreshMode = components["schemas"]["SecurityFeedRefreshMode"];
 
 export type ClipRead = components["schemas"]["ClipRead"];
 export type ClipListResponse = components["schemas"]["ClipListResponse"];
