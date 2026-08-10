@@ -42,7 +42,7 @@ RUN uv sync --frozen --no-dev --no-install-project \
 
 # --------------------------------------------------------------- prod target
 FROM cgr.dev/chainguard/python:latest-dev AS prod
-USER root
+USER 0
 RUN apk add --no-cache ffmpeg
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -58,7 +58,7 @@ COPY backend/app /app/app
 # (copy the image's dir + ownership onto a fresh, empty volume on first
 # mount) carries nonroot ownership over instead — verified empirically.
 RUN mkdir -p /data/clips /data/insightface \
-    && chown -R nonroot:nonroot /app /data
-USER nonroot
+    && chown -R 65532:65532 /app /data
+USER 65532:65532
 ENTRYPOINT []
 CMD ["/app/.venv/bin/python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
