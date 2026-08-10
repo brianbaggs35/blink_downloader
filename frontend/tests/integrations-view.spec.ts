@@ -100,6 +100,12 @@ describe("IntegrationsView cards", () => {
     expect(wrapper.find('[data-testid="integration-card-onedrive"]').exists()).toBe(true);
   });
 
+  it("colors the S3 icon (pi-amazon carries no brand color of its own)", async () => {
+    const wrapper = await mountView();
+    const icon = wrapper.find('[data-testid="integration-card-s3"] .pi-amazon');
+    expect(icon.attributes("style")).toContain("color: #ff9900");
+  });
+
   it("shows Not connected for a disabled integration", async () => {
     const wrapper = await mountView();
     expect(wrapper.find('[data-testid="integration-status-s3"]').text()).toBe("Not connected");
