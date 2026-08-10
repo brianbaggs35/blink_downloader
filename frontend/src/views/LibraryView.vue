@@ -126,7 +126,72 @@ async function loadConfiguredCloudBackends(): Promise<void> {
 }
 
 const openClip = ref<ClipRead | null>(null);
+// Which list openClip's position is measured against - normally the visible
+// grid's own clips/page, but temporarily a separately-fetched neighboring
+// page once Prev/Next crosses a page boundary, so in-modal navigation never
+// disturbs the grid page the user was actually browsing.
+const modalPageOverride = ref<{ pageNumber: number; items: ClipRead[] } | null>(null);
 const statusError = ref(false);
+
+const activeClipList = computed(() => modalPageOverride.value?.items ?? clips.value);
+const activeClipListPage = computed(() => modalPageOverride.value?.pageNumber ?? page.value);
+
+const openClipIndex = computed(() =>
+  openClip.value ? activeClipList.value.findIndex((c) => c.id === openClip.value!.id) : -1,
+);
+
+const openClipAbsoluteIndex = computed(() =>
+  openClipIndex.value === -1
+    ? -1
+    : (activeClipListPage.value - 1) * PAGE_SIZE + openClipIndex.value,
+);
+
+const hasPrevClip = computed(() => openClipAbsoluteIndex.value > 0);
+const hasNextClip = computed(
+  () => openClipAbsoluteIndex.value !== -1 && openClipAbsoluteIndex.value < total.value - 1,
+);
+
+async function goToAdjacentClip(direction: "prev" | "next"): Promise<void> {
+  const delta = direction === "next" ? 1 : -1;
+  const targetIndex = openClipIndex.value + delta;
+  if (targetIndex >= 0 && targetIndex < activeClipList.value.length) {
+    // eslint-disable-next-line security/detect-object-injection
+    openClip.value = activeClipList.value[targetIndex]!;
+    return;
+  }
+  const targetPage = activeClipListPage.value + delta;
+  try {
+    const response = await listClips({
+      camera_id: cameraFilter.value ?? undefined,
+      since: sinceFilter.value?.toISOString(),
+      until: untilFilter.value?.toISOString(),
+      recognized_person_id: recognizedPersonFilter.value ?? undefined,
+      has_recognized_person: recognizedOnly.value || undefined,
+      page: targetPage,
+      page_size: PAGE_SIZE,
+    });
+    // Guards a race against the total the Prev/Next buttons' disabled state
+    // was computed from (e.g. a clip deleted concurrently) - not reachable
+    // in the common case, but the server call could still legitimately
+    // return fewer items than expected.
+    if (response.items.length === 0) return;
+    modalPageOverride.value = { pageNumber: targetPage, items: response.items };
+    openClip.value =
+      direction === "next" ? response.items[0]! : response.items[response.items.length - 1]!;
+  } catch (caught) {
+    toast.add({
+      severity: "error",
+      summary: "Could not load the next clip",
+      detail: caught instanceof ApiError ? caught.message : "Unexpected error.",
+      life: 4000,
+    });
+  }
+}
+
+function closeClip(): void {
+  openClip.value = null;
+  modalPageOverride.value = null;
+}
 
 async function loadCameras(): Promise<void> {
   try {
@@ -378,7 +443,7 @@ function confirmSingleDelete(clip: ClipRead): void {
 async function performSingleDelete(clip: ClipRead): Promise<void> {
   try {
     await deleteClip(clip.id);
-    openClip.value = null;
+    closeClip();
     toast.add({ severity: "success", summary: "Clip deleted", life: 2500 });
     await loadClips();
   } catch (caught) {
@@ -661,8 +726,12 @@ async function performSingleDelete(clip: ClipRead): Promise<void> {
       :clip="openClip"
       :camera-name="openClip ? (cameraNameById.get(openClip.camera_id) ?? 'Unknown camera') : ''"
       :can-manage="auth.isAdmin"
-      @close="openClip = null"
+      :has-prev="hasPrevClip"
+      :has-next="hasNextClip"
+      @close="closeClip"
       @delete="openClip && confirmSingleDelete(openClip)"
+      @prev="goToAdjacentClip('prev')"
+      @next="goToAdjacentClip('next')"
     />
   </section>
 </template>

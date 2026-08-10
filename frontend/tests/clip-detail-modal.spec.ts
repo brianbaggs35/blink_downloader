@@ -105,9 +105,13 @@ function notFound(): ApiError {
 // mount (an overlay-positioning step); analysis is then fetched
 // asynchronously. Query the real document after nextTick + flushPromises
 // rather than stubbing Teleport (which renders an empty placeholder).
-async function mountModal(clipProp: ClipRead | null, canManage = true) {
+async function mountModal(
+  clipProp: ClipRead | null,
+  canManage = true,
+  navProps: { hasPrev?: boolean; hasNext?: boolean } = {},
+) {
   const wrapper = mount(ClipDetailModal, {
-    props: { clip: clipProp, cameraName: "Front Door", canManage },
+    props: { clip: clipProp, cameraName: "Front Door", canManage, ...navProps },
     global: mountGlobal(makePinia()),
     attachTo: document.body,
   });
@@ -705,5 +709,53 @@ describe("ClipDetailModal — report a missed face", () => {
 
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: "success" }));
     expect(mockedGetAnalysis).not.toHaveBeenCalled();
+  });
+});
+
+describe("ClipDetailModal — prev/next navigation", () => {
+  beforeEach(() => {
+    mockedGetAnalysis.mockRejectedValue(notFound());
+  });
+
+  it("shows the camera name and keeps the maximize/close header actions", async () => {
+    const wrapper = await mountModal(clip);
+    expect(document.body.textContent).toContain("Front Door");
+    expect(wrapper.findComponent({ name: "Dialog" }).props("maximizable")).toBe(true);
+  });
+
+  it("disables both arrows by default", async () => {
+    await mountModal(clip);
+    expect(
+      document.body.querySelector('[data-testid="clip-modal-prev"]')?.hasAttribute("disabled"),
+    ).toBe(true);
+    expect(
+      document.body.querySelector('[data-testid="clip-modal-next"]')?.hasAttribute("disabled"),
+    ).toBe(true);
+  });
+
+  it("enables an arrow only when its hasPrev/hasNext prop is true", async () => {
+    await mountModal(clip, true, { hasPrev: true, hasNext: true });
+    expect(
+      document.body.querySelector('[data-testid="clip-modal-prev"]')?.hasAttribute("disabled"),
+    ).toBe(false);
+    expect(
+      document.body.querySelector('[data-testid="clip-modal-next"]')?.hasAttribute("disabled"),
+    ).toBe(false);
+  });
+
+  it("emits prev when the left arrow is clicked", async () => {
+    const wrapper = await mountModal(clip, true, { hasPrev: true });
+    const button = document.body.querySelector<HTMLElement>('[data-testid="clip-modal-prev"]');
+    button?.click();
+    await nextTick();
+    expect(wrapper.emitted("prev")).toHaveLength(1);
+  });
+
+  it("emits next when the right arrow is clicked", async () => {
+    const wrapper = await mountModal(clip, true, { hasNext: true });
+    const button = document.body.querySelector<HTMLElement>('[data-testid="clip-modal-next"]');
+    button?.click();
+    await nextTick();
+    expect(wrapper.emitted("next")).toHaveLength(1);
   });
 });
