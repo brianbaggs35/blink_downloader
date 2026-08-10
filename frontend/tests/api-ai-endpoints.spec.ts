@@ -4,6 +4,7 @@ import {
   bulkAnalyzeClips,
   captureVehicleReferenceFrame,
   createUser,
+  deleteUser,
   deleteVehicle,
   getAiSettings,
   getAiStats,
@@ -24,6 +25,7 @@ import {
   testAlertChannels,
   updateAiSettings,
   updateAlertSettings,
+  updateUser,
   vehicleReferenceFrameUrl,
 } from "@/api";
 import { jsonResponse } from "./helpers";
@@ -348,5 +350,31 @@ describe("user endpoints", () => {
     expect(mock.mock.calls[0]?.[0]).toBe("/api/users");
     const init = mock.mock.calls[0]?.[1] as RequestInit;
     expect(JSON.parse(init.body as string)).toMatchObject({ email: "new@example.com" });
+  });
+
+  it("updateUser PATCHes the given user id", async () => {
+    const mock = capture(
+      jsonResponse({
+        id: "u-2",
+        email: "new@example.com",
+        is_active: true,
+        is_superuser: true,
+        is_verified: true,
+        display_name: "Renamed",
+        timezone: "UTC",
+      }),
+    );
+    await updateUser("u-2", { display_name: "Renamed", is_superuser: true, password: null });
+    expect(mock.mock.calls[0]?.[0]).toBe("/api/users/u-2");
+    const init = mock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body as string)).toMatchObject({ display_name: "Renamed" });
+  });
+
+  it("deleteUser DELETEs by user id", async () => {
+    const mock = capture(new Response(null, { status: 204 }));
+    await deleteUser("u-2");
+    expect(mock.mock.calls[0]?.[0]).toBe("/api/users/u-2");
+    expect((mock.mock.calls[0]?.[1] as RequestInit).method).toBe("DELETE");
   });
 });

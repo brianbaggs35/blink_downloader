@@ -6,6 +6,7 @@ import type { components } from "./schema";
 
 export type UserRead = components["schemas"]["UserRead"];
 export type UserUpdate = components["schemas"]["UserUpdate"];
+export type AdminUserUpdate = components["schemas"]["AdminUserUpdate"];
 export type LandingPage = components["schemas"]["LandingPage"];
 export type SetupRequest = components["schemas"]["SetupRequest"];
 export type SetupStatus = components["schemas"]["SetupStatus"];
@@ -557,6 +558,14 @@ export function listUsers(): Promise<UserRead[]> {
 
 export function createUser(body: UserCreate): Promise<UserRead> {
   return api<UserRead>("/users", { json: body });
+}
+
+export function updateUser(id: string, body: AdminUserUpdate): Promise<UserRead> {
+  return api<UserRead>(`/users/${id}`, { method: "PATCH", json: body });
+}
+
+export function deleteUser(id: string): Promise<void> {
+  return api<void>(`/users/${id}`, { method: "DELETE" });
 }
 
 // -------------------------------------------------------------- Biometrics
