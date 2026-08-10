@@ -11,6 +11,7 @@ isn't yet.
 
 import asyncio
 import io
+import re
 import time
 import uuid
 from datetime import UTC, datetime
@@ -237,6 +238,21 @@ async def run_analysis(
         biometrics_model_cache_dir,
     )
 
+    # Independent of bypass by construction (bypass only ever affects
+    # `label` below) - a recognized household member's name should replace
+    # a generic "a person"/"the individual" reference in the narrative
+    # summary regardless of whether the clip ends up flagged suspicious.
+    # Scoped to exactly one recognized identity: with two or more, there's
+    # no reliable way to know which generic mention maps to which person,
+    # and guessing wrong is worse than leaving it generic.
+    summary = final_result.summary
+    if len(recognized_scores) == 1:
+        [recognized_person_id] = recognized_scores.keys()
+        names = await _person_names(session, {recognized_person_id})
+        name = names.get(recognized_person_id)
+        if name is not None:
+            summary = _substitute_recognized_name(summary, name)
+
     # A trusted household member never trips the label/event/alert just for
     # being recognized - checked here (after recognition, before anything is
     # persisted) rather than by skipping tier2 escalation above: the raw
@@ -254,7 +270,7 @@ async def run_analysis(
 
     analysis = Analysis(
         clip_id=clip.id,
-        summary=final_result.summary,
+        summary=summary,
         suspicion_score=final_result.suspicion_score,
         suspicion_label=label,
         tier=final_tier,
@@ -590,12 +606,42 @@ def _bbox_overlap_ratio(
     return intersection / face_area
 
 
+_GENERIC_PERSON_RE = re.compile(r"\b(?:an?|the)\s+(?:person|individual|man|woman)\b", re.IGNORECASE)
+
+
+def _substitute_recognized_name(summary: str, name: str) -> str:
+    """Replaces generic references ("a person", "the individual", ...) with
+    the enrolled name of the one household member recognized in this clip.
+    A name is a valid substitute in any of these positions (sentence-start,
+    mid-sentence, before a comma/possessive) since it's always a properly
+    capitalized proper noun - no case-preservation logic needed."""
+    return _GENERIC_PERSON_RE.sub(name, summary)
+
+
 def _upgrade_person_labels(
     entities: list[DetectedEntityResult],
     face_matches: list[tuple[DetectedFace, FaceMatch]],
     names_by_person_id: dict[uuid.UUID, str],
 ) -> None:
-    person_entities = [e for e in entities if e.type == "person" and e.bbox is not None]
+    all_person_entities = [e for e in entities if e.type == "person"]
+    if not all_person_entities:
+        return
+
+    # No bbox needed to disambiguate when there's nothing to disambiguate:
+    # exactly one detected person entity and exactly one recognized
+    # identity in this frame must be the same person, even if the VLM was
+    # never asked for a bbox (only requested when vehicle-proximity
+    # monitoring is active on this camera - see providers.build_prompt).
+    distinct_person_ids = {match.person_id for _, match in face_matches}
+    if len(all_person_entities) == 1 and len(distinct_person_ids) == 1:
+        [person_id] = distinct_person_ids
+        name = names_by_person_id.get(person_id)
+        if name is not None:
+            all_person_entities[0].label = name
+            all_person_entities[0].recognized_person_id = str(person_id)
+        return
+
+    person_entities = [e for e in all_person_entities if e.bbox is not None]
     if not person_entities:
         return
     for face, match in face_matches:
