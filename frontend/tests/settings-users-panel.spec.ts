@@ -11,6 +11,8 @@ vi.mock("@/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api")>()),
   listUsers: vi.fn(),
   createUser: vi.fn(),
+  updateUser: vi.fn(),
+  deleteUser: vi.fn(),
 }));
 
 const toastAdd = vi.fn();
@@ -18,10 +20,15 @@ vi.mock("primevue/usetoast", () => ({
   useToast: () => ({ add: toastAdd }),
 }));
 
-import { createUser, listUsers } from "@/api";
+const confirmRequire = vi.fn();
+vi.mock("primevue/useconfirm", () => ({ useConfirm: () => ({ require: confirmRequire }) }));
+
+import { createUser, deleteUser, listUsers, updateUser } from "@/api";
 
 const mockedList = vi.mocked(listUsers);
 const mockedCreate = vi.mocked(createUser);
+const mockedUpdate = vi.mocked(updateUser);
+const mockedDelete = vi.mocked(deleteUser);
 
 const viewerUser = {
   ...fakeUser,
@@ -49,6 +56,15 @@ function mountPanel() {
   const pinia = makePinia();
   useAuthStore().user = { ...fakeUser };
   return mount(SettingsUsersPanel, { global: mountGlobal(pinia), attachTo: document.body });
+}
+
+function setField(testId: string, value: string): void {
+  // InputText puts the testid on the <input> itself; Password wraps it in a
+  // span, so the testid lands one level up — handle both.
+  const root = document.body.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
+  const el = root instanceof HTMLInputElement ? root : root!.querySelector("input");
+  el!.value = value;
+  el!.dispatchEvent(new Event("input"));
 }
 
 describe("SettingsUsersPanel loading", () => {
@@ -100,15 +116,6 @@ describe("SettingsUsersPanel invite flow", () => {
   beforeEach(() => {
     mockedList.mockResolvedValue([fakeUser]);
   });
-
-  function setField(testId: string, value: string): void {
-    // InputText puts the testid on the <input> itself; Password wraps it in
-    // a span, so the testid lands one level up — handle both.
-    const root = document.body.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
-    const el = root instanceof HTMLInputElement ? root : root!.querySelector("input");
-    el!.value = value;
-    el!.dispatchEvent(new Event("input"));
-  }
 
   async function openInvite(wrapper: ReturnType<typeof mountPanel>): Promise<void> {
     await wrapper.find('[data-testid="open-invite"]').trigger("click");
@@ -221,6 +228,210 @@ describe("SettingsUsersPanel invite flow", () => {
     await submitInvite();
     expect(document.body.querySelector('[data-testid="invite-error"]')?.textContent).toBe(
       "Unexpected error.",
+    );
+  });
+});
+
+describe("SettingsUsersPanel edit flow", () => {
+  beforeEach(() => {
+    mockedList.mockResolvedValue([fakeUser, viewerUser]);
+  });
+
+  async function openEdit(
+    wrapper: ReturnType<typeof mountPanel>,
+    userId: string,
+  ): Promise<void> {
+    await wrapper.find(`[data-testid="edit-user-${userId}"]`).trigger("click");
+    await flushPromises();
+    await nextTick();
+  }
+
+  async function submitEdit(): Promise<void> {
+    document.body.querySelector<HTMLFormElement>('[data-testid="edit-form"]')!
+      .dispatchEvent(new Event("submit", { cancelable: true }));
+    await flushPromises();
+    await nextTick();
+  }
+
+  it("opens pre-filled with the target user's current name and role", async () => {
+    const wrapper = mountPanel();
+    await flushPromises();
+    await openEdit(wrapper, viewerUser.id);
+    const nameInput = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="edit-display-name"]',
+    );
+    expect(nameInput!.value).toBe("");
+    const passwordInput = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="edit-password"] input',
+    );
+    expect(passwordInput!.value).toBe("");
+  });
+
+  it("rejects a too-short password before calling the API", async () => {
+    const wrapper = mountPanel();
+    await flushPromises();
+    await openEdit(wrapper, viewerUser.id);
+    setField("edit-password", "short");
+    await submitEdit();
+    expect(document.body.querySelector('[data-testid="edit-error"]')?.textContent).toContain(
+      "at least 12",
+    );
+    expect(mockedUpdate).not.toHaveBeenCalled();
+  });
+
+  it("omits the password entirely when the field is left blank", async () => {
+    mockedUpdate.mockResolvedValue({ ...viewerUser, display_name: "Renamed" });
+    const wrapper = mountPanel();
+    await flushPromises();
+    await openEdit(wrapper, viewerUser.id);
+    setField("edit-display-name", "Renamed");
+    await submitEdit();
+    expect(mockedUpdate).toHaveBeenCalledWith(viewerUser.id, {
+      display_name: "Renamed",
+      is_superuser: false,
+      password: null,
+    });
+  });
+
+  it("includes the password when one is provided", async () => {
+    mockedUpdate.mockResolvedValue(viewerUser);
+    const wrapper = mountPanel();
+    await flushPromises();
+    await openEdit(wrapper, viewerUser.id);
+    setField("edit-password", "a-brand-new-password");
+    await submitEdit();
+    expect(mockedUpdate).toHaveBeenCalledWith(
+      viewerUser.id,
+      expect.objectContaining({ password: "a-brand-new-password" }),
+    );
+  });
+
+  it("updates the row and toasts success on save", async () => {
+    const updated = { ...viewerUser, display_name: "Renamed", is_superuser: true };
+    mockedUpdate.mockResolvedValue(updated);
+    const wrapper = mountPanel();
+    await flushPromises();
+    await openEdit(wrapper, viewerUser.id);
+    setField("edit-display-name", "Renamed");
+    const adminOption = document.body.querySelectorAll<HTMLElement>(
+      '[data-testid="edit-role"] .p-togglebutton',
+    )[0]!;
+    adminOption.click();
+    await flushPromises();
+    await nextTick();
+    await submitEdit();
+
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: "success" }));
+    expect(document.body.querySelector('[data-testid="edit-modal"]')).toBeFalsy();
+    const row = wrapper.find(`[data-testid="user-row-${viewerUser.id}"]`);
+    expect(row.text()).toContain("Renamed");
+    expect(row.text()).toContain("Admin");
+  });
+
+  it("keeps the auth store's own user in sync after a self-edit", async () => {
+    const updated = { ...fakeUser, display_name: "New Name For Me" };
+    mockedUpdate.mockResolvedValue(updated);
+    const wrapper = mountPanel();
+    await flushPromises();
+    await openEdit(wrapper, fakeUser.id);
+    setField("edit-display-name", "New Name For Me");
+    await submitEdit();
+    expect(useAuthStore().user?.display_name).toBe("New Name For Me");
+  });
+
+  it("shows the API error inline and keeps the dialog open", async () => {
+    mockedUpdate.mockRejectedValue(new ApiError(400, "Cannot remove the last administrator."));
+    const wrapper = mountPanel();
+    await flushPromises();
+    await openEdit(wrapper, fakeUser.id);
+    await submitEdit();
+    expect(document.body.querySelector('[data-testid="edit-error"]')?.textContent).toBe(
+      "Cannot remove the last administrator.",
+    );
+    expect(document.body.querySelector('[data-testid="edit-modal"]')).toBeTruthy();
+  });
+
+  it("falls back to a generic error for non-API edit failures", async () => {
+    mockedUpdate.mockRejectedValue(new TypeError("down"));
+    const wrapper = mountPanel();
+    await flushPromises();
+    await openEdit(wrapper, viewerUser.id);
+    await submitEdit();
+    expect(document.body.querySelector('[data-testid="edit-error"]')?.textContent).toBe(
+      "Unexpected error.",
+    );
+  });
+});
+
+describe("SettingsUsersPanel delete flow", () => {
+  beforeEach(() => {
+    mockedList.mockResolvedValue([fakeUser, viewerUser]);
+  });
+
+  it("does not render a delete button on the current user's own row", async () => {
+    const wrapper = mountPanel();
+    await flushPromises();
+    expect(
+      wrapper.find(`[data-testid="delete-user-${fakeUser.id}"]`).exists(),
+    ).toBe(false);
+    expect(
+      wrapper.find(`[data-testid="delete-user-${viewerUser.id}"]`).exists(),
+    ).toBe(true);
+  });
+
+  it("asks for confirmation naming the target user", async () => {
+    const wrapper = mountPanel();
+    await flushPromises();
+    await wrapper.find(`[data-testid="delete-user-${viewerUser.id}"]`).trigger("click");
+    await flushPromises();
+    const options = confirmRequire.mock.calls.at(-1)?.[0] as { header: string; message: string };
+    expect(options.header).toBe("Delete user");
+    expect(options.message).toContain("viewer@example.com");
+  });
+
+  it("removes the row and toasts success on confirm", async () => {
+    mockedDelete.mockResolvedValue(undefined);
+    const wrapper = mountPanel();
+    await flushPromises();
+    await wrapper.find(`[data-testid="delete-user-${viewerUser.id}"]`).trigger("click");
+    await flushPromises();
+    const options = confirmRequire.mock.calls.at(-1)?.[0] as { accept: () => void };
+    options.accept();
+    await flushPromises();
+
+    expect(mockedDelete).toHaveBeenCalledWith(viewerUser.id);
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: "success" }));
+    expect(wrapper.find(`[data-testid="user-row-${viewerUser.id}"]`).exists()).toBe(false);
+  });
+
+  it("toasts the API error message when deleting fails", async () => {
+    mockedDelete.mockRejectedValue(new ApiError(400, "You can't delete your own account."));
+    const wrapper = mountPanel();
+    await flushPromises();
+    await wrapper.find(`[data-testid="delete-user-${viewerUser.id}"]`).trigger("click");
+    await flushPromises();
+    const options = confirmRequire.mock.calls.at(-1)?.[0] as { accept: () => void };
+    options.accept();
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: "error", detail: "You can't delete your own account." }),
+    );
+    expect(wrapper.find(`[data-testid="user-row-${viewerUser.id}"]`).exists()).toBe(true);
+  });
+
+  it("toasts a generic error for a non-API delete failure", async () => {
+    mockedDelete.mockRejectedValue(new TypeError("down"));
+    const wrapper = mountPanel();
+    await flushPromises();
+    await wrapper.find(`[data-testid="delete-user-${viewerUser.id}"]`).trigger("click");
+    await flushPromises();
+    const options = confirmRequire.mock.calls.at(-1)?.[0] as { accept: () => void };
+    options.accept();
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: "error", detail: "Unexpected error." }),
     );
   });
 });

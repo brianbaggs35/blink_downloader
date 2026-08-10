@@ -118,12 +118,10 @@ export interface paths {
         get: operations["users_user_api_users__id__get"];
         put?: never;
         post?: never;
-        /** Users:Delete User */
-        delete: operations["users_delete_user_api_users__id__delete"];
+        delete?: never;
         options?: never;
         head?: never;
-        /** Users:Patch User */
-        patch: operations["users_patch_user_api_users__id__patch"];
+        patch?: never;
         trace?: never;
     };
     "/api/users": {
@@ -142,6 +140,24 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete User */
+        delete: operations["delete_user_api_users__user_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update User */
+        patch: operations["update_user_api_users__user_id__patch"];
         trace?: never;
     };
     "/api/biometrics/settings": {
@@ -1603,6 +1619,22 @@ export interface components {
              * @default 5
              */
             feedback_context_count: number;
+        };
+        /**
+         * AdminUserUpdate
+         * @description Name/role/(optional) password reset - deliberately narrower than
+         *     fastapi-users' own UserUpdate schema (no email/timezone/is_active
+         *     editing here). Email in particular is out of scope of what was asked
+         *     for and, as the login-identifying field, an easy thing to get wrong
+         *     from a "quick edit" modal.
+         */
+        AdminUserUpdate: {
+            /** Display Name */
+            display_name: string;
+            /** Is Superuser */
+            is_superuser: boolean;
+            /** Password */
+            password?: string | null;
         };
         /** AiStatsResponse */
         AiStatsResponse: {
@@ -3219,121 +3251,6 @@ export interface operations {
             };
         };
     };
-    users_delete_user_api_users__id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Missing token or inactive user. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Not a superuser. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The user does not exist. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    users_patch_user_api_users__id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UserUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserRead"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorModel"];
-                };
-            };
-            /** @description Missing token or inactive user. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Not a superuser. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The user does not exist. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     list_users_api_users_get: {
         parameters: {
             query?: never;
@@ -3369,6 +3286,70 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_user_api_users__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_user_api_users__user_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
