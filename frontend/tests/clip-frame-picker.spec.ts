@@ -16,6 +16,14 @@ import type { DetectedFaceRead } from "@/api";
 
 const mockedDetect = vi.mocked(detectFacesInClipFrame);
 
+// Matches ClipFramePicker's FACE_DETECTION_DEBOUNCE_MS with margin. Real
+// timers, not vi.useFakeTimers() - PrimeVue components schedule their own
+// internal setTimeouts that fake-timer control doesn't know to advance,
+// a known source of flakiness in this codebase's other specs.
+async function waitForDebounce(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 260));
+}
+
 function mountPicker(clipId = "clip-1", durationSeconds: number | null = 10) {
   return mount(ClipFramePicker, {
     props: { clipId, durationSeconds },
@@ -130,12 +138,137 @@ describe("ClipFramePicker", () => {
     await flushPromises();
     expect(wrapper.emitted("selection-change")!.at(-1)).not.toEqual([null]);
 
+    // PrimeVue's Slider always emits update:modelValue and change together,
+    // synchronously, from the same internal updateModel() call.
     const slider = wrapper.findComponent(Slider);
     await slider.vm.$emit("update:modelValue", 7.5);
     await slider.vm.$emit("change", 7.5);
-    await flushPromises();
+    // Clearing the prior selection is immediate - it doesn't wait for the
+    // debounced detection call below.
+    expect(wrapper.emitted("selection-change")!.at(-1)).toEqual([null]);
+    await waitForDebounce();
 
     expect(mockedDetect).toHaveBeenCalledWith("clip-1", 7.5);
-    expect(wrapper.emitted("selection-change")!.at(-1)).toEqual([null]);
+  });
+
+  it("debounces rapid scrubbing into a single detect-faces call for the final position", async () => {
+    mockedDetect.mockResolvedValue([]);
+    const wrapper = mountPicker();
+    await flushPromises();
+    mockedDetect.mockClear();
+
+    const slider = wrapper.findComponent(Slider);
+    // A drag fires `change` on every mousemove tick, not just once at
+    // release - simulate a burst of ticks landing on different positions.
+    for (const value of [1, 2, 3, 4, 5]) {
+      await slider.vm.$emit("update:modelValue", value);
+      await slider.vm.$emit("change", value);
+    }
+    await waitForDebounce();
+
+    expect(mockedDetect).toHaveBeenCalledTimes(1);
+    expect(mockedDetect).toHaveBeenCalledWith("clip-1", 5);
+  });
+
+  it("discards a stale response that resolves after a newer request has already started", async () => {
+    const wrapper = mountPicker();
+    await flushPromises();
+    mockedDetect.mockClear();
+
+    let resolveFirst!: (faces: DetectedFaceRead[]) => void;
+    mockedDetect.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+    );
+    const slider = wrapper.findComponent(Slider);
+    await slider.vm.$emit("update:modelValue", 3);
+    await slider.vm.$emit("change", 3);
+    await waitForDebounce();
+    expect(mockedDetect).toHaveBeenCalledWith("clip-1", 3);
+
+    // A second, faster-resolving request starts (and finishes) before the
+    // first one's slow response arrives.
+    mockedDetect.mockResolvedValueOnce([{ bbox: [0.2, 0.2, 0.1, 0.1], confidence: 0.7 }]);
+    await slider.vm.$emit("update:modelValue", 6);
+    await slider.vm.$emit("change", 6);
+    await waitForDebounce();
+    expect(mockedDetect).toHaveBeenCalledWith("clip-1", 6);
+    expect(
+      document.body.querySelector<HTMLElement>('[data-testid="picker-face-box-0"]')?.style.left,
+    ).toBe("20%");
+
+    // The stale first call finally resolves - it must not clobber the
+    // second (newer) call's already-applied result.
+    resolveFirst([{ bbox: [0.9, 0.9, 0.05, 0.05], confidence: 0.5 }]);
+    await flushPromises();
+
+    const box = document.body.querySelector<HTMLElement>('[data-testid="picker-face-box-0"]');
+    expect(box?.style.left).toBe("20%");
+  });
+
+  it("discards a stale rejection that arrives after a newer request has already succeeded", async () => {
+    const wrapper = mountPicker();
+    await flushPromises();
+    mockedDetect.mockClear();
+
+    let rejectFirst!: (error: unknown) => void;
+    mockedDetect.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectFirst = reject;
+        }),
+    );
+    const slider = wrapper.findComponent(Slider);
+    await slider.vm.$emit("update:modelValue", 3);
+    await slider.vm.$emit("change", 3);
+    await waitForDebounce();
+
+    mockedDetect.mockResolvedValueOnce([{ bbox: [0.2, 0.2, 0.1, 0.1], confidence: 0.7 }]);
+    await slider.vm.$emit("update:modelValue", 6);
+    await slider.vm.$emit("change", 6);
+    await waitForDebounce();
+    expect(document.body.querySelector('[data-testid="picker-face-box-0"]')).toBeTruthy();
+    expect(document.body.querySelector('[data-testid="picker-detecting"]')).toBeNull();
+
+    // The stale first call finally rejects - it must not overwrite the
+    // second (newer) call's already-applied success state with an error.
+    rejectFirst(new ApiError(409, "Clip has no downloaded file."));
+    await flushPromises();
+
+    expect(document.body.textContent).not.toContain("Clip has no downloaded file.");
+    expect(document.body.querySelector('[data-testid="picker-face-box-0"]')).toBeTruthy();
+  });
+
+  it("cancels a pending debounced detection when the clip id changes mid-scrub", async () => {
+    const wrapper = mountPicker("clip-1", 10);
+    await flushPromises();
+    mockedDetect.mockClear();
+
+    const slider = wrapper.findComponent(Slider);
+    await slider.vm.$emit("update:modelValue", 3);
+    await slider.vm.$emit("change", 3);
+    // Switch clips before the debounce for the value-3 scrub would fire.
+    await wrapper.setProps({ clipId: "clip-2", durationSeconds: 20 });
+    await flushPromises();
+    await waitForDebounce();
+
+    expect(mockedDetect).not.toHaveBeenCalledWith("clip-1", 3);
+    expect(mockedDetect).toHaveBeenCalledWith("clip-2", 10);
+  });
+
+  it("cancels a pending debounced detection on unmount", async () => {
+    const wrapper = mountPicker();
+    await flushPromises();
+    mockedDetect.mockClear();
+
+    const slider = wrapper.findComponent(Slider);
+    await slider.vm.$emit("update:modelValue", 3);
+    await slider.vm.$emit("change", 3);
+    wrapper.unmount();
+    await waitForDebounce();
+
+    expect(mockedDetect).not.toHaveBeenCalled();
   });
 });
