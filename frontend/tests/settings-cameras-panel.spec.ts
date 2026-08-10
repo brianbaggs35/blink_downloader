@@ -6,6 +6,8 @@ import { ApiError } from "@/api/client";
 import SettingsCamerasPanel from "@/components/SettingsCamerasPanel.vue";
 import { makePinia, mountGlobal } from "./helpers";
 
+import type { CameraRead } from "@/api";
+
 vi.mock("@/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api")>()),
   listCameras: vi.fn(),
@@ -242,5 +244,161 @@ describe("SettingsCamerasPanel editing context", () => {
     await flushPromises();
 
     expect(mockedUpdate).toHaveBeenCalledWith(cameraB.id, cameraB.enabled, "New context.");
+  });
+});
+
+describe("SettingsCamerasPanel saving all", () => {
+  beforeEach(() => {
+    mockedList.mockResolvedValue([cameraA, cameraB]);
+  });
+
+  it("disables Save all until at least one camera is dirty", async () => {
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    expect(
+      wrapper.find('[data-testid="camera-save-all"]').attributes("disabled"),
+    ).toBeDefined();
+
+    await wrapper
+      .find(`[data-testid="camera-context-${cameraA.id}"]`)
+      .setValue("Watches the driveway and the street.");
+
+    expect(
+      wrapper.find('[data-testid="camera-save-all"]').attributes("disabled"),
+    ).toBeUndefined();
+  });
+
+  it("saves every dirty camera and leaves untouched ones alone", async () => {
+    mockedUpdate.mockImplementation(async (id, enabled, securityContext) =>
+      id === cameraA.id
+        ? { ...cameraA, security_context: securityContext ?? null }
+        : { ...cameraB, security_context: securityContext ?? null, enabled },
+    );
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    await wrapper
+      .find(`[data-testid="camera-context-${cameraA.id}"]`)
+      .setValue("Updated driveway context.");
+    await wrapper
+      .find(`[data-testid="camera-context-${cameraB.id}"]`)
+      .setValue("New backyard context.");
+    await wrapper.find('[data-testid="camera-save-all"]').trigger("click");
+    await flushPromises();
+
+    expect(mockedUpdate).toHaveBeenCalledTimes(2);
+    expect(mockedUpdate).toHaveBeenCalledWith(
+      cameraA.id,
+      cameraA.enabled,
+      "Updated driveway context.",
+    );
+    expect(mockedUpdate).toHaveBeenCalledWith(
+      cameraB.id,
+      cameraB.enabled,
+      "New backyard context.",
+    );
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: "success", summary: "Saved 2 camera contexts" }),
+    );
+    // Both rows are clean again - their individual Save buttons disappear.
+    expect(wrapper.find(`[data-testid="camera-context-save-${cameraA.id}"]`).exists()).toBe(
+      false,
+    );
+    expect(wrapper.find(`[data-testid="camera-context-save-${cameraB.id}"]`).exists()).toBe(
+      false,
+    );
+  });
+
+  it("sends null for a camera whose context was cleared to blank in a bulk save", async () => {
+    mockedUpdate.mockImplementation(async (id, enabled, securityContext) =>
+      id === cameraA.id
+        ? { ...cameraA, security_context: securityContext ?? null }
+        : { ...cameraB, security_context: securityContext ?? null, enabled },
+    );
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    await wrapper.find(`[data-testid="camera-context-${cameraA.id}"]`).setValue("");
+    await wrapper.find('[data-testid="camera-save-all"]').trigger("click");
+    await flushPromises();
+
+    expect(mockedUpdate).toHaveBeenCalledWith(cameraA.id, cameraA.enabled, null);
+  });
+
+  it("uses singular phrasing for a single-camera save", async () => {
+    mockedUpdate.mockResolvedValue({ ...cameraA, security_context: "Solo edit." });
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    await wrapper.find(`[data-testid="camera-context-${cameraA.id}"]`).setValue("Solo edit.");
+    await wrapper.find('[data-testid="camera-save-all"]').trigger("click");
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: "Saved 1 camera context" }),
+    );
+  });
+
+  it("reports a partial failure without losing the successful save", async () => {
+    mockedUpdate.mockImplementation(async (id, _enabled, securityContext) => {
+      if (id === cameraA.id) {
+        throw new ApiError(400, "Context too long.");
+      }
+      return { ...cameraB, security_context: securityContext ?? null };
+    });
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    await wrapper
+      .find(`[data-testid="camera-context-${cameraA.id}"]`)
+      .setValue("Way too long.");
+    await wrapper
+      .find(`[data-testid="camera-context-${cameraB.id}"]`)
+      .setValue("Fine context.");
+    await wrapper.find('[data-testid="camera-save-all"]').trigger("click");
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: "warn",
+        summary: "Saved 1 camera context",
+        detail: "1 could not be saved.",
+      }),
+    );
+    // The failed row is still dirty (still shows its own Save button); the
+    // successful one is clean.
+    expect(wrapper.find(`[data-testid="camera-context-save-${cameraA.id}"]`).exists()).toBe(true);
+    expect(wrapper.find(`[data-testid="camera-context-save-${cameraB.id}"]`).exists()).toBe(
+      false,
+    );
+  });
+
+  it("disables Save all while a bulk save is in flight", async () => {
+    let resolveUpdate!: (value: CameraRead) => void;
+    mockedUpdate.mockReturnValue(
+      new Promise((resolve) => {
+        resolveUpdate = resolve;
+      }),
+    );
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    await wrapper
+      .find(`[data-testid="camera-context-${cameraA.id}"]`)
+      .setValue("In flight.");
+    await wrapper.find('[data-testid="camera-save-all"]').trigger("click");
+    await flushPromises();
+
+    expect(
+      wrapper.find('[data-testid="camera-save-all"]').attributes("disabled"),
+    ).toBeDefined();
+
+    resolveUpdate({ ...cameraA, security_context: "In flight." });
+    await flushPromises();
+
+    expect(
+      wrapper.find('[data-testid="camera-save-all"]').attributes("disabled"),
+    ).toBeDefined();
   });
 });

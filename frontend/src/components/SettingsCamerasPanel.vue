@@ -6,7 +6,7 @@ import Tag from "primevue/tag";
 import Textarea from "primevue/textarea";
 import ToggleSwitch from "primevue/toggleswitch";
 import { useToast } from "primevue/usetoast";
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 
 import { ApiError, listCameras, updateCamera } from "@/api";
 import BatteryIndicator from "@/components/BatteryIndicator.vue";
@@ -23,6 +23,7 @@ const loadError = ref("");
 const contextDrafts = reactive<Record<string, string>>({});
 const savingEnabled = reactive<Record<string, boolean>>({});
 const savingContext = reactive<Record<string, boolean>>({});
+const savingAll = ref(false);
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -87,13 +88,59 @@ function contextChanged(camera: CameraRead): boolean {
   // render, so the draft side is never actually missing here.
   return contextDrafts[camera.id] !== (camera.security_context ?? "");
 }
+
+const anyDirty = computed(() => cameras.value.some(contextChanged));
+
+async function saveAllContexts(): Promise<void> {
+  // Only ever wired to the Save-all button, which is :disabled="!anyDirty"
+  // - a disabled PrimeVue Button never fires @click, so targets is
+  // guaranteed non-empty here.
+  const targets = cameras.value.filter(contextChanged);
+  savingAll.value = true;
+  for (const camera of targets) {
+    savingContext[camera.id] = true;
+  }
+  try {
+    const results = await Promise.allSettled(
+      targets.map(async (camera) => {
+        const updated = await updateCamera(camera.id, camera.enabled, contextDrafts[camera.id] || null);
+        const index = cameras.value.findIndex((c) => c.id === camera.id);
+        // eslint-disable-next-line security/detect-object-injection
+        cameras.value[index] = updated;
+      }),
+    );
+    const failed = results.filter((result) => result.status === "rejected").length;
+    const succeeded = results.length - failed;
+    toast.add({
+      severity: failed > 0 ? "warn" : "success",
+      summary: `Saved ${succeeded} camera context${succeeded === 1 ? "" : "s"}`,
+      detail: failed > 0 ? `${failed} could not be saved.` : undefined,
+      life: 3500,
+    });
+  } finally {
+    for (const camera of targets) {
+      savingContext[camera.id] = false;
+    }
+    savingAll.value = false;
+  }
+}
 </script>
 
 <template>
   <article class="panel">
-    <h3 class="panel-title">
-      Cameras
-    </h3>
+    <div class="panel-header-row">
+      <h3 class="panel-title">
+        Cameras
+      </h3>
+      <Button
+        label="Save all"
+        size="small"
+        :loading="savingAll"
+        :disabled="!anyDirty || savingAll"
+        data-testid="camera-save-all"
+        @click="saveAllContexts"
+      />
+    </div>
     <p class="panel-hint">
       Turn syncing off for cameras you don't want downloaded or analyzed, and give the AI context
       about what each camera watches — this is included in every analysis prompt for that camera.
@@ -208,6 +255,14 @@ function contextChanged(camera: CameraRead): boolean {
 .blink-dark .panel {
   border-color: var(--p-surface-800);
   background: color-mix(in srgb, var(--p-surface-900) 60%, transparent);
+}
+
+.panel-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .panel-title {
