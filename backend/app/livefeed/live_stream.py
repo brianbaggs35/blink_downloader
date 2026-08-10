@@ -50,10 +50,15 @@ closed or navigated away without calling the stop endpoint - swept
 automatically so an abandoned session doesn't leak an ffmpeg process and a
 relay socket forever."""
 SWEEP_INTERVAL_SECONDS = 15
-FFMPEG_START_TIMEOUT_SECONDS = 10
+FFMPEG_START_TIMEOUT_SECONDS = 20
 """How long to wait for ffmpeg to write the first playlist file before
 declaring the session failed - a camera that negotiates immis:// but then
-never actually sends video would otherwise hang "starting" forever."""
+never actually sends video would otherwise hang "starting" forever.
+Bumped from 10s: reported 502s (this app maps a start failure straight to
+Bad Gateway - see api.cameras.start_live_view) are plausibly this timeout
+firing on a real but slow immis:// relay handshake rather than a genuine
+failure; 20s gives that more room without leaving the user staring at a
+spinner indefinitely."""
 PROCESS_STOP_TIMEOUT_SECONDS = 5
 """How long to give ffmpeg to exit after terminate() before escalating to
 kill()."""
