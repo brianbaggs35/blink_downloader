@@ -35,8 +35,13 @@ type ProviderKey = "s3" | "google_drive" | "onedrive";
 /** S3 has no accurate real-brand icon readily available under a permissive
  * license (unlike Drive/OneDrive - see BrandIcon.vue) - pi-amazon (a generic
  * company mark, not a product-specific one) is the closest reasonable
- * option. */
-type IntegrationIcon = { kind: "class"; value: string } | { kind: "brand"; value: BrandName };
+ * option. It's a font glyph rather than an SVG with its own fill, so unlike
+ * the brand-mark icons it inherits .card-icon's neutral text color unless
+ * given an explicit one - `color` recolors it to Amazon's brand orange so it
+ * doesn't read as "missing" next to Drive/OneDrive's real brand colors. */
+type IntegrationIcon =
+  | { kind: "class"; value: string; color: string }
+  | { kind: "brand"; value: BrandName };
 
 interface IntegrationDef {
   key: ProviderKey;
@@ -51,7 +56,7 @@ const INTEGRATIONS: IntegrationDef[] = [
     key: "s3",
     name: "Amazon S3",
     category: "Storage",
-    icon: { kind: "class", value: "pi pi-amazon" },
+    icon: { kind: "class", value: "pi pi-amazon", color: "#ff9900" },
     description: "Archive downloaded clips to an S3 bucket you own.",
   },
   {
@@ -386,6 +391,7 @@ const redirectOrigin = window.location.origin;
             <i
               v-if="integration.icon.kind === 'class'"
               :class="integration.icon.value"
+              :style="{ color: integration.icon.color }"
             />
             <BrandIcon
               v-else
