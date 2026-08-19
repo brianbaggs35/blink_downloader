@@ -34,3 +34,4 @@ e2e/coverage/
 # OS / editor
 .DS_Store
 Thumbs.db
+.history/
