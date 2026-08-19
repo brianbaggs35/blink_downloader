@@ -5,10 +5,6 @@ on:
     branches: [master]
   pull_request:
 
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   backend-lint:
     name: Backend · ruff + pyright + bandit
