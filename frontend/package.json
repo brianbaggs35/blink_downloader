@@ -24,7 +24,7 @@
     "@primeuix/themes": "^2.0.3",
     "pinia": "^4.0.3",
     "primeicons": "^8.0.0",
-    "primevue": "^4.5.5",
+    "primevue": "^5.0.1",
     "video.js": "^8.23.9",
     "vue": "^3.5.41",
     "vue-router": "^5.2.0"
