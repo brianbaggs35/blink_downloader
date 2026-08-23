@@ -1,7 +1,9 @@
-import { definePreset } from "@primeuix/themes";
-import Aura from "@primeuix/themes/aura";
+import { definePreset } from "@primeuix/themes"
+
+import Aura from "@primeuix/themes/aura"
 
 // Slate surfaces + cyan primary: calm, dark-first security console.
+
 const slate = {
   50: "#f8fafc",
   100: "#f1f5f9",
@@ -14,7 +16,7 @@ const slate = {
   800: "#1e293b",
   900: "#0f172a",
   950: "#020617",
-};
+}
 
 export const BlinkPreset = definePreset(Aura, {
   semantic: {
@@ -40,13 +42,16 @@ export const BlinkPreset = definePreset(Aura, {
       },
     },
   },
-});
+})
+
+const licenseKey = import.meta.env.VITE_PRIMEVUE_LICENSE_KEY
 
 export const primeVueOptions = {
+  license: licenseKey,
   theme: {
     preset: BlinkPreset,
     options: {
       darkModeSelector: ".blink-dark",
     },
   },
-};
+}

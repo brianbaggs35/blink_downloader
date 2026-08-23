@@ -16,20 +16,29 @@ FROM ghcr.io/astral-sh/uv:latest AS uv-binary
 # minutes stuck in `npm ci` alone under emulation, vs well under a minute
 # natively).
 FROM --platform=$BUILDPLATFORM cgr.dev/chainguard/node:latest-dev AS frontend-builder
+
 WORKDIR /app
+
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --no-audit --no-fund
+
 COPY frontend/ ./
-RUN npm run build
+RUN --mount=type=secret,id=primevue_license_key,env=VITE_PRIMEVUE_LICENSE_KEY \
+    npm run build
 
 # ------------------------------------------------------------- backend build
 FROM cgr.dev/chainguard/python:latest-dev AS backend-builder
+
 COPY --from=uv-binary /uv /usr/local/bin/uv
+
 ENV UV_PROJECT_ENVIRONMENT=/app/.venv \
     UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1
+
 WORKDIR /app
+
 COPY backend/pyproject.toml backend/uv.lock ./
+
 # insightface hard-requires full opencv-python (needs libGL/libGTK), but this
 # image is headless and Wolfi never carries GL - import cv2 would fail at
 # runtime otherwise. uv/pip have no package-identity substitution, so both
@@ -40,7 +49,9 @@ RUN uv sync --frozen --no-dev --no-install-project \
 
 # --------------------------------------------------------------- prod stage
 FROM cgr.dev/chainguard/python:latest-dev AS prod
+
 USER 0
+
 # supervisord (process supervision for this image's 3 sibling processes)
 # comes from Wolfi's own apk package, not pip's `supervisor` - pip's build
 # imports the legacy pkg_resources API at runtime, which current setuptools
@@ -62,10 +73,13 @@ RUN apk add --no-cache ffmpeg nginx tini supervisor \
         glibc-dev openssl-dev jitterentropy-library-dev libxcrypt-dev \
         python-3.14-dev python-3.14-base-dev \
         py3.14-pip py3.14-pip-base py3-pip-wheel py3.14-setuptools uv wget
+
 WORKDIR /app
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH"
+
 COPY --from=backend-builder /app/.venv /app/.venv
 COPY backend/alembic.ini /app/alembic.ini
 COPY backend/alembic /app/alembic
@@ -73,6 +87,7 @@ COPY backend/app /app/app
 COPY --from=frontend-builder /app/dist /usr/share/nginx/html
 COPY docker/nginx.app.conf /etc/nginx/nginx.conf
 COPY docker/supervisord.conf /etc/supervisord.conf
+
 # A brand-new named volume mounted at a path that doesn't exist in the image
 # is created root:root by the container runtime, which nonroot can never
 # write to. Pre-creating the directories here means Docker's volume-seeding
@@ -80,6 +95,8 @@ COPY docker/supervisord.conf /etc/supervisord.conf
 # mount) carries nonroot ownership over instead - verified empirically.
 RUN mkdir -p /data/clips /data/insightface \
     && chown -R 65532:65532 /app /data /usr/share/nginx/html /etc/supervisord.conf
+
 USER 65532:65532
+
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]

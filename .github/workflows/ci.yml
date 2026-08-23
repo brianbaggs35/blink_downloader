@@ -114,6 +114,8 @@ jobs:
     defaults:
       run:
         working-directory: frontend
+    env:
+      VITE_PRIMEVUE_LICENSE_KEY: ${{ secrets.PRIMEVUE_LICENSE_KEY }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -196,6 +198,8 @@ jobs:
           load: true
           pull: true
           tags: blink-frontend:ci
+          secrets: |
+            primevue_license_key=${{ secrets.PRIMEVUE_LICENSE_KEY }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
       - name: Build consolidated app image (what actually ships)
@@ -208,6 +212,8 @@ jobs:
           load: true
           pull: true
           tags: blink-app:ci
+          secrets: |
+            primevue_license_key=${{ secrets.PRIMEVUE_LICENSE_KEY }}
           cache-from: type=gha,scope=app
           cache-to: type=gha,mode=max,scope=app
       - name: Smoke-test the app image actually boots
@@ -324,6 +330,8 @@ jobs:
           load: true
           pull: true
           tags: blink-app:smoke-${{ matrix.arch }}
+          secrets: |
+            primevue_license_key=${{ secrets.PRIMEVUE_LICENSE_KEY }}
           cache-from: type=gha,scope=app-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=app-${{ matrix.arch }}
       - name: Smoke-test the app image actually boots (${{ matrix.platform }})

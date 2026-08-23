@@ -1,11 +1,17 @@
-import { createPinia, setActivePinia, type Pinia } from "pinia";
-import ConfirmationService from "primevue/confirmationservice";
-import PrimeVue from "primevue/config";
-import ToastService from "primevue/toastservice";
-import Tooltip from "primevue/tooltip";
-import { createMemoryHistory, createRouter, type Router } from "vue-router";
+import { createPinia, setActivePinia, type Pinia } from "pinia"
+import ConfirmationService from "primevue/confirmationservice"
+import PrimeVue from "primevue/config"
+import ToastService from "primevue/toastservice"
+import Tooltip from "primevue/tooltip"
+import {
+  createMemoryHistory,
+  createRouter,
+  type Router,
+} from "vue-router"
+import type { GlobalMountOptions } from "@vue/test-utils"
 
-import { routes } from "@/router";
+import { routes } from "@/router"
+import { primeVueOptions } from "@/theme"
 
 import type {
   BlinkStatusResponse,
@@ -13,24 +19,33 @@ import type {
   HealthReport,
   StorageIntegrationSettingsRead,
   UserRead,
-} from "@/api";
+} from "@/api"
 
 /** Guard-free router over the real route table. */
 export function makeRouter(): Router {
-  return createRouter({ history: createMemoryHistory(), routes });
+  return createRouter({ history: createMemoryHistory(), routes })
 }
 
 export function makePinia(): Pinia {
-  const pinia = createPinia();
-  setActivePinia(pinia);
-  return pinia;
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  return pinia
 }
 
-export function mountGlobal(pinia: Pinia, router?: Router) {
+export function mountGlobal(
+  pinia: Pinia,
+  router?: Router,
+): GlobalMountOptions {
   return {
-    plugins: [pinia, PrimeVue, ToastService, ConfirmationService, ...(router ? [router] : [])],
+    plugins: [
+      pinia,
+      [PrimeVue, primeVueOptions],
+      ToastService,
+      ConfirmationService,
+      ...(router ? [router] : []),
+    ],
     directives: { tooltip: Tooltip },
-  };
+  }
 }
 
 export const fakeUser: UserRead = {
@@ -42,7 +57,7 @@ export const fakeUser: UserRead = {
   display_name: "Brian Baggs",
   timezone: "UTC",
   default_landing_page: "library",
-};
+}
 
 export const healthyReport: HealthReport = {
   status: "ok",
@@ -50,10 +65,12 @@ export const healthyReport: HealthReport = {
   database: "ok",
   redis: "ok",
   worker: "ok",
-};
+}
 
 /** Battery "ok", syncing, no security context by default. */
-export function fakeCamera(overrides: Partial<CameraRead> = {}): CameraRead {
+export function fakeCamera(
+  overrides: Partial<CameraRead> = {},
+): CameraRead {
   return {
     id: "cccccccc-1111-2222-3333-444455556666",
     name: "Front Door",
@@ -63,11 +80,13 @@ export function fakeCamera(overrides: Partial<CameraRead> = {}): CameraRead {
     last_synced_at: "2026-07-20T12:00:00Z",
     security_context: null,
     ...overrides,
-  };
+  }
 }
 
 /** Unlinked by default - pass overrides for a linked/error/etc. shape. */
-export function fakeBlinkStatus(overrides: Partial<BlinkStatusResponse> = {}): BlinkStatusResponse {
+export function fakeBlinkStatus(
+  overrides: Partial<BlinkStatusResponse> = {},
+): BlinkStatusResponse {
   return {
     linked: false,
     status: null,
@@ -78,7 +97,7 @@ export function fakeBlinkStatus(overrides: Partial<BlinkStatusResponse> = {}): B
     total_clip_count: 0,
     daily_clip_counts: [],
     ...overrides,
-  };
+  }
 }
 
 /** All-disconnected by default - pass overrides for a connected/configured shape. */
@@ -104,12 +123,12 @@ export function fakeStorageIntegrationSettings(
     auto_archive_backend: "local",
     auto_archive_after_days: 0,
     ...overrides,
-  };
+  }
 }
 
 export function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
-  });
+  })
 }

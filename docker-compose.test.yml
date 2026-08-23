@@ -131,6 +131,8 @@ services:
       context: .
       dockerfile: docker/frontend.Dockerfile
       target: prod
+      secrets:
+        - primevue_license
       args:
         # Set by `make e2e-coverage` only - every other target (including
         # plain `make e2e`) leaves this at the Dockerfile's own default.
@@ -160,8 +162,8 @@ services:
       # - a real sync can only ever fail against Blink's actual cloud API,
       # flipping the seeded "healthy" status to an auth error at some point
       # during the run. Fixtures are inserted directly by the seed script,
-      # so no real sync is needed here at all - see the backend service's
-      # own copy of this var, and Settings.disable_blink_network_calls.
+      # so no real sync is needed here at all - see the backend service's own
+      # copy of this var, and Settings.disable_blink_network_calls.
       BLINK_DISABLE_BLINK_NETWORK_CALLS: "true"
     depends_on:
       redis:
@@ -188,6 +190,10 @@ services:
         condition: service_started
       backend:
         condition: service_healthy
+
+secrets:
+  primevue_license:
+    environment: VITE_PRIMEVUE_LICENSE_KEY
 
 volumes:
   test-venv:

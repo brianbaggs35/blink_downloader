@@ -43,5 +43,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          secrets: |
+            primevue_license_key=${{ secrets.PRIMEVUE_LICENSE_KEY }}
           cache-from: type=gha,scope=app
           cache-to: type=gha,mode=max,scope=app
