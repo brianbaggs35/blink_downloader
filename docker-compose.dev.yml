@@ -95,6 +95,7 @@ services:
       - ./frontend:/app
     environment:
       VITE_API_PROXY_TARGET: http://backend:8000
+      VITE_PRIMEVUE_LICENSE_KEY: ${VITE_PRIMEVUE_LICENSE_KEY:-}
     ports:
       - "127.0.0.1:5173:5173"
     depends_on:

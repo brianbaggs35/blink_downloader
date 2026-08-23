@@ -10,6 +10,8 @@ services:
       context: .
       dockerfile: docker/app.Dockerfile
       target: prod
+      secrets:
+        - primevue_license
     ports:
       - "${BLINK_HTTP_PORT:-80}:8080"
       - "${BLINK_HTTPS_PORT:-443}:8443"
@@ -59,6 +61,8 @@ services:
       context: .
       dockerfile: docker/app.Dockerfile
       target: prod
+      secrets:
+        - primevue_license
     command: ["/app/.venv/bin/alembic", "upgrade", "head"]
     environment:
       BLINK_ENVIRONMENT: production
@@ -111,6 +115,10 @@ services:
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
+
+secrets:
+  primevue_license:
+    environment: VITE_PRIMEVUE_LICENSE_KEY
 
 volumes:
   pgdata:
