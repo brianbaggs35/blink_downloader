@@ -236,7 +236,7 @@ jobs:
           version: v0.74.0
       - name: Upload app Trivy results to the Security tab
         if: always()
-        uses: github/codeql-action/upload-sarif@v4.37.7
+        uses: github/codeql-action/upload-sarif@v4.37.9
         with:
           sarif_file: trivy-app.sarif
           category: trivy-app
@@ -287,13 +287,13 @@ jobs:
           version: v0.74.0
       - name: Upload backend Trivy results to the Security tab
         if: always()
-        uses: github/codeql-action/upload-sarif@v4.37.7
+        uses: github/codeql-action/upload-sarif@v4.37.9
         with:
           sarif_file: trivy-backend.sarif
           category: trivy-backend
       - name: Upload frontend Trivy results to the Security tab
         if: always()
-        uses: github/codeql-action/upload-sarif@v4.37.7
+        uses: github/codeql-action/upload-sarif@v4.37.9
         with:
           sarif_file: trivy-frontend.sarif
           category: trivy-frontend
