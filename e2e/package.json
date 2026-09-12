@@ -14,7 +14,7 @@
     "coverage:report": "nyc report --cwd=/app --temp-dir=/e2e/.nyc_output --report-dir=/e2e/coverage --extension=.vue --extension=.ts --reporter=text --reporter=text-summary --reporter=html --reporter=cobertura --reporter=lcov"
   },
   "devDependencies": {
-    "@playwright/test": "~1.62.1",
+    "@playwright/test": "~1.63.0",
     "@types/node": "^26.4.1",
     "eslint": "^10.9.1",
     "eslint-plugin-playwright": "^2.11.0",
