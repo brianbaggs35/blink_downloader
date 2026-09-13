@@ -359,13 +359,15 @@ describe("SettingsCamerasPanel saving all", () => {
     await wrapper.find('[data-testid="camera-save-all"]').trigger("click");
     await flushPromises();
 
-    expect(toastAdd).toHaveBeenCalledWith(
-      expect.objectContaining({
-        severity: "warn",
-        summary: "Saved 1 camera context",
-        detail: "1 could not be saved.",
-      }),
-    );
+    await vi.waitFor(() => {
+      expect(toastAdd).toHaveBeenCalledWith(
+        expect.objectContaining({
+          severity: "warn",
+          summary: "Saved 1 camera context",
+          detail: "1 could not be saved.",
+        }),
+      );
+    });
     // The failed row is still dirty (still shows its own Save button); the
     // successful one is clean.
     expect(wrapper.find(`[data-testid="camera-context-save-${cameraA.id}"]`).exists()).toBe(true);
