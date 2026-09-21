@@ -10,16 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.models import SINGLETON_ID, AISettings
 from app.ai.schemas import AISettingsUpdate
+from app.db import get_or_create_singleton
 from app.security.crypto import SecretBox
 
 
 async def get_ai_settings(session: AsyncSession) -> AISettings:
-    row = await session.get(AISettings, SINGLETON_ID)
-    if row is None:
-        row = AISettings(id=SINGLETON_ID)
-        session.add(row)
-        await session.flush()
-    return row
+    return await get_or_create_singleton(session, AISettings, SINGLETON_ID)
 
 
 def _apply_api_key(row_key_attr: str, row: AISettings, box: SecretBox, value: str | None) -> None:

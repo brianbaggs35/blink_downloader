@@ -14,18 +14,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.alerts.models import SINGLETON_ID, AlertSettings
 from app.alerts.schemas import AlertSettingsUpdate
+from app.db import get_or_create_singleton
 from app.security.crypto import SecretBox
 
 DEDUP_KEY_PREFIX = "blink:alert:dedup:"
 
 
 async def get_alert_settings(session: AsyncSession) -> AlertSettings:
-    row = await session.get(AlertSettings, SINGLETON_ID)
-    if row is None:
-        row = AlertSettings(id=SINGLETON_ID)
-        session.add(row)
-        await session.flush()
-    return row
+    return await get_or_create_singleton(session, AlertSettings, SINGLETON_ID)
 
 
 def _apply_secret(row: AlertSettings, attr: str, box: SecretBox, value: str | None) -> None:
