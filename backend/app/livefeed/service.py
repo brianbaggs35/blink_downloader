@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.blink.models import BlinkAccount, BlinkAccountStatus, Camera
 from app.blink.service import BlinkAuthError, BlinkError, BlinkPyService
 from app.config import Settings
+from app.db import get_or_create_singleton
 from app.livefeed.live_stream import LiveViewSession, LiveViewSessionStarter
 from app.livefeed.models import SINGLETON_ID, LiveViewSettings, SecurityFeedSettings
 from app.livefeed.schemas import (
@@ -56,12 +57,7 @@ async def _load_token_data(
 
 
 async def get_live_view_settings(session: AsyncSession) -> LiveViewSettings:
-    row = await session.get(LiveViewSettings, SINGLETON_ID)
-    if row is None:
-        row = LiveViewSettings(id=SINGLETON_ID)
-        session.add(row)
-        await session.flush()
-    return row
+    return await get_or_create_singleton(session, LiveViewSettings, SINGLETON_ID)
 
 
 async def update_live_view_settings(
@@ -77,12 +73,7 @@ async def update_live_view_settings(
 
 
 async def get_security_feed_settings(session: AsyncSession) -> SecurityFeedSettings:
-    row = await session.get(SecurityFeedSettings, SINGLETON_ID)
-    if row is None:
-        row = SecurityFeedSettings(id=SINGLETON_ID)
-        session.add(row)
-        await session.flush()
-    return row
+    return await get_or_create_singleton(session, SecurityFeedSettings, SINGLETON_ID)
 
 
 async def update_security_feed_settings(
