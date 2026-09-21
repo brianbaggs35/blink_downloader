@@ -36,6 +36,7 @@ from app.biometrics.recognition import (
 )
 from app.biometrics.schemas import BiometricsSettingsUpdate, PersonUpdate
 from app.blink.models import Clip
+from app.db import get_or_create_singleton
 from app.storage.service import ClipStorage
 from app.video.ffmpeg import extract_biometrics_frame, extract_keyframes
 
@@ -58,12 +59,7 @@ class FaceNotFoundError(Exception):
 
 
 async def get_biometrics_settings(session: AsyncSession) -> BiometricsSettings:
-    row = await session.get(BiometricsSettings, SINGLETON_ID)
-    if row is None:
-        row = BiometricsSettings(id=SINGLETON_ID)
-        session.add(row)
-        await session.flush()
-    return row
+    return await get_or_create_singleton(session, BiometricsSettings, SINGLETON_ID)
 
 
 async def update_biometrics_settings(

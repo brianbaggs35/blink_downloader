@@ -5,17 +5,13 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
+from app.db import get_or_create_singleton
 from app.settings.models import SINGLETON_ID, AppSettings
 from app.settings.schemas import BlinkSyncSettingsUpdate
 
 
 async def get_app_settings(session: AsyncSession) -> AppSettings:
-    row = await session.get(AppSettings, SINGLETON_ID)
-    if row is None:
-        row = AppSettings(id=SINGLETON_ID)
-        session.add(row)
-        await session.flush()
-    return row
+    return await get_or_create_singleton(session, AppSettings, SINGLETON_ID)
 
 
 async def set_storage_dir(session: AsyncSession, storage_dir: str | None) -> AppSettings:
