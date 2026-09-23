@@ -15,6 +15,8 @@ RUN npm ci --no-audit --no-fund
 
 COPY frontend/ ./
 # Same secret handling as app.Dockerfile's frontend-builder stage - see there.
+# Cache-busting fingerprint of the license key - see app.Dockerfile.
+ARG PRIMEVUE_LICENSE_FINGERPRINT=""
 RUN --mount=type=secret,id=primevue_license_key,uid=65532,gid=65532,mode=0400 \
     set -e; \
     key=/run/secrets/primevue_license_key; \
