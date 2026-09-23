@@ -14,8 +14,15 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
 COPY frontend/ ./
-RUN --mount=type=secret,id=primevue_license_key,env=VITE_PRIMEVUE_LICENSE_KEY \
-    VITE_COVERAGE=${VITE_COVERAGE} npm run build
+# Same secret handling as app.Dockerfile's frontend-builder stage - see there.
+RUN --mount=type=secret,id=primevue_license_key,uid=65532,gid=65532,mode=0400 \
+    set -e; \
+    key=/run/secrets/primevue_license_key; \
+    license=""; \
+    if [ -e "$key" ]; then \
+        license="$(cat "$key")" || { echo "$key is mounted but unreadable" >&2; exit 1; }; \
+    fi; \
+    VITE_PRIMEVUE_LICENSE_KEY="$license" VITE_COVERAGE=${VITE_COVERAGE} npm run build
 
 FROM cgr.dev/chainguard/nginx:latest AS prod
 
