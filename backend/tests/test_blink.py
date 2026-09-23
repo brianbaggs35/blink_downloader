@@ -171,6 +171,9 @@ class FakeSyncModule:
         return bool(self._local_storage["status"])
 
 
+_UNSET = object()
+
+
 class FakeAuth:
     instances: ClassVar[list[FakeAuth]] = []
 
@@ -204,6 +207,9 @@ class FakeBlink:
         self.media_items: list[dict[str, Any]] = []
         self.media_error: Exception | None = None
         self.http_get_error: Exception | None = None
+        self.http_get_response: Any = _UNSET
+        """When set, do_http_get() returns exactly this (None included) in
+        place of the default 200/video-bytes response."""
         self.last_http_get_address: str | None = None
         self.account_id = "acct-1"
         self.urls = SimpleNamespace(base_url="https://rest.example.com")
@@ -219,7 +225,10 @@ class FakeBlink:
         if self.http_get_error:
             raise self.http_get_error
         self.last_http_get_address = address
+        if self.http_get_response is not _UNSET:
+            return self.http_get_response
         response = AsyncMock()
+        response.status = 200
         response.read = AsyncMock(return_value=b"video-bytes")
         return response
 
@@ -379,6 +388,31 @@ async def test_download_media_returns_bytes_via_light_startup() -> None:
     assert data == b"video-bytes"
     assert blink.last_http_get_address == "/media/clip1.mp4"
     blink.get_homescreen.assert_not_awaited()  # light path, no full startup
+
+
+async def test_download_media_rejects_missing_response() -> None:
+    # blinkpy's Auth.query() returns None (never raises) on a connection
+    # error or timeout - that must surface as a retryable BlinkError, not
+    # an AttributeError on None.read().
+    service, _auth, blink = _make_service()
+    blink.http_get_response = None
+    item = BlinkMediaItem("m", "Cam", datetime.now(UTC), False, {})
+    with pytest.raises(BlinkError, match="No response"):
+        await service.download_media(item)
+
+
+async def test_download_media_rejects_non_200_response() -> None:
+    # A json=False request hands back the raw response whatever its status;
+    # a 429/5xx body must never be written to disk as the clip.
+    service, _auth, blink = _make_service()
+    throttled = AsyncMock()
+    throttled.status = 429
+    throttled.read = AsyncMock(return_value=b"<html>Too Many Requests</html>")
+    blink.http_get_response = throttled
+    item = BlinkMediaItem("m", "Cam", datetime.now(UTC), False, {})
+    with pytest.raises(BlinkError, match="HTTP 429"):
+        await service.download_media(item)
+    throttled.read.assert_not_awaited()
 
 
 async def test_download_media_does_not_repeat_light_startup_after_full() -> None:
