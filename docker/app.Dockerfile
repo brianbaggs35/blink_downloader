@@ -32,6 +32,12 @@ COPY frontend/ ./
 # empty - but a secret that is mounted and unreadable fails the build instead
 # of quietly shipping a bundle without its key (which is what a bare
 # `cat ... || true` did).
+# A fingerprint of the key, NOT the key: neither BuildKit nor buildah puts a
+# secret's contents in the layer cache key (by design), so a changed key alone
+# keeps serving the bundle cached with the old one. Pass
+#   --build-arg PRIMEVUE_LICENSE_FINGERPRINT="$(sha256sum < key | cut -d' ' -f1)"
+# and this step re-runs whenever the key changes; unset, nothing changes.
+ARG PRIMEVUE_LICENSE_FINGERPRINT=""
 RUN --mount=type=secret,id=primevue_license_key,uid=65532,gid=65532,mode=0400 \
     set -e; \
     key=/run/secrets/primevue_license_key; \
