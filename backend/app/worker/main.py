@@ -25,7 +25,7 @@ from app.worker.tasks.archive import (
 )
 from app.worker.tasks.biometrics import DOWNLOAD_MODEL_JOB_NAME, download_biometrics_model_job
 from app.worker.tasks.blink_sync import SYNC_JOB_NAME, sync_blink_account
-from app.worker.tasks.download import download_clip
+from app.worker.tasks.download import DOWNLOAD_MAX_TRIES, download_clip
 from app.worker.tasks.sync_module import (
     DELETE_LOCAL_ITEM_JOB_NAME,
     DOWNLOAD_LOCAL_ITEM_JOB_NAME,
@@ -77,7 +77,7 @@ class WorkerSettings:
 
     functions: ClassVar[list[Any]] = [
         func(sync_blink_account, name=SYNC_JOB_NAME, max_tries=1, timeout=120),
-        func(download_clip, max_tries=3, timeout=120),
+        func(download_clip, max_tries=DOWNLOAD_MAX_TRIES, timeout=120),
         func(analyze_clip, max_tries=2, timeout=240),
         func(send_alert, max_tries=2, timeout=30),
         func(archive_clip_job, name=ARCHIVE_CLIP_JOB_NAME, max_tries=2, timeout=300),

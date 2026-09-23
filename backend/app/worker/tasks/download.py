@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from arq import Retry
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.blink.models import BlinkAccount, BlinkAccountStatus, Camera, Clip
@@ -36,6 +37,29 @@ truncated H.264 stream looks like). Bounded retries with fresh bytes give
 a one-off network blip a few chances to self-heal; still accepted after
 exhausting them, so a file ffprobe genuinely can't parse for unrelated
 reasons never gets stuck undownloaded forever."""
+
+DOWNLOAD_MAX_TRIES = 4
+"""arq tries for one download job: the first attempt plus three retries.
+The worker registers download_clip with this value (app.worker.main), so
+the retry schedule below and the try limit cannot drift apart."""
+
+DOWNLOAD_RETRY_DEFER_SECONDS = (30, 120, 300)
+"""Wait before each retry, indexed by the try that just failed, so attempts
+run at 0 s, ~30 s, ~2.5 min and ~7.5 min. arq only re-queues a job that
+raises ``arq.Retry`` - a plain exception marks the job failed for good,
+however ``max_tries`` is set - so without this a network blip or a Blink 429
+left the clip undownloaded while it aged out of the cloud."""
+
+
+def _next_retry(ctx: dict[Any, Any]) -> Retry | None:
+    """The Retry for this failed try, or None on the last allowed try - where
+    a Retry would only schedule a run that arq then refuses as over
+    max_tries, recording a generic "max retries exceeded" minutes later
+    instead of the error that actually happened."""
+    job_try = int(ctx.get("job_try") or 1)
+    if job_try >= DOWNLOAD_MAX_TRIES:
+        return None
+    return Retry(defer=DOWNLOAD_RETRY_DEFER_SECONDS[job_try - 1])
 
 
 async def _download_and_verify(
@@ -111,10 +135,16 @@ async def download_clip(ctx: dict[Any, Any], clip_id: str, auto_analyze: bool = 
             return "auth_error"
         except BlinkError as exc:
             logger.warning("blink.download_failed", clip_id=clip_id, error=str(exc))
-            raise  # network/connection blip — let arq retry
+            if (retry := _next_retry(ctx)) is not None:
+                raise retry from exc  # network/connection blip — arq re-queues it
+            logger.error("blink.download_gave_up", clip_id=clip_id, tries=DOWNLOAD_MAX_TRIES)
+            raise
         except StorageError as exc:
             logger.error("blink.download_storage_failed", clip_id=clip_id, error=str(exc))
-            raise  # disk/permission blip — let arq retry
+            if (retry := _next_retry(ctx)) is not None:
+                raise retry from exc  # disk/permission blip — arq re-queues it
+            logger.error("blink.download_gave_up", clip_id=clip_id, tries=DOWNLOAD_MAX_TRIES)
+            raise
         finally:
             await service.close()
 

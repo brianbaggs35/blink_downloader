@@ -378,6 +378,17 @@ class BlinkPyService:
             response = await self._blink.do_http_get(item.media_id)
         except ClientResponseError as exc:
             raise BlinkAuthError(str(exc)) from exc
+        # blinkpy's Auth.query() swallows connection errors/timeouts and returns
+        # None rather than raising, and for a non-JSON (json=False) request it
+        # hands back the raw response whatever its status - so without these
+        # two checks a throttled 429 or a 5xx error page would be written to
+        # disk as the clip and marked downloaded. Both are transient: raise a
+        # BlinkError so the job is retried rather than a truncated or bogus
+        # file being kept.
+        if response is None:
+            raise BlinkError(f"No response from Blink downloading {item.media_id}.")
+        if response.status != 200:
+            raise BlinkError(f"Blink returned HTTP {response.status} downloading {item.media_id}.")
         return await response.read()
 
     async def _find_camera(self, camera_id: str) -> Any:

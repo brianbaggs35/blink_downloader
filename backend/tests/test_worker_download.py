@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import pytest
+from arq import Retry
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.blink.models import BlinkAccount, BlinkAccountStatus, Camera, Clip, StorageBackend
@@ -28,7 +29,7 @@ from app.security.crypto import SecretBox
 from app.settings.service import set_storage_dir
 from app.worker.tasks.analyze import ANALYZE_JOB_NAME
 from app.worker.tasks.archive import ARCHIVE_CLIP_JOB_NAME, AUTO_ARCHIVE_CLIP_JOB_NAME
-from app.worker.tasks.download import download_clip
+from app.worker.tasks.download import DOWNLOAD_MAX_TRIES, download_clip
 
 
 class FakeBlinkService:
@@ -271,20 +272,62 @@ async def test_download_auth_error_marks_account_errored(worker_ctx: dict[str, A
     assert FakeBlinkService.instances[-1].closed is True
 
 
-async def test_download_connection_error_propagates_for_arq_retry(
+async def test_download_connection_error_requests_arq_retry(
     worker_ctx: dict[str, Any],
 ) -> None:
+    # arq only re-queues a job that raises Retry - a BlinkError propagating
+    # out of the task would mark the job failed for good, with no retry at
+    # all, and the clip would stay undownloaded forever.
     async with worker_ctx["sessionmaker"]() as session:
         _account, _camera, clip = await _make_account_camera_clip(session)
         clip_id = clip.id
 
     FakeBlinkService.next_error = BlinkError("temporary network blip")
-    with pytest.raises(BlinkError):
+    with pytest.raises(Retry) as excinfo:
         await download_clip(worker_ctx, str(clip_id))
+    assert excinfo.value.__cause__ is FakeBlinkService.next_error
     assert FakeBlinkService.instances[-1].closed is True
+    async with worker_ctx["sessionmaker"]() as session:
+        assert (await session.get(Clip, clip_id)).downloaded_at is None  # pyright: ignore[reportOptionalMemberAccess]
 
 
-async def test_storage_error_propagates_for_arq_retry(
+async def test_download_retries_on_a_growing_schedule_then_fails_with_the_real_error(
+    worker_ctx: dict[str, Any],
+) -> None:
+    """Every try but the last raises Retry with the next backoff; the last
+    lets the actual error through. A Retry there would only schedule a run
+    arq refuses as over max_tries, recording "max retries exceeded" minutes
+    later instead of why the download failed."""
+    async with worker_ctx["sessionmaker"]() as session:
+        _account, _camera, clip = await _make_account_camera_clip(session)
+        clip_id = clip.id
+
+    FakeBlinkService.next_error = BlinkError("still throttled")
+    defers: list[int | None] = []
+    for job_try in range(1, DOWNLOAD_MAX_TRIES):
+        with pytest.raises(Retry) as excinfo:
+            await download_clip({**worker_ctx, "job_try": job_try}, str(clip_id))
+        defers.append(excinfo.value.defer_score)
+    assert defers == [30_000, 120_000, 300_000]
+
+    with pytest.raises(BlinkError, match="still throttled"):
+        await download_clip({**worker_ctx, "job_try": DOWNLOAD_MAX_TRIES}, str(clip_id))
+    async with worker_ctx["sessionmaker"]() as session:
+        assert (await session.get(Clip, clip_id)).downloaded_at is None  # pyright: ignore[reportOptionalMemberAccess]
+
+
+def test_retry_schedule_matches_the_registered_try_limit() -> None:
+    """One wait per retry, and the worker registers the same limit - so the
+    schedule and max_tries cannot drift apart again."""
+    from app.worker.main import WorkerSettings
+    from app.worker.tasks.download import DOWNLOAD_RETRY_DEFER_SECONDS
+
+    [download] = [f for f in WorkerSettings.functions if f.name == "download_clip"]
+    assert download.max_tries == DOWNLOAD_MAX_TRIES
+    assert len(DOWNLOAD_RETRY_DEFER_SECONDS) == DOWNLOAD_MAX_TRIES - 1
+
+
+async def test_storage_error_requests_arq_retry(
     worker_ctx: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async with worker_ctx["sessionmaker"]() as session:
@@ -298,8 +341,13 @@ async def test_storage_error_propagates_for_arq_retry(
 
     monkeypatch.setattr("app.storage.service.LocalClipStorage.write", fail_write)
     FakeBlinkService.next_bytes = b"irrelevant"
-    with pytest.raises(StorageError):
+    with pytest.raises(Retry) as excinfo:
         await download_clip(worker_ctx, str(clip_id))
+    assert isinstance(excinfo.value.__cause__, StorageError)
+
+    # ...and on the last allowed try, the disk error itself fails the job.
+    with pytest.raises(StorageError, match="disk full"):
+        await download_clip({**worker_ctx, "job_try": DOWNLOAD_MAX_TRIES}, str(clip_id))
 
 
 async def test_ffmpeg_binary_missing_does_not_fail_the_download(
