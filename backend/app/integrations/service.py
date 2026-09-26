@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db import get_or_create_singleton
 from app.integrations.cloud import GoogleDriveClient, OneDriveClient, S3Client
 from app.integrations.models import SINGLETON_ID, StorageIntegrationSettings
 from app.integrations.schemas import StorageIntegrationSettingsUpdate
@@ -16,12 +17,7 @@ OAUTH_STATE_TTL_MINUTES = 10
 
 
 async def get_storage_integration_settings(session: AsyncSession) -> StorageIntegrationSettings:
-    row = await session.get(StorageIntegrationSettings, SINGLETON_ID)
-    if row is None:
-        row = StorageIntegrationSettings(id=SINGLETON_ID)
-        session.add(row)
-        await session.flush()
-    return row
+    return await get_or_create_singleton(session, StorageIntegrationSettings, SINGLETON_ID)
 
 
 def _apply_secret(
