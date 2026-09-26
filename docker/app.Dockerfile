@@ -23,11 +23,41 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
 COPY frontend/ ./
-RUN --mount=type=secret,id=primevue_license_key,env=VITE_PRIMEVUE_LICENSE_KEY \
-    npm run build
+# The license key is read from the secret's mount path, not with the mount's
+# `env=` option: `env=` is a BuildKit extension that buildah (podman build)
+# rejects outright ("secret should have syntax id=id[,target=path,...]"),
+# while both engines mount a secret at /run/secrets/<id>. uid/gid/mode because
+# that mount defaults to root:root 0400 and this stage runs as Chainguard's
+# nonroot (65532). A build with no secret still works - the key is simply
+# empty - but a secret that is mounted and unreadable fails the build instead
+# of quietly shipping a bundle without its key (which is what a bare
+# `cat ... || true` did).
+# A fingerprint of the key, NOT the key: neither BuildKit nor buildah puts a
+# secret's contents in the layer cache key (by design), so a changed key alone
+# keeps serving the bundle cached with the old one. Pass
+#   --build-arg PRIMEVUE_LICENSE_FINGERPRINT="$(sha256sum < key | cut -d' ' -f1)"
+# and this step re-runs whenever the key changes; unset, nothing changes.
+ARG PRIMEVUE_LICENSE_FINGERPRINT=""
+RUN --mount=type=secret,id=primevue_license_key,uid=65532,gid=65532,mode=0400 \
+    set -e; \
+    key=/run/secrets/primevue_license_key; \
+    license=""; \
+    if [ -e "$key" ]; then \
+        license="$(cat "$key")" || { echo "$key is mounted but unreadable" >&2; exit 1; }; \
+    fi; \
+    VITE_PRIMEVUE_LICENSE_KEY="$license" npm run build
 
 # ------------------------------------------------------------- backend build
 FROM cgr.dev/chainguard/python:latest-dev AS backend-builder
+
+# BuildKit creates WORKDIR owned by the current USER (Chainguard's nonroot);
+# buildah (podman build) creates it root-owned, so there `uv sync` failed with
+# "failed to create directory /app/.venv: Permission denied". Pre-create it
+# owned by nonroot, so both engines give this stage the same /app - and the
+# stage itself still runs unprivileged.
+USER 0
+RUN mkdir -p /app && chown 65532:65532 /app
+USER 65532:65532
 
 COPY --from=uv-binary /uv /usr/local/bin/uv
 
