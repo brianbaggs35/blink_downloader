@@ -7,7 +7,7 @@ requires-python = ">=3.14"
 license = { text = "MIT" }
 dependencies = [
     "fastapi>=0.143.0",
-    "uvicorn[standard]>=0.52.1",
+    "uvicorn[standard]>=0.54.0",
     "sqlalchemy[asyncio]>=2.0.52",
     "asyncpg>=0.31.0",
     "alembic>=1.19.0",
