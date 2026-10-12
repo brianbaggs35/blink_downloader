@@ -57,7 +57,7 @@ dependencies = [
     # minimal Wolfi prod runtime, where it crashes `import cv2` outright. The
     # prod Dockerfile force-reinstalls opencv-python-headless (same upstream
     # version, GL-free) over it after `uv sync` to fix this; see there.
-    "insightface>=1.0.1",
+    "insightface>=2.1.0",
     "pgvector>=0.5.0",
 ]
 
