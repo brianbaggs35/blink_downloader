@@ -34,7 +34,7 @@ dependencies = [
     # "OneDrive files" SDK). All pure Python, no native extensions.
     "boto3>=1.43.111",
     "google-auth-oauthlib>=1.5.0",
-    "google-api-python-client>=2.198.0",
+    "google-api-python-client>=2.201.0",
     "msal>=1.37.0",
     # GPU build on x86_64 (the only arch it ships wheels for at all) so an
     # NVIDIA GPU is actually usable for biometrics without a system-wide
