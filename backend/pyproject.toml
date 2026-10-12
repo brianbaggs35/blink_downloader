@@ -18,7 +18,7 @@ dependencies = [
     "arq>=0.28.0",
     # redis-py is capped <6 by arq; the Redis *server* still runs 8.x.
     "redis>=5.2,<6",
-    "cryptography>=49.0.0",
+    "cryptography>=50.0.2",
     "structlog>=26.1.0",
     "blinkpy>=0.25.9",
     "httpx>=0.28.1",
