@@ -61,9 +61,16 @@ USER 65532:65532
 
 COPY --from=uv-binary /uv /usr/local/bin/uv
 
+# Chainguard's python:latest-dev has moved on to 3.15, but onnxruntime-gpu has
+# no cp315 wheels yet (project requires >=3.14), so build the venv on a
+# uv-managed 3.14 (python-build-standalone, glibc) kept inside /app so the
+# prod stage can copy it next to the venv its symlinks point at.
 ENV UV_PROJECT_ENVIRONMENT=/app/.venv \
     UV_LINK_MODE=copy \
-    UV_COMPILE_BYTECODE=1
+    UV_COMPILE_BYTECODE=1 \
+    UV_PYTHON=3.14 \
+    UV_PYTHON_PREFERENCE=only-managed \
+    UV_PYTHON_INSTALL_DIR=/app/python
 
 WORKDIR /app
 
@@ -101,8 +108,8 @@ RUN apk add --no-cache ffmpeg nginx tini supervisor \
     && apk del --no-cache \
         build-base gcc binutils make git linux-headers pkgconf \
         glibc-dev openssl-dev jitterentropy-library-dev libxcrypt-dev \
-        python-3.14-dev python-3.14-base-dev \
-        py3.14-pip py3.14-pip-base py3-pip-wheel py3.14-setuptools uv wget
+        python-3.15-dev python-3.15-base-dev \
+        py3.15-pip py3.15-pip-base py3-pip-wheel py3.15-setuptools uv wget
 
 WORKDIR /app
 
@@ -110,6 +117,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH"
 
+COPY --from=backend-builder /app/python /app/python
 COPY --from=backend-builder /app/.venv /app/.venv
 COPY backend/alembic.ini /app/alembic.ini
 COPY backend/alembic /app/alembic

@@ -27,9 +27,16 @@ CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "800
 # -------------------------------------------------------------- build stage
 FROM cgr.dev/chainguard/python:latest-dev AS builder
 COPY --from=uv-binary /uv /usr/local/bin/uv
+# Chainguard's python:latest-dev has moved on to 3.15, but onnxruntime-gpu has
+# no cp315 wheels yet (project requires >=3.14), so build the venv on a
+# uv-managed 3.14 (python-build-standalone, glibc) kept inside /app so the
+# prod stage can copy it next to the venv its symlinks point at.
 ENV UV_PROJECT_ENVIRONMENT=/app/.venv \
     UV_LINK_MODE=copy \
-    UV_COMPILE_BYTECODE=1
+    UV_COMPILE_BYTECODE=1 \
+    UV_PYTHON=3.14 \
+    UV_PYTHON_PREFERENCE=only-managed \
+    UV_PYTHON_INSTALL_DIR=/app/python
 WORKDIR /app
 COPY backend/pyproject.toml backend/uv.lock ./
 # insightface hard-requires full opencv-python (needs libGL/libGTK), but this
@@ -48,6 +55,7 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH"
+COPY --from=builder /app/python /app/python
 COPY --from=builder /app/.venv /app/.venv
 COPY backend/alembic.ini /app/alembic.ini
 COPY backend/alembic /app/alembic
