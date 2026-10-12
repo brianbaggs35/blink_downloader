@@ -35,7 +35,7 @@ dependencies = [
     "boto3>=1.43.111",
     "google-auth-oauthlib>=1.5.0",
     "google-api-python-client>=2.201.0",
-    "msal>=1.37.0",
+    "msal>=1.39.0",
     # GPU build on x86_64 (the only arch it ships wheels for at all) so an
     # NVIDIA GPU is actually usable for biometrics without a system-wide
     # CUDA Toolkit install - [cuda,cudnn] extras pull the matching NVIDIA
