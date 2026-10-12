@@ -68,7 +68,7 @@ dev = [
     "pytest-cov>=7.1.0",
     "asgi-lifespan>=2.1.0",
     "ruff>=0.17.0",
-    "pyright>=1.1.411",
+    "pyright>=1.1.414",
     "bandit>=1.9.4",
 ]
 
