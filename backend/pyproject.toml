@@ -46,8 +46,8 @@ dependencies = [
     # app.biometrics.recognition already falls back to CPU correctly
     # whenever CUDA isn't reported available, so no other branching is
     # needed for this to keep working there.
-    "onnxruntime-gpu[cuda,cudnn]>=1.28.0; platform_machine == 'x86_64'",
-    "onnxruntime>=1.28.0; platform_machine != 'x86_64'",
+    "onnxruntime-gpu[cuda,cudnn]>=1.31.0; platform_machine == 'x86_64'",
+    "onnxruntime>=1.31.0; platform_machine != 'x86_64'",
     # Pulls in full opencv-python (not -headless): its declared dependency,
     # and uv/pip have no package-substitution mechanism to swap it for the
     # smaller headless build without installing both side by side into the
