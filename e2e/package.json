@@ -14,13 +14,13 @@
     "coverage:report": "nyc report --cwd=/app --temp-dir=/e2e/.nyc_output --report-dir=/e2e/coverage --extension=.vue --extension=.ts --reporter=text --reporter=text-summary --reporter=html --reporter=cobertura --reporter=lcov"
   },
   "devDependencies": {
-    "@playwright/test": "^1.63.0",
-    "@types/node": "^26.6.4",
-    "eslint": "^10.11.0",
-    "eslint-plugin-playwright": "^2.12.0",
+    "@playwright/test": "^1.64.0",
+    "@types/node": "^26.6.5",
+    "eslint": "^10.12.0",
+    "eslint-plugin-playwright": "^2.12.1",
     "eslint-plugin-security": "^4.2.0",
     "nyc": "^18.0.0",
     "typescript": "~5.9.3",
-    "typescript-eslint": "^8.71.0"
+    "typescript-eslint": "^8.71.1"
   }
 }
