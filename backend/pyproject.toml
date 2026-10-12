@@ -58,7 +58,7 @@ dependencies = [
     # prod Dockerfile force-reinstalls opencv-python-headless (same upstream
     # version, GL-free) over it after `uv sync` to fix this; see there.
     "insightface>=2.1.0",
-    "pgvector>=0.5.0",
+    "pgvector>=0.5.1",
 ]
 
 [dependency-groups]
