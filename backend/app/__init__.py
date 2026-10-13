@@ -1,3 +1,3 @@
 """Blink AI Security Platform backend."""
 
-__version__ = "1.4.3"
+__version__ = "1.4.7"
