@@ -50,6 +50,7 @@ async function signOut(): Promise<void> {
         rounded
         class="menu-toggle"
         aria-label="Open navigation menu"
+        :aria-expanded="mobileNav.isOpen.value"
         data-testid="mobile-nav-toggle"
         @click="mobileNav.open()"
       />

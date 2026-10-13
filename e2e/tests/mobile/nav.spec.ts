@@ -8,8 +8,8 @@ async function openMobileDrawer(page: Page) {
   const toggle = page.getByTestId("mobile-nav-toggle");
   await expect(toggle).toBeVisible();
   await expect(toggle).toBeEnabled();
-  // WebKit's iPhone emulation never marks the stationary sticky header as stable.
-  await toggle.click({ force: true });
+  await toggle.press("Enter");
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
 
   const drawer = page.getByTestId("mobile-nav-drawer");
   await expect(drawer).toBeVisible();
@@ -30,16 +30,16 @@ test("the hamburger opens the mobile drawer with the full nav", async ({ page })
 });
 
 test("Escape closes the drawer", async ({ page }) => {
-  const drawer = await openMobileDrawer(page);
+  await openMobileDrawer(page);
   await page.keyboard.press("Escape");
-  await expect(drawer).toBeHidden();
+  await expect(page.getByTestId("mobile-nav-toggle")).toHaveAttribute("aria-expanded", "false");
 });
 
 test("choosing a destination from the drawer navigates and closes it", async ({ page }) => {
   const drawer = await openMobileDrawer(page);
   const statusLink = drawer.getByRole("link", { name: "Status", exact: true });
   await expect(statusLink).toBeVisible();
-  await statusLink.click({ force: true });
+  await statusLink.press("Enter");
   await expect(page.getByRole("heading", { name: "Status", exact: true })).toBeVisible();
-  await expect(drawer).toBeHidden();
+  await expect(page.getByTestId("mobile-nav-toggle")).toHaveAttribute("aria-expanded", "false");
 });

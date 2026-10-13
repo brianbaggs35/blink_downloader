@@ -81,8 +81,11 @@ describe("TopBar", () => {
   it("opens the mobile nav drawer from the menu toggle", async () => {
     useMobileNav().close();
     const { wrapper } = await mountBar();
-    await wrapper.find('[data-testid="mobile-nav-toggle"]').trigger("click");
+    const toggle = wrapper.find('[data-testid="mobile-nav-toggle"]');
+    expect(toggle.attributes("aria-expanded")).toBe("false");
+    await toggle.trigger("click");
     expect(useMobileNav().isOpen.value).toBe(true);
+    expect(toggle.attributes("aria-expanded")).toBe("true");
     useMobileNav().close();
   });
 
