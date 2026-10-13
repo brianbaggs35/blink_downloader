@@ -44,8 +44,13 @@ COPY backend/pyproject.toml backend/uv.lock ./
 # runtime otherwise. uv/pip have no package-identity substitution, so both
 # wheels would install to the same cv2/ path in undefined order; force the
 # headless build (same upstream version, GL-free) to win explicitly instead.
+# The runtime uses only the isolated venv, so drop the managed interpreter's
+# bootstrap installers and their bundled libraries before copying it.
 RUN uv sync --frozen --no-dev --no-install-project \
-    && uv pip install --python /app/.venv/bin/python --force-reinstall opencv-python-headless==5.0.0.93
+    && uv pip install --python /app/.venv/bin/python --force-reinstall opencv-python-headless==5.0.0.93 \
+    && uv pip uninstall --system --break-system-packages \
+        --python "$(/app/.venv/bin/python -c 'import sys; print(sys._base_executable)')" \
+        pip setuptools
 
 # --------------------------------------------------------------- prod target
 FROM cgr.dev/chainguard/python:latest-dev AS prod

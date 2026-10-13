@@ -35,3 +35,4 @@ e2e/coverage/
 .DS_Store
 Thumbs.db
 .history/
+.vscode/
