@@ -1,6 +1,20 @@
+import type { Page } from "@playwright/test";
+
 import { expect, storageStatePath, test } from "../../fixtures";
 
 test.use({ storageState: storageStatePath("admin") });
+
+async function openMobileDrawer(page: Page) {
+  const toggle = page.getByTestId("mobile-nav-toggle");
+  await expect(toggle).toBeVisible();
+  await expect(toggle).toBeEnabled();
+  // WebKit's iPhone emulation never marks the stationary sticky header as stable.
+  await toggle.click({ force: true });
+
+  const drawer = page.getByTestId("mobile-nav-drawer");
+  await expect(drawer).toBeVisible();
+  return drawer;
+}
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
@@ -9,25 +23,23 @@ test.beforeEach(async ({ page }) => {
 
 test("the hamburger opens the mobile drawer with the full nav", async ({ page }) => {
   await expect(page.getByTestId("mobile-nav-drawer")).toBeHidden();
-  await page.getByTestId("mobile-nav-toggle").click();
-  const drawer = page.getByTestId("mobile-nav-drawer");
-  await expect(drawer).toBeVisible();
+  const drawer = await openMobileDrawer(page);
   await expect(drawer).toContainText("Security Feed");
   await expect(drawer).toContainText("Settings");
   await expect(drawer.getByTestId("nav-blink-badge-mobile")).toHaveText("Connected");
 });
 
 test("Escape closes the drawer", async ({ page }) => {
-  await page.getByTestId("mobile-nav-toggle").click();
-  await expect(page.getByTestId("mobile-nav-drawer")).toBeVisible();
+  const drawer = await openMobileDrawer(page);
   await page.keyboard.press("Escape");
-  await expect(page.getByTestId("mobile-nav-drawer")).toBeHidden();
+  await expect(drawer).toBeHidden();
 });
 
 test("choosing a destination from the drawer navigates and closes it", async ({ page }) => {
-  await page.getByTestId("mobile-nav-toggle").click();
-  const drawer = page.getByTestId("mobile-nav-drawer");
-  await drawer.getByRole("link", { name: "Status", exact: true }).click();
+  const drawer = await openMobileDrawer(page);
+  const statusLink = drawer.getByRole("link", { name: "Status", exact: true });
+  await expect(statusLink).toBeVisible();
+  await statusLink.click({ force: true });
   await expect(page.getByRole("heading", { name: "Status", exact: true })).toBeVisible();
-  await expect(page.getByTestId("mobile-nav-drawer")).toBeHidden();
+  await expect(drawer).toBeHidden();
 });
