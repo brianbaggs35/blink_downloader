@@ -14,7 +14,7 @@
 FROM ghcr.io/astral-sh/uv:latest AS uv-binary
 
 # ---------------------------------------------------------------- dev target
-FROM python:3.14-slim AS dev
+FROM python:3.15-slim AS dev
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=uv-binary /uv /usr/local/bin/uv
