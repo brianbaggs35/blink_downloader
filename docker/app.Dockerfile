@@ -122,22 +122,23 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH"
 
-COPY --from=backend-builder /app/python /app/python
-COPY --from=backend-builder /app/.venv /app/.venv
-COPY backend/alembic.ini /app/alembic.ini
-COPY backend/alembic /app/alembic
-COPY backend/app /app/app
-COPY --from=frontend-builder /app/dist /usr/share/nginx/html
-COPY docker/nginx.app.conf /etc/nginx/nginx.conf
-COPY docker/supervisord.conf /etc/supervisord.conf
+COPY --chown=65532:65532 --from=backend-builder /app/python /app/python
+COPY --chown=65532:65532 --from=backend-builder /app/.venv /app/.venv
+COPY --chown=65532:65532 backend/alembic.ini /app/alembic.ini
+COPY --chown=65532:65532 backend/alembic /app/alembic
+COPY --chown=65532:65532 backend/app /app/app
+COPY --chown=65532:65532 --from=frontend-builder /app/dist /usr/share/nginx/html
+COPY --chown=65532:65532 docker/nginx.app.conf /etc/nginx/nginx.conf
+COPY --chown=65532:65532 docker/supervisord.conf /etc/supervisord.conf
 
 # A brand-new named volume mounted at a path that doesn't exist in the image
 # is created root:root by the container runtime, which nonroot can never
 # write to. Pre-creating the directories here means Docker's volume-seeding
 # (copy the image's dir + ownership onto a fresh, empty volume on first
-# mount) carries nonroot ownership over instead - verified empirically.
+# mount) carries nonroot ownership over instead. Set copied file ownership
+# during COPY so a second layer doesn't need to rewrite the large CUDA venv.
 RUN mkdir -p /data/clips /data/insightface \
-    && chown -R 65532:65532 /app /data /usr/share/nginx/html /etc/supervisord.conf
+    && chown 65532:65532 /data /data/clips /data/insightface
 
 USER 65532:65532
 
