@@ -60,18 +60,19 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH"
-COPY --from=builder /app/python /app/python
-COPY --from=builder /app/.venv /app/.venv
-COPY backend/alembic.ini /app/alembic.ini
-COPY backend/alembic /app/alembic
-COPY backend/app /app/app
+COPY --chown=65532:65532 --from=builder /app/python /app/python
+COPY --chown=65532:65532 --from=builder /app/.venv /app/.venv
+COPY --chown=65532:65532 backend/alembic.ini /app/alembic.ini
+COPY --chown=65532:65532 backend/alembic /app/alembic
+COPY --chown=65532:65532 backend/app /app/app
 # A brand-new named volume mounted at a path that doesn't exist in the image
 # is created root:root by the container runtime, which nonroot can never
 # write to. Pre-creating the directories here means Docker's volume-seeding
 # (copy the image's dir + ownership onto a fresh, empty volume on first
-# mount) carries nonroot ownership over instead — verified empirically.
+# mount) carries nonroot ownership over instead. Set copied file ownership
+# during COPY so a second layer doesn't need to rewrite the large CUDA venv.
 RUN mkdir -p /data/clips /data/insightface \
-    && chown -R 65532:65532 /app /data
+    && chown 65532:65532 /data /data/clips /data/insightface
 USER 65532:65532
 ENTRYPOINT []
 CMD ["/app/.venv/bin/python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
