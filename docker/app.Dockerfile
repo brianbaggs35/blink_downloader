@@ -109,7 +109,19 @@ USER 0
 # what's left (bash/apk-tools included, for operators who need to exec in
 # and debug) is deliberately kept - this trims the live attack surface,
 # it doesn't chase a fully distroless rebuild.
-RUN apk add --no-cache ffmpeg nginx tini supervisor \
+#
+# The `apk add` is retried: the Wolfi package CDN intermittently returns an
+# error for a single package mid-install ("libdav1d-...: remote server
+# returned error (try 'apk update')"), most often under the slower emulated
+# arm64 build, and that one transient failure otherwise fails the whole
+# release. `apk update` between attempts refreshes the index too.
+RUN for attempt in 1 2 3 4; do \
+        apk add --no-cache ffmpeg nginx tini supervisor && break; \
+        [ "$attempt" -lt 4 ] || { echo "apk add failed after $attempt attempts" >&2; exit 1; }; \
+        echo "apk add failed (attempt $attempt), retrying..." >&2; \
+        sleep $((attempt * 5)); \
+        apk update; \
+    done \
     && apk del --no-cache \
         build-base gcc binutils make git linux-headers pkgconf \
         glibc-dev openssl-dev jitterentropy-library-dev libxcrypt-dev \
