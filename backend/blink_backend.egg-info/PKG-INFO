@@ -1,0 +1,35 @@
+Metadata-Version: 2.4
+Name: blink-backend
+Version: 1.5.0
+Summary: Blink AI Security Platform — API and background worker
+License-Expression: MIT
+Requires-Python: >=3.14
+Requires-Dist: fastapi>=0.165.0
+Requires-Dist: uvicorn[standard]>=0.54.0
+Requires-Dist: sqlalchemy[asyncio]<2.1,>=2.0.52
+Requires-Dist: asyncpg>=0.32.0
+Requires-Dist: alembic>=1.20.1
+Requires-Dist: pydantic>=2.14.4
+Requires-Dist: pydantic-settings>=2.16.3
+Requires-Dist: fastapi-users[sqlalchemy]>=15.0.5
+Requires-Dist: arq>=0.28.0
+Requires-Dist: redis<6,>=5.2
+Requires-Dist: certifi>=2026.11.20
+Requires-Dist: cryptography>=50.0.2
+Requires-Dist: structlog>=26.1.0
+Requires-Dist: blinkpy>=0.25.9
+Requires-Dist: httpx>=0.28.1
+Requires-Dist: openai>=3.57.0
+Requires-Dist: anthropic>=2.12.0
+Requires-Dist: ollama>=0.6.3
+Requires-Dist: pillow>=13.0.0
+Requires-Dist: numpy>=2.5.5
+Requires-Dist: boto3>=1.44.9
+Requires-Dist: google-auth-oauthlib>=1.5.0
+Requires-Dist: google-api-python-client>=2.202.0
+Requires-Dist: msal>=1.39.0
+Requires-Dist: oauthlib>=4.0.1
+Requires-Dist: onnxruntime-gpu[cuda,cudnn]>=1.32.0; platform_machine == "x86_64"
+Requires-Dist: onnxruntime>=1.32.0; platform_machine != "x86_64"
+Requires-Dist: insightface>=2.1.0
+Requires-Dist: pgvector>=0.5.1

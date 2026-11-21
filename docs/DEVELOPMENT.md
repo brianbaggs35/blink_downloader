@@ -6,6 +6,22 @@
 - For fast local iteration outside containers: [uv](https://docs.astral.sh/uv/)
   (manages Python 3.14.10 automatically) and Node 24+
 
+## Local backend setup
+
+From the repository root, install the locked backend dependencies and the
+editable backend package (including development tools) with:
+
+```sh
+cd backend
+uv sync --locked
+```
+
+For an editable install with pip instead, use `python -m pip install -e .`
+from `backend/`; `uv sync --locked` is preferred because it honors `uv.lock`.
+
+The Docker images install dependencies during their build; this command is for
+local development.
+
 ## Everyday commands
 
 | Command | What it does |

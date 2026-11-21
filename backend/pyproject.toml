@@ -1,41 +1,39 @@
 [project]
 name = "blink-backend"
-version = "1.4.9"
+version = "1.5.0"
 description = "Blink AI Security Platform — API and background worker"
-readme = "README.md"
 requires-python = ">=3.14"
-license = { text = "MIT" }
+license = "MIT"
 dependencies = [
-    "fastapi>=0.143.0",
+    "fastapi>=0.165.0",
     "uvicorn[standard]>=0.54.0",
-    "sqlalchemy[asyncio]>=2.0.52",
+    "sqlalchemy[asyncio]>=2.0.52,<2.1",
     "asyncpg>=0.32.0",
-    "alembic>=1.20.0",
-    "pydantic>=2.14.1",
-    "pydantic-settings>=2.15.0",
+    "alembic>=1.20.1",
+    "pydantic>=2.14.4",
+    "pydantic-settings>=2.16.3",
     "fastapi-users[sqlalchemy]>=15.0.5",
-    "pwdlib[argon2]>=0.3.0",
     "arq>=0.28.0",
     # redis-py is capped <6 by arq; the Redis *server* still runs 8.x.
     "redis>=5.2,<6",
-    "certifi>=2026.10.19",
+    "certifi>=2026.11.20",
     "cryptography>=50.0.2",
     "structlog>=26.1.0",
     "blinkpy>=0.25.9",
     "httpx>=0.28.1",
-    "openai>=3.29.0",
-    "anthropic>=1.13.0",
+    "openai>=3.57.0",
+    "anthropic>=2.12.0",
     "ollama>=0.6.3",
     "pillow>=13.0.0",
-    "numpy>=2.5.4",
+    "numpy>=2.5.5",
     # Storage archive integrations (app/integrations/) - S3 (boto3), Google
     # Drive (google-auth-oauthlib + google-api-python-client), OneDrive's
     # OAuth token lifecycle (msal; file operations go straight to Microsoft
     # Graph over httpx, already a dependency - Microsoft has no separate
     # "OneDrive files" SDK). All pure Python, no native extensions.
-    "boto3>=1.43.111",
+    "boto3>=1.44.9",
     "google-auth-oauthlib>=1.5.0",
-    "google-api-python-client>=2.201.0",
+    "google-api-python-client>=2.202.0",
     "msal>=1.39.0",
     "oauthlib>=4.0.1",
     # GPU build on x86_64 (the only arch it ships wheels for at all) so an
@@ -48,8 +46,8 @@ dependencies = [
     # app.biometrics.recognition already falls back to CPU correctly
     # whenever CUDA isn't reported available, so no other branching is
     # needed for this to keep working there.
-    "onnxruntime-gpu[cuda,cudnn]>=1.31.0; platform_machine == 'x86_64'",
-    "onnxruntime>=1.31.0; platform_machine != 'x86_64'",
+    "onnxruntime-gpu[cuda,cudnn]>=1.32.0; platform_machine == 'x86_64'",
+    "onnxruntime>=1.32.0; platform_machine != 'x86_64'",
     # Pulls in full opencv-python (not -headless): its declared dependency,
     # and uv/pip have no package-substitution mechanism to swap it for the
     # smaller headless build without installing both side by side into the
@@ -65,17 +63,25 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "pytest>=9.1.1",
-    "pytest-asyncio>=1.4.0",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.5.0",
     "pytest-cov>=7.1.0",
     "asgi-lifespan>=2.1.0",
-    "ruff>=0.17.0",
+    "ruff>=0.17.6",
     "pyright>=1.1.414",
     "bandit>=1.9.4",
 ]
 
 [tool.uv]
-package = false
+package = true
+
+[build-system]
+requires = ["setuptools>=84.2.1"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["alembic*", "tests*"]
 
 [tool.ruff]
 line-length = 100
