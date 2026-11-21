@@ -4,7 +4,7 @@
 
 - Docker with the compose plugin (everything runs in containers via `make`)
 - For fast local iteration outside containers: [uv](https://docs.astral.sh/uv/)
-  (manages Python 3.14 automatically) and Node 24+
+  (manages Python 3.14.10 automatically) and Node 24+
 
 ## Everyday commands
 
