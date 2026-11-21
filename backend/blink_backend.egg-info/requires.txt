@@ -1,0 +1,33 @@
+fastapi>=0.165.0
+uvicorn[standard]>=0.54.0
+sqlalchemy[asyncio]<2.1,>=2.0.52
+asyncpg>=0.32.0
+alembic>=1.20.1
+pydantic>=2.14.4
+pydantic-settings>=2.16.3
+fastapi-users[sqlalchemy]>=15.0.5
+arq>=0.28.0
+redis<6,>=5.2
+certifi>=2026.11.20
+cryptography>=50.0.2
+structlog>=26.1.0
+blinkpy>=0.25.9
+httpx>=0.28.1
+openai>=3.57.0
+anthropic>=2.12.0
+ollama>=0.6.3
+pillow>=13.0.0
+numpy>=2.5.5
+boto3>=1.44.9
+google-auth-oauthlib>=1.5.0
+google-api-python-client>=2.202.0
+msal>=1.39.0
+oauthlib>=4.0.1
+insightface>=2.1.0
+pgvector>=0.5.1
+
+[:platform_machine != "x86_64"]
+onnxruntime>=1.32.0
+
+[:platform_machine == "x86_64"]
+onnxruntime-gpu[cuda,cudnn]>=1.32.0

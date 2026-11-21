@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.5.0] - 2026-11-21
+
+- Updated python to 3.14.10
+- Updated various backend and frontend dependencies
+
 ## [1.4.9] - 2026-10-26
 
 ### Security
