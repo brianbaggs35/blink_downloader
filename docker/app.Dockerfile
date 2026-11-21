@@ -63,12 +63,12 @@ COPY --from=uv-binary /uv /usr/local/bin/uv
 
 # Chainguard's python:latest-dev has moved on to 3.15, but onnxruntime-gpu has
 # no cp315 wheels yet (project requires >=3.14), so build the venv on a
-# uv-managed 3.14 (python-build-standalone, glibc) kept inside /app so the
+# uv-managed 3.14.10 (python-build-standalone, glibc) kept inside /app so the
 # prod stage can copy it next to the venv its symlinks point at.
 ENV UV_PROJECT_ENVIRONMENT=/app/.venv \
     UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
-    UV_PYTHON=3.14 \
+    UV_PYTHON=3.14.10 \
     UV_PYTHON_PREFERENCE=only-managed \
     UV_PYTHON_INSTALL_DIR=/app/python
 

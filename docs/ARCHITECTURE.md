@@ -502,5 +502,5 @@ setup).
 | | entry point | images | notes |
 |---|---|---|---|
 | prod | `make prod` | Chainguard distroless | TLS, read-only FS, healthchecks |
-| dev | `make dev` | python:3.14-slim / node:24 | hot reload both sides |
+| dev | `make dev` | python:3.14.10-slim / node:24 | hot reload both sides |
 | test | `make test-backend` / `make e2e` | throwaway + prod-like | e2e stack is seeded via `app/testing/seed.py` |
