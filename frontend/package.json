@@ -40,7 +40,7 @@
     }
   },
   "devDependencies": {
-    "@redocly/openapi-core": "^1.34.24",
+    "@redocly/openapi-core": "^2.82.0",
     "@tsconfig/node24": "^24.0.6",
     "@types/node": "^26.6.6",
     "@vitejs/plugin-vue": "^6.0.11",
